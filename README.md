@@ -12,7 +12,7 @@
 ## 🛠️ 技术栈
 
 - **前端界面与交互**：[Streamlit](https://streamlit.io/) 响应式框架
-- **排版与编译引擎**：$\LaTeX$ (核心依赖 `xelatex` 编译器)
+- **排版与编译引擎**：**$\LaTeX$** (核心依赖 `xelatex` 编译器)
 - **底层脚本与处理**：Python (`re` 文本处理, `fitz` PDF图像解析, `subprocess` 进程调用)
 - **大语言模型支持**：阿里云百炼 (Qwen 模型系列)
 
