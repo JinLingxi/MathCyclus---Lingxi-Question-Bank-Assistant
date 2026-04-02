@@ -1,9 +1,11 @@
 # API 密钥和环境变量 (绝对不能上传)
 .env
+.gitignore
 
 # TikZ 绘图的临时图片和 PDF 缓存 (会占用大量空间，不需要上传)
 .tikz_cache/
 *.pdf
+
 
 # Python 缓存文件
 __pycache__/
@@ -13,6 +15,7 @@ __pycache__/
 # 操作系统生成的无用文件
 .DS_Store
 Thumbs.db
+log.csv
 
 # 自己加的东西
 更新信息.txt
@@ -25,6 +28,8 @@ chapters/
 cover/
 
 # LaTeX 编译输出
+main.synctex.gz
 main.log
 main.aux
 main.out
+main.toc
