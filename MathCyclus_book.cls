@@ -1,0 +1,737 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesClass{MathCyclus_book}[2026/01/05 MathCyclus Book Class]
+\DeclareOption*{\PassOptionsToClass{\CurrentOption}{ctexbook}}
+\ProcessOptions\relax
+\LoadClass[12pt,UTF-8,a4paper,openany]{ctexbook}
+
+%----------------------------------------------------------------------------------
+%  基本配置与宏包加载 (Basic Configuration & Packages)
+%----------------------------------------------------------------------------------
+% 保留你原始的导言设置与注释，改为类文件形式
+\PassOptionsToPackage{table,xcdraw}{xcolor}
+
+%----------------------------------------------------------------------------------
+%  目录设置 (Table of Contents)
+%----------------------------------------------------------------------------------
+% 中文支持
+
+\RequirePackage{tocloft} 
+
+\renewcommand\cftchapdotsep{0.5}%虚线间隔
+\renewcommand{\cftdot}{$\cdot$}
+\renewcommand{\cftdotsep}{1.5}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftchapdotsep}}
+\renewcommand{\cftchapdotsep}{\cftdotsep}
+\setlength{\cftbeforesecskip}{18pt}%章节间隔,节前18磅
+\setlength{\cftbeforesubsecskip}{18pt}%章节间隔,小节节前18磅
+\renewcommand\cftchapfont{\kaishu\zihao{-4}}
+\renewcommand\cftsecfont{\kaishu\zihao{-4}}
+\renewcommand\cftsubsecfont{\kaishu\zihao{-4}}
+%\renewcommand\cftchappagefont{\mdseries}
+\setlength\cftbeforetoctitleskip{18pt}				%
+\setlength\cftaftertoctitleskip{18pt}						
+\setlength{\cftsubsecindent}{0pt}					%设置subsubsection不缩进
+\setlength{\cftsecindent}{0pt}						   %设置section部分不缩进
+
+\renewcommand{\cftchappagefont }{} 	%如何设置目录chap的page不加粗
+
+\renewcommand{\cfttoctitlefont}{\hfill\Huge\bfseries}
+\renewcommand{\cftaftertoctitle}{\hfill}
+
+\RequirePackage{titletoc}
+%\setcounter{tocdepth}{1} % 只显示到节（section），不显示小节（subsection）
+
+
+% 设置目录中章节标题的格式
+\titlecontents{chapter}
+  [2.3em]                     % 左边距
+  {\color{structure}\bfseries\large}  % 格式：structure颜色，粗体，大字号
+  {\contentslabel{4.5em}}  % 编号格式
+  {\hspace*{-4em}}       % 无编号时的处理
+  {\titlerule*[1pc]{.}\contentspage} % 引导线和页码
+
+% 设置目录中节标题的格式
+\titlecontents{section}
+  [3.0em]                   % 左边距
+  {\color{structure}}       % 格式：structure颜色
+  {\contentslabel{3.0em}}  % 编号格式
+  {\hspace*{-3.0em}}       % 无编号时的处理
+  {\titlerule*[1pc]{.}\contentspage} % 引导线和页码
+
+% 设置目录中小节标题的格式
+\titlecontents{subsection}
+  [4.6em]                   % 左边距
+  {\color{structure}}       % 格式：structure颜色
+  {\contentslabel{3.2em}}  % 编号格式
+  {\hspace*{-3.2em}}       % 无编号时的处理
+  {\titlerule*[1pc]{.}\contentspage} % 引导线和页码
+
+% 自定义章节标题格式和间距
+\RequirePackage{afterpage}
+
+\RequirePackage{etoolbox}
+\RequirePackage{multicol}
+
+% Hook into \@starttoc to enforce 2-column layout for TOC
+% This preserves tocloft's title formatting while putting the list in columns
+\let\MC@oldstarttoc\@starttoc
+\renewcommand{\@starttoc}[1]{%
+  \ifstrequal{#1}{toc}{%
+    \setlength{\columnsep}{3.5pc}% 调整分栏间距以适应三栏排版
+    \begin{multicols}{3}%
+      \MC@oldstarttoc{#1}%
+    \end{multicols}%
+  }{%
+    \MC@oldstarttoc{#1}%
+  }%
+}
+
+% 在目录开始时设置无页眉页脚样式
+%\pretocmd{\tableofcontents}{\pagestyle{partpage}}{}{}
+% 在目录结束后恢复正常样式
+\apptocmd{\tableofcontents}{\pagestyle{fancy}}{}{}
+
+%----------------------------------------------------------------------------------
+%  通用宏包与设置 (General Packages & Settings)
+%----------------------------------------------------------------------------------
+\RequirePackage{amsmath,amsthm,amssymb}
+\RequirePackage{textcomp}
+\RequirePackage{graphicx}
+\RequirePackage{hyperref}
+\hypersetup{
+  breaklinks,
+  unicode,
+  linktoc=all,
+  bookmarksnumbered=true,    % 显示章节编号
+  bookmarksopen=true,        % 自动展开书签
+  bookmarksopenlevel=2,      % 展开到节级别
+  pdfkeywords={MathCyclusBook},
+  colorlinks=true,
+  linkcolor=structure,
+  citecolor=green,
+  urlcolor=red,
+  pdfstartview=FitH,
+  pdfborder={0 0 0}
+}
+
+\RequirePackage{geometry}
+\RequirePackage{color}
+\RequirePackage{tcolorbox}
+\RequirePackage{enumitem}
+
+\RequirePackage{etex}
+\RequirePackage{tikz,times}
+\usetikzlibrary{patterns}
+\RequirePackage{pgfplots}
+\RequirePackage{tasks}
+
+\RequirePackage{wrapfig}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+
+%----------------------------------------------------------------------------------
+%  字体与绘图设置 (Fonts & Graphics)
+%----------------------------------------------------------------------------------
+\RequirePackage{fontspec}
+\setmainfont{Times New Roman}[ItalicFont=Times New Roman Italic]
+
+\usepgfplotslibrary{polar,colormaps,colorbrewer}
+\pgfplotsset{compat=1.16}
+\usetikzlibrary{calc,decorations.markings}
+\RequirePackage{amssymb,amsmath,pgfornament,shapepar}
+\usetikzlibrary{calc,positioning,intersections}
+\usetikzlibrary{arrows}
+\newsavebox{\bbox}
+\usetikzlibrary{shapes.geometric,through,decorations.pathmorphing, arrows.meta,quotes,mindmap,shapes.symbols,shapes.arrows,automata,angles,3d,trees,shadows,automata,arrows,
+shapes.callouts,decorations.pathreplacing}
+
+\RequirePackage[x11names]{xcolor}
+\RequirePackage{pdfpages}
+
+
+
+%----------------------------------------------------------------------------------
+%  颜色定义 (Color Definitions)
+%----------------------------------------------------------------------------------
+\definecolor{structure}{RGB}{60,113,183}
+\definecolor{STRUCTURE}{RGB}{60,113,183}  % 添加大写版本
+\definecolor{main}{RGB}{0,166,82}%
+\definecolor{second}{RGB}{255,134,24}%
+\definecolor{third}{RGB}{0,174,247}%
+\definecolor{fourth}{RGB}{244,105,102}%
+\definecolor{lanjiacu}{RGB}{0,160,152}%
+\definecolor{tianlanse}{RGB}{31,186,190}%
+
+% 基础颜色定义
+\definecolor{baise}{RGB}{255,255,255}%        % 白色 (white)
+\definecolor{yamase}{RGB}{250,240,230}%       % 亚麻色 (linen)
+\definecolor{heise}{RGB}{0,0,0}%              % 黑色 (black)
+\definecolor{huise}{RGB}{128,128,128}%        % 灰色 (grey)
+\definecolor{qianhuise}{RGB}{211,211,211}%    % 浅灰色 (lightgrey)
+\definecolor{shenhuise}{RGB}{169,169,169}%    % 深灰色 (darkgrey)
+
+% 红色系颜色定义
+\definecolor{hongse}{RGB}{255,0,0}%           % 红色 (red)
+\definecolor{shenhongse}{RGB}{220,20,60}%     % 深红色 (crimson)
+\definecolor{anhongse}{RGB}{139,0,0}%         % 暗红色 (darkred)
+\definecolor{hese}{RGB}{165,42,42}%           % 褐色 (brown)
+\definecolor{hehongse}{RGB}{128,0,0}%         % 褐红色 (maroon)
+\definecolor{guihongse}{RGB}{250,128,114}%    % 鲑红色 (salmon)
+\definecolor{fense}{RGB}{255,192,203}%        % 粉色 (pink)
+\definecolor{shanhuse}{RGB}{255,127,80}%      % 珊瑚色 (coral)
+\definecolor{chenghongse}{RGB}{255,69,0}%     % 橙红色 (orangered)
+\definecolor{chengse}{RGB}{255,165,0}%        % 橙色 (orange)
+
+% 蓝色系颜色定义
+\definecolor{lanse}{RGB}{0,0,225}%            % 蓝色 (blue)
+\definecolor{rouhelanse}{RGB}{0,130,180}%            % 柔和蓝色 (blue)
+\definecolor{shichejuhelanse}{RGB}{100,149,237}%            % 矢车菊色 (blue)
+\definecolor{shichejuhelanse}{RGB}{65,105,225}%            % 皇家蓝色 (blue)
+\definecolor{tianlanse}{RGB}{135,206,235}%    % 天蓝色 (skyblue)
+\definecolor{hailanse}{RGB}{127,255,212}%     % 海蓝色 (aquamarine)
+\definecolor{shenlanse}{RGB}{0,0,128}%        % 深蓝色 (navy)
+
+% 绿色系颜色定义
+\definecolor{lvse}{RGB}{0,128,0}%             % 绿色 (green)
+\definecolor{shenlvse}{RGB}{0,100,0}%         % 深绿色 (darkgreen)
+\definecolor{hailvse}{RGB}{46,139,87}%        % 海绿色 (seagreen)
+\definecolor{chunlvse}{RGB}{0,255,127}%       % 春绿色 (springgreen)
+\definecolor{senlilvse}{RGB}{34,139,34}%      % 森林绿色 (forestgreen)
+\definecolor{lvhuangse}{RGB}{173,255,47}%     % 绿黄色 (greenyellow)
+\definecolor{huanglvse}{RGB}{154,205,50}%     % 黄绿色 (yellowgreen)
+
+% 黄色系颜色定义
+\definecolor{huangse}{RGB}{255,255,0}%        % 黄色 (yellow)
+\definecolor{kaqise}{RGB}{240,230,140}%       % 卡其色 (khaki)
+\definecolor{jinse}{RGB}{255,215,0}%          % 金色 (gold)
+\definecolor{mihuangse}{RGB}{245,245,220}%    % 米黄色 (beige)
+\definecolor{ganlanise}{RGB}{128,128,0}%      % 橄榄色 (olive)
+\definecolor{danhuangse}{RGB}{255,208,181}%   % 橙淡黄色
+
+% 紫色系颜色定义
+\definecolor{zise}{RGB}{128,0,128}%           % 紫色 (purple)
+\definecolor{dianqingse}{RGB}{75,0,130}%      % 靛青色 (indigo)
+\definecolor{zihongse}{RGB}{221,160,221}%     % 紫红色 (plum)
+\definecolor{ziluolanse}{RGB}{238,130,238}%   % 紫罗兰色 (violet)
+\definecolor{lanziose}{RGB}{138,43,226}%      % 蓝紫色 (blueviolet)
+\definecolor{yanghongse}{RGB}{255,0,255}%     % 洋红色 (magenta)
+
+% 青色系颜色定义
+\definecolor{qingse}{RGB}{0,255,255}%         % 青色 (cyan)
+\definecolor{qinglvse}{RGB}{64,224,208}%      % 青绿色 (turquoise)
+\definecolor{langlvse}{RGB}{0,128,128}%       % 蓝绿色 (teal)
+\definecolor{zonghese}{RGB}{210,180,140}%     % 棕褐色 (tan)
+
+%----------------------------------------------------------------------------------
+%  自定义文本命令 (Custom Text Commands)
+%----------------------------------------------------------------------------------
+\newcommand{\bd}{\boldsymbol}
+
+% 自定义加粗彩色文字命令
+\newcommand{\jc}[1]{\textbf{\textcolor{lanjiacu}{\,#1\,}}}
+
+\newcommand{\bj}[1]{\textbf{\textcolor{structure}{\,#1\,}}}
+
+
+
+\RequirePackage{enumitem}
+\RequirePackage{fontawesome5} % 如果需要图标
+
+
+%----------------------------------------------------------------------------------
+%  章节标题设置 (Section Titles)
+%----------------------------------------------------------------------------------
+% 添加到导言区
+\RequirePackage{titlesec}
+\RequirePackage{fancyhdr}
+
+% 章节标题集中设置
+\titleformat{\part}[display]
+{\normalfont\huge\bfseries\centering\color{structure}}{第\chinese{part}册}{1em}{ }
+\titleformat{\chapter}[hang]
+{\normalfont\huge\bfseries\centering\color{structure}}{第\chinese{chapter}章}{1em}{ }
+\titleformat{\section}
+{\normalfont\Large\bfseries\centering\color{structure}}{\thesection}{1em}{}
+\titleformat{\subsection}
+{\normalfont\large\bfseries\color{structure}}{\hspace{2em}\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+{\normalfont\large\bfseries\color{structure}}{\hspace{0.5em}\thesubsubsection}{0.5em}{}
+
+% 调整章节标题间距
+\titlespacing{\chapter}{0pt}{-10pt}{20pt} % 减少章标题上方的空白
+
+%----------------------------------------------------------------------------------
+%  页面布局 (Page Layout)
+%----------------------------------------------------------------------------------
+% 页面设置
+\geometry{left=2.0cm,right=2.0cm,top=2.0cm,bottom=2.0cm,headheight=15pt}
+
+\setlength{\parskip}{1em} 
+
+% 抑制排版警告
+\raggedbottom
+\hbadness=10000 
+\vbadness=10000
+\hfuzz=50pt 
+\vfuzz=50pt 
+
+
+%----------------------------------------------------------------------------------
+%  页眉页脚设置 (Headers & Footers)
+%----------------------------------------------------------------------------------
+% 页眉页脚设置
+\pagestyle{fancy}
+\fancyhf{} % 清除所有页眉页脚
+
+\newcommand{\chaptertitlecontent}{}
+\renewcommand{\chaptermark}[1]{%
+  \markboth{第\chinese{chapter}章\quad #1}{}%
+  \gdef\chaptertitlecontent{#1}%
+}
+\renewcommand{\sectionmark}[1]{%
+  \markboth{\thesection\quad #1}{}%
+}
+\renewcommand{\subsectionmark}[1]{%
+  \markboth{\thesubsection\quad #1}{}%
+}
+
+\fancyhead[L]{\color{structure}{\bfseries \leftmark}} % 左上角：小节标题
+\fancyhead[R]{\color{guihongse}{\bfseries 第 \thepage 页}}  % 右上角：页码
+\fancyfoot{}
+\fancyfoot[L]{\jc{\bfseries 数圈MathCyclus：槿灵兮}} % 左下角：数圈MathCyclus
+\fancyfoot[R]{\jc{\chaptertitlecontent}} % 右下角：章节名称
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+
+
+% 章节首页也使用相同的页眉页脚样式
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyhead{} % 页眉清空
+  \renewcommand{\headrulewidth}{0pt} % 去页眉线
+  \fancyhead[L]{\color{structure}{\bfseries \textbf{\leftmark}}}
+  \fancyhead[R]{\color{guihongse}{\bfseries 第 \thepage 页}}
+  \fancyfoot[L]{\jc{\bfseries 数圈MathCyclus：槿灵兮}}
+  \fancyfoot[R]{\jc{\chaptertitlecontent}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+
+\fancypagestyle{cp}{
+  \fancyhf{}
+  \fancyhead{} % 页眉清空
+  \renewcommand{\headrulewidth}{0pt} % 去页眉线
+  \fancyhead[L]{\color{structure}{\bfseries \textbf{\leftmark}}}
+  \fancyhead[R]{\color{guihongse}{\bfseries 第 \thepage 页}}
+  \fancyfoot[L]{\jc{\bfseries 数圈MathCyclus}}
+  \fancyfoot[R]{\jc{\chaptertitlecontent}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+}
+
+
+% 为part页面定义特殊的页面样式（无页眉页脚）
+\fancypagestyle{nohf}{
+  \fancyhf{}
+  \fancyhead{} % 页眉清空
+  \fancyfoot{} % 页脚清空
+  \renewcommand{\headrulewidth}{0pt}  % 无页眉线
+  \renewcommand{\footrulewidth}{0pt}  % 无页脚线
+}
+
+% 重新定义part命令
+\let\oldpart\part
+\renewcommand{\part}[1]{
+  \thispagestyle{nohf}  % 当前页使用partpage样式
+  \oldpart{#1}
+  \thispagestyle{nohf}  % 确保part页面使用无页眉页脚样式
+}
+
+
+%----------------------------------------------------------------------------------
+%  定理环境与图表设置 (Theorems & Figures)
+%----------------------------------------------------------------------------------
+% 在main.tex的导言区添加
+\RequirePackage{caption}
+\numberwithin{figure}{section}
+\renewcommand{\figurename}{\bfseries \color{structure} 图}
+\renewcommand{\thefigure}{\arabic{chapter}.\arabic{section}-\arabic{figure}}
+% 定理环境设置 - 分组计数器
+
+
+\newtheoremstyle{mystyle}  % 样式名称
+  {4pt}                    % 上方间距
+  {4pt}                    % 下方间距
+  {\upshape}               % 正文字体（\upshape为正体）
+  {}                       % 缩进
+  {\bfseries}              % 标题字体
+  {:}                      % 标题后标点
+  {.7em}                   % 标题后间距
+  {}                       % 标题格式
+
+\newtheoremstyle{mystylekaishu}
+  {4pt}
+  {4pt}
+  {\kaishu}
+  {}
+  {\bfseries}
+  {:}
+  {.7em}
+  {}
+
+\theoremstyle{mystyle}
+
+\newtheorem{definition}{\textcolor{main}{\bfseries 定义}}[section]     % 定义类：定义、注
+\newtheorem{example}{\textcolor{main}{\bfseries 例}}[section]          % 例题类：例
+
+%\newtheorem*{solve}{\textcolor{main}{\bfseries 求解}}
+\newenvironment{solve}[1][【求解】]{
+\par\noindent{\textcolor{rouhelanse}{\bfseries #1}}\,
+}{
+    \par\vspace{\baselineskip}
+}
+
+\newenvironment{solution}[1][【证明】]{
+\par\noindent{\textcolor{rouhelanse}{\bfseries #1}}\,
+}{
+    \par\vspace{\baselineskip}
+}
+
+\RequirePackage{xparse}
+
+% 辅助命令：让 \phantom 支持段落换行 (Phantom Patch)
+\newtoks\solutionpatchtoks
+\def\longpatch#1{%
+  \let\myoldmac#1%
+  \long\def#1##1{\solutionpatchtoks={##1}\myoldmac{\the\solutionpatchtoks}}%
+}
+\longpatch{\phantom}
+
+
+
+\newtheorem{theorem}{\textcolor{second}{\bfseries 定理}}[section]        % 定理类：定理、引理、命题、推论
+\newtheorem{lemma}{\textcolor{second}{\bfseries 引理}}[section]
+\newtheorem{corollary}{\textcolor{second}{\bfseries 推论}}[section]
+\newtheorem{axiom}{\textcolor{second}{\bfseries 公理}}[section]
+\newtheorem{postulate}{\textcolor{second}{\bfseries 假设}}[section]
+\newenvironment{remark}[1][注：]{
+\vspace{-0.9\baselineskip}\par\noindent
+\begin{tcolorbox}[colback=cyan!08,colframe=cyan!10,boxrule=0pt,left=0pt,right=0pt,top=0pt,bottom=0pt,enhanced,breakable]
+{\textcolor{second}{\bfseries #1}}\,
+\kaishu\setlength{\parindent}{2em}\setlength{\parskip}{0.5\baselineskip}
+}{
+\end{tcolorbox}
+    \par\vspace{\baselineskip}
+}
+%\newtheorem*{remark}{\textcolor{second}{\bfseries 注}}
+\newenvironment{analysis}[1][【分析】]{
+\par\noindent{\textcolor{chenghongse}{\bfseries #1}}\,
+\kaishu
+}{
+    \par\vspace{0.1\baselineskip}
+}
+%\newtheorem*{analysis}{\textcolor{second}{\bfseries 分析}}
+
+\theoremstyle{mystylekaishu}
+\newtheorem{proposition}{\textcolor{third}{\bfseries 命题}}[section]
+\newtheorem{property}{\textcolor{third}{\bfseries 性质}}[section]
+\theoremstyle{mystyle}
+\newtheorem{conclusion}{\textcolor{third}{\bfseries 结论}}[section]
+
+\newtheorem{exercise}{\textcolor{fourth}{\bfseries 练习}}[section]
+
+% 重新定义计数器显示格式，让编号也显示颜色
+\renewcommand{\thedefinition}{\textcolor{main}{\thesection.\arabic{definition}}}
+\renewcommand{\theexample}{\textcolor{main}{\thesection.\arabic{example}}}
+%\renewcommand{\thesolve}{\textcolor{main}{\thesection.\arabic{solve}}}
+%\renewcommand{\thesolution}{\textcolor{main}{\thesection.\arabic{solution}}}
+
+\renewcommand{\thetheorem}{\textcolor{second}{\thesection.\arabic{theorem}}}
+\renewcommand{\thelemma}{\textcolor{second}{\thesection.\arabic{lemma}}}
+\renewcommand{\thecorollary}{\textcolor{second}{\thesection.\arabic{corollary}}}
+\renewcommand{\theaxiom}{\textcolor{second}{\thesection.\arabic{axiom}}}
+\renewcommand{\thepostulate}{\textcolor{second}{\thesection.\arabic{postulate}}}
+%\renewcommand{\theremark}{\textcolor{remark}{\thesection.\arabic{remark}}}
+%\renewcommand{\theanalysis}{\textcolor{chenghongse}{\thesection.\arabic{analysis}}}
+
+\renewcommand{\theproposition}{\textcolor{third}{\thesection.\arabic{proposition}}}
+\renewcommand{\theproperty}{\textcolor{third}{\thesection.\arabic{property}}}
+\renewcommand{\theconclusion}{\textcolor{third}{\thesection.\arabic{conclusion}}}
+
+\renewcommand{\theexercise}{\textcolor{fourth}{\thesection.\arabic{exercise}}}
+
+%----------------------------------------------------------------------------------
+%  引用与标签系统 (References & Labels)
+%----------------------------------------------------------------------------------
+% 重新定义figref命令，确保与caption格式一致
+%\newcommand{\figref}[1]{\textcolor{structure}{图~\ref{#1}}}
+
+\newcounter{myfigure}[section]  % 按section重置
+\renewcommand{\themyfigure}{\arabic{chapter}.\arabic{section}-\arabic{myfigure}}
+
+% 修改您现有的figref命令 - 修复递归错误
+\newcommand{\figref}[1]{%
+  \textcolor{structure}{\bfseries 图~\ref{fig:#1}}%  % 使用\ref而不是\figref
+}
+
+% 专属图片标签命令
+\newcommand{\figlabel}[1]{%
+  \refstepcounter{myfigure}%
+  \label{fig:#1}%
+}
+
+
+\newcounter{mysection}[chapter]  % 按chapter重置
+\renewcommand{\themysection}{\arabic{chapter}.\arabic{section}}
+
+% 修改您现有的secref命令 - 修复递归错误
+\newcommand{\secref}[1]{%
+  \textcolor{structure}{\bfseries 第\ref{section:#1}节}%  
+}
+
+\newcommand{\seclabel}[1]{%
+  \refstepcounter{mysection}%
+  \label{section:#1}%
+}
+
+\newcounter{mysubsection}[section]  % 按section重置
+\renewcommand{\themysubsection}{\arabic{chapter}.\arabic{section}.\arabic{subsection}}
+
+% 修改您现有的secref命令 - 修复递归错误
+\newcommand{\subsecref}[1]{%
+  \textcolor{structure}{\bfseries 第\ref{subsection:#1}小节}%  
+}
+
+\newcommand{\subseclabel}[1]{%
+  \refstepcounter{mysubsection}%
+  \label{subsection:#1}%
+}
+
+
+\newcommand{\tabref}[1]{\textcolor{structure}{\bfseries 表~\ref{#1}}}
+
+\newcommand{\definitionref}[1]{\textcolor{main}{\bfseries 定义~\ref{#1}}}
+\newcommand{\exampleref}[1]{\textcolor{main}{\bfseries 例~\ref{#1}}}
+
+\newcommand{\theoremref}[1]{\textcolor{second}{\bfseries 定理~\ref{#1}}}
+\newcommand{\lemmaref}[1]{\textcolor{second}{\bfseries 引理~\ref{#1}}}
+\newcommand{\corollaryref}[1]{\textcolor{second}{\bfseries 推论~\ref{#1}}}
+\newcommand{\axiomref}[1]{\textcolor{second}{\bfseries 公理~\ref{#1}}}
+\newcommand{\postulateref}[1]{\textcolor{second}{\bfseries 假设~\ref{#1}}}
+\newcommand{\remarkref}[1]{\textcolor{second}{\bfseries 注~\ref{#1}}}
+
+\newcommand{\propositionref}[1]{\textcolor{third}{\bfseries 命题~\ref{#1}}}
+\newcommand{\propertyref}[1]{\textcolor{third}{\bfseries 性质~\ref{#1}}}
+\newcommand{\conclusionref}[1]{\textcolor{third}{\bfseries 结论~\ref{#1}}}
+
+\newcommand{\exerciseref}[1]{\textcolor{fourth}{\bfseries 练习~\ref{#1}}}
+
+% 这样图片编号就会显示为：图 6.1-3
+
+
+%----------------------------------------------------------------------------------
+%  自定义知识框 (Custom Knowledge Boxes)
+%----------------------------------------------------------------------------------
+% 自定义环境
+\newenvironment{lianxiang}{
+  \begin{tcolorbox}[colback=blue!5,colframe=blue!35,title=知识联想,fonttitle=\bfseries\color{white}]
+}{\end{tcolorbox}}
+
+\newenvironment{insight}{
+  \begin{tcolorbox}[colback=green!5,colframe=green!35,title=深入理解,fonttitle=\bfseries\color{black}]
+}{\end{tcolorbox}}
+
+\newenvironment{history}{
+  \begin{tcolorbox}[colback=yellow!5,colframe=yellow!35,title=历史背景,fonttitle=\bfseries\color{black}]
+}{\end{tcolorbox}}
+
+\newenvironment{application}{
+  \begin{tcolorbox}[colback=purple!5,colframe=purple!35,title=应用实例,fonttitle=\bfseries\color{black}]
+}{\end{tcolorbox}}
+
+\newenvironment{exercise1}{
+  \begin{tcolorbox}[colback=red!5,colframe=red!35,title=思考练习,fonttitle=\bfseries\color{black}]
+}{\end{tcolorbox}}
+
+\newenvironment{summary}{
+  \begin{tcolorbox}[colback=gray!5,colframe=gray!35,title=小结,fonttitle=\bfseries\color{black}]
+}{\end{tcolorbox}}
+
+
+%----------------------------------------------------------------------------------
+%  选择题环境 (Multiple Choice Environment)
+\usepackage{tasks}
+\settasks{label=\Alph*.}
+% 若 max_dim > 0.47\linewidth 单列布局
+% 若 0.31\linewidth < max_dim < 0.47\linewidth 双列布局
+% 若 max_dim < 0.31\linewidth 四列布局
+\ExplSyntaxOn
+\clist_new:N \g_xixi_choice_clist
+\dim_new:N \g_xixi_choice_maxdim
+\int_new:N \l_xixi_choice_fixed_cols_int
+\NewDocumentEnvironment{choices}{ O{0} }{
+    \group_begin:
+    \clist_gclear_new:N \g_xixi_choice_clist
+    \dim_gzero_new:N \g_xixi_choice_maxdim
+    \int_set:Nn \l_xixi_choice_fixed_cols_int { #1 }
+}{
+    \int_compare:nTF { \l_xixi_choice_fixed_cols_int > 0 }
+    {
+        \int_set:Nn \l_tmpa_int { \l_xixi_choice_fixed_cols_int }
+    }
+    {
+        \dim_compare:nTF {\g_xixi_choice_maxdim > .47\textwidth}
+        {
+            \int_set:Nn \l_tmpa_int {1}
+        }{
+            \dim_compare:nTF {\g_xixi_choice_maxdim > .23\linewidth}
+            {
+                \int_set:Nn \l_tmpa_int {2}
+            }
+            {
+                \int_set:Nn \l_tmpa_int {4}
+            }
+        }
+    }
+    % \int_use:N \l_tmpa_int \par
+    % https://tex.stackexchange.com/a/721101/322482 % 感谢egreg老师
+    \tl_clear:N \l_tmpa_tl
+    \clist_map_inline:Nn \g_xixi_choice_clist {  \tl_put_right:Nn \l_tmpa_tl { \task ##1 } }
+    \xixi_task_make:nV { \l_tmpa_int } { \l_tmpa_tl }
+    % \textcolor{red}{The~largest~width~is~\dim_use:N \g_xixi_choice_maxdim!~with~\the\textwidth}\par
+    \group_end:
+}
+\cs_new_protected:Nn \xixi_task_make:nn
+ {
+  \begin{tasks}(#1) #2 \end{tasks}
+ }
+\cs_generate_variant:Nn \xixi_task_make:nn {nV}
+\NewDocumentCommand{\choice}{ m }{
+    \clist_put_right:Nn \g_xixi_choice_clist { { { { #1 } } } }
+    \hbox_set:Nn \l_tmpa_box { { { #1 } } }
+    \dim_set:Nn \l_tmpa_dim { \box_wd:N \l_tmpa_box }
+    % The~{#1}'s~width~is~\the\tmpitemwidth.\par
+    \dim_gset:Nn \g_xixi_choice_maxdim {\dim_max:nn { \g_xixi_choice_maxdim}{\l_tmpa_dim}}
+}
+\ExplSyntaxOff
+
+
+%----------------------------------------------------------------------------------
+%  自定义数学命令 (Custom Math Commands)
+%----------------------------------------------------------------------------------
+% 定义数学指令
+\newcommand\abs[1]{\left|#1\right|}
+\newcommand{\gt}{>}
+\newcommand{\lt}{<}
+\renewcommand{\geq}{\geqslant}
+\renewcommand{\ge}{\geqslant}
+\renewcommand{\leq}{\leqslant}
+\renewcommand{\le}{\leqslant}
+\providecommand{\dps}{\displaystyle}
+\renewcommand\parallel{\mathrel{/\mskip-2.5mu/}}
+\renewcommand{\Re}{\operatorname{Re}}
+\renewcommand{\Im}{\operatorname{Im}}
+
+\newcommand{\circled}[1]{\tikz[baseline=(char.base)]{
+  \node[shape=circle,draw,inner sep=1pt] (char) {#1};}}
+
+%----------------------------------------------------------------------------------
+%  习题与装饰框 (Exercises & Decorative Frames)
+%----------------------------------------------------------------------------------
+% tcolorbox 与题型盒
+\RequirePackage{tcolorbox} % box制作基本宏包
+\RequirePackage{varwidth} % box宽度设置需要
+\tcbuselibrary{breakable} %box内自动折行
+\tcbuselibrary{skins} % 填充等
+
+\newcounter{xiti}
+\numberwithin{xiti}{section}
+
+\NewTColorBox{theobox}{o m +o}{
+enhanced,colframe=huise!5!white,interior empty,
+coltitle=white,fonttitle=\bfseries,colbacktitle=huise,
+extras broken={frame empty,interior empty},
+borderline={0.5mm}{0mm}{huise},
+rounded corners,
+breakable=true,
+top=4mm,
+before skip=3.5mm,
+attach boxed title to top left={yshift=-3mm,xshift=5mm},
+boxed title style={boxrule=0pt,sharp corners=all},varwidth boxed title,
+IfNoValueTF={#1}{title=#2~\thexiti.}{title=#2~\thexiti:~#1},
+IfNoValueTF={#3}{}{#3}
+}
+
+\NewDocumentEnvironment{xiti}{o m +o}{
+\refstepcounter{xiti}\begin{theobox}[#1]{#2}[#3]}{\end{theobox}}
+\NewDocumentEnvironment{xitikuang}{o +d""}{
+\begin{xiti}[#1]{习题}[#2]
+}{\end{xiti}\vspace{1em}}
+
+% 导言区边框
+\usepackage{mdframed}
+\usetikzlibrary{decorations.pathmorphing}
+\mdfdefinestyle{wavy}{
+  linecolor=cyan,
+  linewidth=1pt,
+  backgroundcolor=cyan!5,
+  leftmargin=10pt,
+  rightmargin=10pt,
+  innerleftmargin=10pt,
+  innerrightmargin=10pt,
+  innertopmargin=10pt,
+  innerbottommargin=10pt,
+  tikzsetting={draw=cyan,line width=1pt,decoration={snake,amplitude=1.5mm,segment length=4mm},decorate}
+}
+\newmdenv[style=wavy]{waveframe}
+
+% 自动增加行内间距
+\newif\ifsmartdfrac
+\smartdfractrue
+% \smartdfracfalse
+
+\ifsmartdfrac
+\newlength{\myheight}
+\newlength{\mydepth}
+\NewCommandCopy\olddfrac\dfrac
+\RenewDocumentCommand\dfrac{ m m }{%
+  \settoheight{\myheight}{$\olddfrac{#1}{#2}$}%
+  \settodepth{\mydepth}{$\olddfrac{#1}{#2}$}%
+  \raisebox{0pt}[1.1\myheight][1.1\mydepth]{$\olddfrac{#1}{#2}$}%
+}\else\fi
+
+
+%----------------------------------------------------------------------------------
+%  题目环境与多模式支持 (Problem Environment & Multi-mode Support)
+%----------------------------------------------------------------------------------
+% 模式开关：默认按年份（Mode A），开启后按板块（Mode B）
+\newif\ifByTopic
+\ByTopicfalse 
+\newcommand{\CurrentTopic}{}
+
+% 辅助命令：判断字符串是否相等
+\ExplSyntaxOn
+\cs_new:Npn \IfStringEqualTF #1 #2 {
+  \str_if_eq:eeTF { #1 } { #2 }
+}
+\ExplSyntaxOff
+
+% 定义 problem 环境
+% 参数：{年份}{类型}{试卷名}{题号}{板块}
+\NewDocumentEnvironment{problem}{ m m m m m +b }{
+  \ifByTopic
+    % Mode B: 仅当当前板块匹配时显示（用于按板块重组文档）
+    \IfStringEqualTF{#5}{\CurrentTopic}{
+      \par\noindent
+      \textbf{【#1~~#3，#4】}\par
+      #6
+      \par\vspace{\baselineskip}
+    }{}
+  \else
+    % Mode A: 正常显示所有题目（用于按年份/试卷文档）
+    \par\noindent
+    \textbf{【#1~~#3，#4】}\par
+    #6
+    \par\vspace{\baselineskip}
+  \fi
+}{}
+

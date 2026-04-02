@@ -1,0 +1,136 @@
+\documentclass[12pt,UTF-8]{MathCyclus_book}
+
+% ==================================================
+% 答案显示模式设置
+% 0: 正常显示答案 (Show Answer)
+% 1: 隐藏答案但保留篇幅空白 (Phantom Space)
+% 2: 隐藏答案并保留固定空白 (Fixed Space)
+% 3: 完全隐藏答案不留白 (No Space)
+\def\solutionmode{0} %在此处修改数字即可切换模式
+
+\NewDocumentEnvironment{solutions}{ O{【答案】} O{} O{} +b }{%
+  \ifcase\solutionmode\relax
+    % Mode 0: 正常显示
+    \par\noindent{\textcolor{main}{\bfseries \if\relax\detokenize{#1}\relax 【答案】\else #1\fi}}\,%
+    #4%
+    \par\vspace{\baselineskip}%
+  \or
+    % Mode 1: 留白篇幅长度
+    \par\noindent{\textcolor{main}{\bfseries \if\relax\detokenize{#1}\relax 【答案】\else #1\fi}}\,%
+    \phantom{%
+      \parbox[t]{\linewidth}{%
+         \renewenvironment{figure}[1][]{\center\captionsetup{type=figure}}{\endcenter}%
+         \renewenvironment{table}[1][]{\center\captionsetup{type=table}}{\endcenter}%
+         #4%
+      }%
+    }%
+    \par\vspace{\baselineskip}%
+  \or
+    % Mode 2: 留白固定长度 (默认 5cm，可按需调整)
+    \par\noindent{\textcolor{main}{\bfseries \if\relax\detokenize{#1}\relax 【答案】\else #1\fi}}\,%
+    \vspace*{5cm}%
+    \par\vspace{\baselineskip}%
+  \or
+    % Mode 3: 不留白 (什么都不显示)
+    % Do nothing
+  \fi
+}{}
+
+% ==================================================
+
+
+% ==================================================
+% 自动替换 \left( \right) 为 ( ) 和 \left[ \right] 为 [ ]
+% 保持其他 delimiter 的 \left \right 行为不变
+% ==================================================
+\let\oldleft\left
+\let\oldright\right
+\def\left#1{%
+  \ifx#1(\mathopen{(}\else
+  \ifx#1[\mathopen{[}\else
+  \oldleft#1\fi\fi}
+\def\right#1{%
+  \ifx#1)\mathclose{)}\else
+  \ifx#1]\mathclose{]}\else
+  \oldright#1\fi\fi}
+
+% 标题设置
+
+\title{高中数学思维体系}
+\author{槿灵兮}
+\date{\today}
+
+\begin{document}
+
+
+
+\thispagestyle{nohf}
+\includepdf[pages=1,fitpaper=true]{cover/cover.pdf}
+
+%\cleardoublepage  % 确保下一页从奇数页开始
+% 添加超链接选项以避免PDF字符串中的令牌错误
+
+
+\thispagestyle{nohf}
+\clearpage
+\tableofcontents
+\thispagestyle{nohf}
+\newpage
+
+\setcounter{page}{1}
+
+
+\chapter{集合}
+\input{chapters/集合/content_集合}
+
+\chapter{复数}
+\input{chapters/复数/content_复数}
+
+\chapter{不等式}
+\input{chapters/不等式/content_不等式}
+
+\chapter{函数}
+\input{chapters/函数/content_函数}
+
+\chapter{概率}
+\input{chapters/概率/content_概率}
+
+\chapter{统计}
+\input{chapters/统计/content_统计}
+
+\chapter{排列组合}
+\input{chapters/排列组合/content_排列组合}
+
+\chapter{圆锥曲线}
+\input{chapters/圆锥曲线/content_圆锥曲线}
+
+\chapter{解三角形}
+\input{chapters/解三角形/content_解三角形}
+
+\chapter{三角函数}
+\input{chapters/三角函数/content_三角函数}
+
+\chapter{立体几何}
+\input{chapters/立体几何/content_立体几何}
+
+\chapter{向量}
+\input{chapters/向量/content_向量}
+
+\chapter{数列}
+\input{chapters/数列/content_数列}
+
+\chapter{导数}
+\input{chapters/导数/content_导数}
+
+\chapter{线性规划}
+\input{chapters/线性规划/content_线性规划}
+
+\chapter{数论}
+\input{chapters/数论/content_数论}
+
+\chapter{命题与逻辑}
+\input{chapters/命题与逻辑/content_命题与逻辑}
+
+
+
+\end{document}
