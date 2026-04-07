@@ -1,0 +1,11 @@
+﻿id: math_005
+type: choice
+content: 函数 $f(x)=e^x$ 的导数为
+options:
+  A: $xe^x$
+  B: $e^x$
+  C: $\ln x$
+  D: $x^{e}$
+answer: B
+analysis: 指数函数 $e^x$ 的导数仍为 $e^x$。
+metadata: {}

@@ -1,0 +1,10 @@
+id: math_020
+type: reasoning
+content: '证明：对任意实数 $a,b$，有
+
+  $(a-b)^2 \ge 0$。'
+answer: '$(a-b)^2\\ge 0$。展开得 $a^2-2ab+b^2\\ge 0$，故命题成立。
+
+  '
+analysis: 平方恒非负。
+metadata: {}

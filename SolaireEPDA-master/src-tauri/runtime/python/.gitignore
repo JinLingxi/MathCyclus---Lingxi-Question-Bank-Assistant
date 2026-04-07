@@ -1,0 +1,4 @@
+# 忽略嵌入式 Python 生成内容；保留 README.txt 供 Tauri resources glob 匹配
+*
+!README.txt
+!.gitignore

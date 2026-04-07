@@ -1,0 +1,7 @@
+\begin{tikzpicture}[scale=1.5]
+    \draw (0,0) circle (1);
+    \foreach \i in {0, 60, ..., 300}
+        \draw (0,0) -- (\i:1);
+    \foreach \i in {0, 60, ..., 300}
+        \fill (\i:1) circle (1pt);
+\end{tikzpicture}

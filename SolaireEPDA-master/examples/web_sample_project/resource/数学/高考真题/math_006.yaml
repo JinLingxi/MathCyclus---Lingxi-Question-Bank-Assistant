@@ -1,0 +1,11 @@
+﻿id: math_006
+type: choice
+content: 若向量 $\vec a=(1,2)$，$\vec b=(2,1)$，则 $\vec a \cdot \vec b=$
+options:
+  A: $3$
+  B: $4$
+  C: $5$
+  D: $2$
+answer: B
+analysis: $1\times2+2\times1=4$。
+metadata: {}

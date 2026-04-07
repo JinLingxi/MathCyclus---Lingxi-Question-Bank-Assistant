@@ -1,0 +1,6 @@
+id: math_015
+type: fill
+content: 若 $\sin^2 x+\cos^2 x=$ $\underline{\qquad}$
+answer: $1$
+analysis: 三角恒等式。
+metadata: {}

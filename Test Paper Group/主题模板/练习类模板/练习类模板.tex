@@ -751,7 +751,18 @@ IfNoValueTF={#3}{}{#3}
     % Mode 3: 不留白 (什么都不显示) 
     % Do nothing 
   \fi 
-}{} 
+}{}
+
+\NewDocumentEnvironment{answer}{ O{【答案】} O{} O{} +b }{%
+  \ifcase\solutionmode\relax
+    % Mode 0: 正常显示
+    \par\noindent{\textcolor{main}{\bfseries \if\relax\detokenize{#1}\relax 【答案】\else #1\fi}}\,%
+    #4%
+    \par\vspace{\baselineskip}%
+  \or
+    % Mode 1: 不留白 (什么都不显示)
+  \fi
+}{}
 
 % ==================================================
 

@@ -1,0 +1,119 @@
+% === Begin Label Data ===
+% ID: 169
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2016}{G}{浙江卷（文、理）}{6}{数列}
+如图, 点列 $\{A_n\}, \{B_n\}$ 分别在某锐角的两边上, 且 $|A_nA_{n+1}|=|A_{n+1}A_{n+2}|, A_n \ne A_{n+2}, n \in \mathbf{N}^*, |B_nB_{n+1}|=|B_{n+1}B_{n+2}|, B_n \ne B_{n+2}, n \in \mathbf{N}^*$. ($P \ne Q$ 表示点 $P$ 与 $Q$ 不重合) 若 $d_n=|A_nB_n|, S_n$ 为 $\triangle A_nB_nB_{n+1}$ 的面积, 则 (\hspace{1cm})
+\begin{choices}
+\choice{{$\{S_n\}$ 是等差数列}}
+\choice{{$\{S_n^2\}$ 是等差数列}}
+\choice{{$\{d_n\}$ 是等差数列}}
+\choice{{$\{d_n^2\}$ 是等差数列}}
+\end{choices}
+\end{problem}
+
+\begin{center}
+\begin{tikzpicture}[scale=1.0, >=stealth]
+    \usetikzlibrary{patterns}
+    % 定义坐标
+    % 下方点 B (改为水平线)
+    \coordinate (B1) at (0, 0);
+    \coordinate (B2) at (1.5, 0);
+    \coordinate (B3) at (3.0, 0);
+    % 中间省略部分跨度 (距离减半，原为3.0，现为1.5)
+    \coordinate (Bn) at (4.5, 0);
+    \coordinate (Bn1) at (6.0, 0);
+
+    % 上方点 A (A系列点搞紧凑一点，x坐标间隔减小，且往右上角微调)
+    % A1 往右上角微调
+    \coordinate (A1) at (1.0, 2.7);
+    % A2
+    \coordinate (A2) at (2.0, 2.9); 
+    % A3
+    \coordinate (A3) at (3.0, 3.1);
+    
+    % An 
+    \coordinate (An) at (4.5, 3.4);
+    % An+1 在 Bn+1 左上角 (Bn+1在6.0, An+1 x坐标要小于6.0)
+    \coordinate (An1) at (5.5, 3.6);
+
+    % 绘制两条主直线 (延伸出一点)
+    \draw[thick] (-0.5, 0) -- (7.0, 0); % 下方直线 (水平)
+    % 上方直线需要穿过 A 点
+    % 斜率 k = (3.6 - 2.7) / (5.5 - 1.0) = 0.9 / 4.5 = 0.2
+    % y - 2.7 = 0.2 * (x - 1.0) => y = 0.2x + 2.5
+    % x = -0.5 => y = 2.4
+    % x = 7.0 => y = 3.9
+    \draw[thick] (-0.5, 2.4) -- (7.0, 3.9);   % 上方直线
+
+    % 绘制三角形 S1
+    \draw[thick] (A1) -- (B1);
+    \draw[thick] (A1) -- (B2);
+    \fill[pattern=north east lines, pattern color=black] (A1) -- (B1) -- (B2) -- cycle;
+    \node at ($(A1)!0.7!($(B1)!0.5!(B2)$)$) {$S_1$};
+
+    % 绘制三角形 S2
+    \draw[thick] (A2) -- (B2);
+    \draw[thick] (A2) -- (B3);
+    \fill[pattern=north east lines, pattern color=black] (A2) -- (B2) -- (B3) -- cycle;
+    \node at ($(A2)!0.7!($(B2)!0.5!(B3)$)$) {$S_2$};
+
+    % 绘制 A3-B3 线段 (不形成完整三角形，因为后面是省略号)
+    \draw[thick] (A3) -- (B3);
+
+    % 绘制三角形 Sn
+    \draw[thick] (An) -- (Bn);
+    \draw[thick] (An) -- (Bn1);
+    \fill[pattern=north east lines, pattern color=black] (An) -- (Bn) -- (Bn1) -- cycle;
+    \node at ($(An)!0.7!($(Bn)!0.5!(Bn1)$)$) {$S_n$};
+
+    % 绘制 An+1 - Bn+1 线段
+    \draw[thick] (An1) -- (Bn1);
+
+    % 标注点 A
+    \node[above] at (A1) {$A_1$};
+    \node[above] at (A2) {$A_2$};
+    \node[above] at (A3) {$A_3$};
+    \node[above] at (An) {$A_n$};
+    \node[above] at (An1) {$A_{n+1}$};
+    \node[above] at (6.7, 4) {$\cdots$}; % 上方直线的省略号
+    \node at (3.8, 3.4) {$\cdots$}; % A3和An之间的省略号
+    \node at (6.7, 1) {$\cdots$}; % 中间直线的省略号
+
+    % 标注点 B
+    \node[below] at (B1) {$B_1$};
+    \node[below] at (B2) {$B_2$};
+    \node[below] at (B3) {$B_3$}; 
+    
+    \node[below] at (Bn) {$B_n$};
+    \node[below] at (Bn1) {$B_{n+1}$};
+    \node at (6.7, -0.3) {$\cdots$}; % 下方直线的省略号
+    \node at (3.75, -0.3) {$\cdots$}; % B3和Bn之间的省略号
+
+    % 中间的省略号
+    \node at (3.75, 1.0) {$\cdots$};
+
+\end{tikzpicture}
+\end{center}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+设  $S_n$ 为 $\triangle A_nB_nB_{n+1}$ 的面积，为点 $A_n$ 到对面直线的距离（设为 $h_n$）乘以 $|B_nB_{n+1}|$ 长度一半，即 $S_n = \dfrac{1}{2}h_n|B_nB_{n+1}|$，由题目中条件可知 $|B_nB_{n+1}|$ 的长度为定值，那么我们需要知道 $h_n$ 的关系式.
+
+过 $A_1$ 作垂直得到初始距离 $h_1$，那么 $A_1, A_n$ 和两个垂足构成了直角梯形，那么
+$h_n = h_1 + |A_1A_n| \cdot \sin\theta$，其中 $\theta$ 为两条线的夹角，即为定值.
+
+那么 $S_n = \dfrac{1}{2}(h_1 + |A_1A_n| \cdot \sin\theta)|B_nB_{n+1}|$，
+$S_{n+1} = \dfrac{1}{2}(h_1 + |A_1A_{n+1}| \cdot \sin\theta)|B_nB_{n+1}|$，
+
+作差后：$S_{n+1} - S_n = \dfrac{1}{2}(|A_nA_{n+1}| \cdot \sin\theta)|B_nB_{n+1}|$，都为定值.
+
+所以 $S_{n+1} - S_n$ 为定值. 故选 A.
+\end{solutions}

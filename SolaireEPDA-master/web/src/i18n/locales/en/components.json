@@ -1,0 +1,75 @@
+{
+  "bankEditor": {
+    "storage": "Storage: {{kind}} · {{path}}",
+    "close": "Close",
+    "save": "Save",
+    "tabForm": "Fields",
+    "tabYaml": "File source",
+    "groupHint": "Groups live in one file; saving writes it back. Id {{id}} is only used for the preview panel.",
+    "groupRootId": "Group root id",
+    "unified": "Sub-item mode (mixed or same type)",
+    "mixedOpt": "Mixed",
+    "sharedLatex": "Shared material",
+    "insertMath": "Insert equation",
+    "insertDiagram": "Diagram",
+    "insertImageTitle": "Insert image",
+    "image": "Image",
+    "addSub": "Add sub-item",
+    "removeLastSub": "Remove last sub-item",
+    "subItem": "Sub-item {{n}}",
+    "contentLatex": "Stem",
+    "fieldContent": "Stem",
+    "fieldAnswer": "Answer",
+    "fieldAnalysis": "Analysis",
+    "fieldType": "Type",
+    "fieldId": "Question id",
+    "tagsCustomFields": "Tags and extra fields",
+    "keyPh": "Name",
+    "valuePh": "Value",
+    "addField": "Add row",
+    "saveHintGroup": "Save on Fields updates the group; save on this tab writes the whole file (same as the bank folder on disk).",
+    "saveHintSingle": "Save writes the question back to its file."
+  },
+  "mermaidModal": {
+    "title": "Mermaid / diagram",
+    "previewFail": "Preview failed (you can still insert source; PDF export needs mmdr locally)",
+    "newNodeLabel": "New node",
+    "promptNodeText": "Node text",
+    "notSimpleFlow": "Not a simple flowchart TD/LR; use the canvas to drag nodes and edges, or edit source on the left.",
+    "intro": "Left: source; right: live preview. Drag nodes, connect from handles, double-click to rename, <kbd class=\"rounded bg-slate-100 px-1\">Delete</kbd> removes selection. Inserts a fenced diagram block (PDF needs mmdr).",
+    "source": "Source",
+    "syncToSource": "Sync canvas → source",
+    "livePreview": "Live preview (mermaid.js)",
+    "canvasTitle": "Canvas (drag to build)",
+    "direction": "Direction",
+    "td": "Top-down TD",
+    "lr": "Left-right LR",
+    "addNode": "Add node",
+    "cancel": "Cancel",
+    "insert": "Insert into question"
+  },
+  "contentPb": {
+    "renderErr": "Could not render content",
+    "mermaidErr": "Diagram failed to render (check syntax)"
+  },
+  "mathOverlay": {
+    "title": "Insert equation",
+    "hint": "Edit below; on confirm inserts inline math ($...$) at the cursor.",
+    "cancel": "Cancel",
+    "insert": "Insert"
+  },
+  "choiceFields": {
+    "optionsLatex": "Options",
+    "insertMath": "Insert equation",
+    "insertDiagram": "Diagram",
+    "image": "Image",
+    "remove": "Remove",
+    "addKey": "+ Add option (e.g. E, F)",
+    "jsonAdvanced": "Structured edit (advanced)",
+    "jsonHint": "Paste structured text; if it is invalid, the form above is kept."
+  },
+  "helpMermaid": {
+    "edit": "Edit",
+    "exportSvg": "Export SVG"
+  }
+}

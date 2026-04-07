@@ -1,0 +1,58 @@
+% === Begin Label Data ===
+% ID: 196
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{上海卷（文）}{23}{数列}
+对于项数为 $m$ 的有穷数列 $\{a_n\}$, 记 $b_k = \max \{a_1, a_2, \cdots, a_k\}$ ($k=1, 2, \cdots, m$), 即 $b_k$ 为 $a_1, a_2, \cdots, a_k$ 中的最大值, 并称数列 $\{b_n\}$ 是 $\{a_n\}$ 的控制数列, 如 1, 3, 2, 5, 5 的控制数列是 1, 3, 3, 5, 5.
+
+（1） 若各项均为正整数的数列 $\{a_n\}$ 的控制数列为 2, 3, 4, 5, 5, 写出所有的 $\{a_n\}$
+
+（2） 设 $\{b_n\}$ 是 $\{a_n\}$ 的控制数列, 满足 $a_k + b_{m-k+1} = C$ ($C$ 为常数, $k=1, 2, \cdots, m$), 求证: $b_k = a_k$ ($k=1, 2, \cdots, m$)
+
+（3） 设 $m=100$, 常数 $a \in \left(\dfrac{1}{2}, 1\right)$, 若 $a_n = a n^2 - (-1)^{\frac{n(n+1)}{2}} n$, $\{b_n\}$ 是 $\{a_n\}$ 的控制数列, 求 $(b_1 - a_1) + (b_2 - a_2) + \cdots + (b_{100} - a_{100})$
+\end{problem}
+
+\begin{solutions}
+（1） 数列 $\{a_n\}$ 为: 2, 3, 4, 5, 1;\quad 2, 3, 4, 5, 2;\quad 2, 3, 4, 5, 3;\quad 2, 3, 4, 5, 4;\quad 
+
+2, 3, 4, 5, 5. \hfill $\cdots\cdots 4$ 分
+
+（2） 因为 $b_k = \max \{a_1, a_2, \cdots, a_k\}$, $b_{k+1} = \max \{a_1, a_2, \cdots, a_k, a_{k+1}\}$.
+
+所以 $b_{k+1} \ge b_k$. \hfill $\cdots\cdots 6$ 分
+
+因为 $a_k + b_{m-k+1} = C$, $a_{k+1} + b_{m-k} = C$.
+
+所以 $a_{k+1} - a_k = b_{m-k+1} - b_{m-k} \ge 0$, 即 $a_{k+1} \ge a_k$. \hfill $\cdots\cdots 8$ 分
+
+因此, $b_k = a_k$. \hfill $\cdots\cdots 10$ 分
+
+（3） 对 $k=1, 2, \cdots, 25$,
+
+$a_{4k-3} = a(4k-3)^2 + (4k-3)$;\quad   $a_{4k-2} = a(4k-2)^2 + (4k-2)$;
+
+$a_{4k-1} = a(4k-1)^2 - (4k-1)$;\quad   $a_{4k} = a(4k)^2 - (4k)$. \hfill $\cdots\cdots 12$ 分
+
+比较大小, 可得 $a_{4k-2} > a_{4k-3}$.
+
+因为 $\dfrac{1}{2} < a < 1$, 所以 $a_{4k-1} - a_{4k-2} = (a-1)(8k-3) < 0$, 即 $a_{4k-2} > a_{4k-1}$;
+
+$a_{4k} - a_{4k-2} = 2(2a-1)(4k-1) > 0$, 即 $a_{4k} > a_{4k-2}$.
+
+又 $a_{4k+1} > a_{4k}$.
+
+从而 $b_{4k-3} = a_{4k-3}$, $b_{4k-2} = a_{4k-2}$, $b_{4k-1} = a_{4k-2}$, $b_{4k} = a_{4k}$. \hfill $\cdots\cdots 15$ 分
+
+因此 
+\begin{align*}
+& (b_1 - a_1) + (b_2 - a_2) + \cdots + (b_{100} - a_{100})  \\
+=& (a_2 - a_3) + (a_6 - a_7) + \cdots + (a_{98} - a_{99})   \\ 
+=& \sum_{k=1}^{25} (a_{4k-2} - a_{4k-1})\\
+=& (1-a) \sum_{k=1}^{25} (8k-3) = 2525(1-a).
+\end{align*}
+ \hfill $\cdots\cdots 18$ 分
+\end{solutions}

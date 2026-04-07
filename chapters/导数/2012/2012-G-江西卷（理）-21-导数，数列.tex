@@ -1,0 +1,60 @@
+% === Begin Label Data ===
+% ID: 278
+% 难度星级: 4
+% 标签: 新定义
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{江西卷（理）}{21}{导数，数列}
+若函数 $h(x)$ 满足  
+① $h(0)=1$, $h(1)=0$;  
+② 对任意 $a\in[0,1]$, 有 $h(h(a))=a$;  
+③ 在 $(0,1)$ 上单调递减.  
+
+则称 $h(x)$ 为补函数. 已知函数 $h(x)=\left(\dfrac{1-x^p}{1+\lambda x^p}\right)^{\frac{1}{p}}$ ($\lambda>-1$, $p>0$).
+
+（1）判断函数 $h(x)$ 是否为补函数，并证明你的结论；
+
+（2）若存在 $m\in[0,1]$，使 $h(m)=m$，称 $m$ 是函数 $h(x)$ 的中介元. 记 $p=\dfrac{1}{n}$ ($n\in\mathbb{N}_+$) 时 $h(x)$ 的中介元为 $x_n$，且 $S_n=\sum\limits_{i=1}^{n}x_i$，若对任意的 $n\in\mathbb{N}_+$，都有 $S_n<\dfrac{1}{2}$，求 $\lambda$ 的取值范围；
+
+（3）当 $\lambda=0$, $x\in(0,1)$ 时，函数 $y=h(x)$ 的图像总在直线 $y=1-x$ 的上方，求 $p$ 的取值范围.
+\end{problem}
+
+\begin{solutions}
+(1) 函数 $h(x)$ 是补函数，证明如下：
+① $h(0)=\left(\dfrac{1-0}{1+0}\right)^{\frac{1}{p}}=1, h(1)=\left(\dfrac{1-1}{1+\lambda}\right)^{\frac{1}{p}}=0$；
+② 对任意 $a \in [0,1]$，有
+$$
+h(h(a))=h\left(\left(\dfrac{1-a^p}{1+\lambda a^p}\right)^{\frac{1}{p}}\right)=\left(\dfrac{1-\dfrac{1-a^p}{1+\lambda a^p}}{1+\lambda \dfrac{1-a^p}{1+\lambda a^p}}\right)^{\frac{1}{p}}=\left(\dfrac{(1+\lambda)a^p}{1+\lambda}\right)^{\frac{1}{p}}=a.
+$$
+③ 令 $g(x)=(h(x))^p$，有 $g'(x)=\dfrac{-px^{p-1}(1+\lambda x^p)-(1-x^p)\lambda p x^{p-1}}{(1+\lambda x^p)^2}=\dfrac{-p(1+\lambda)x^{p-1}}{(1+\lambda x^p)^2}$。
+因为 $\lambda > -1, p > 0$，所以当 $x \in (0,1)$ 时，$g'(x) < 0$，所以函数 $g(x)$ 在 $(0,1)$ 上单调递减，故函数 $h(x)$ 在 $(0,1)$ 上单调递减。
+
+(2) 当 $p=\dfrac{1}{n} (n \in \mathbf{N}_+)$ 时，由 $h(x)=x$，得：$\lambda x^{\frac{2}{n}} + 2x^{\frac{1}{n}} - 1 = 0 \quad (*)$。
+
+(i) 当 $\lambda=0$ 时，中介元 $x_n=\left(\dfrac{1}{2}\right)^n$；
+
+(ii) 当 $\lambda > -1$ 且 $\lambda \neq 0$ 时，由 $(*)$ 得 $x^{\frac{1}{n}}=\dfrac{1}{\sqrt{1+\lambda}+1} \in (0,1)$ 或 $x^{\frac{1}{n}}=\dfrac{1}{1-\sqrt{1+\lambda}} \notin [0,1]$；
+
+得中介元 $x_n=\left(\dfrac{1}{\sqrt{1+\lambda}+1}\right)^n$。
+综合(i)(ii)：对任意的 $\lambda > -1$，中介元为 $x_n=\left(\dfrac{1}{\sqrt{1+\lambda}+1}\right)^n (n \in \mathbf{N}_+)$。
+于是，当 $\lambda > -1$ 时，
+有 $S_n=\sum\limits_{i=1}^n \left(\dfrac{1}{\sqrt{1+\lambda}+1}\right)^i = \dfrac{1}{\sqrt{1+\lambda}}\left[1-\left(\dfrac{1}{\sqrt{1+\lambda}+1}\right)^n\right] < \dfrac{1}{\sqrt{1+\lambda}}$。
+当 $n$ 无限增大时，$\left(\dfrac{1}{\sqrt{1+\lambda}+1}\right)^n$ 无限接近于 $0$，$S_n$ 无限接近于 $\dfrac{1}{\sqrt{1+\lambda}}$，
+故对任意的 $n \in \mathbf{N}_+$，$S_n < \dfrac{1}{2}$ 成立等价于 $\dfrac{1}{\sqrt{1+\lambda}} \leqslant \dfrac{1}{2}$，即 $\lambda \in [3, +\infty)$。
+
+(3) 当 $\lambda=0$ 时，$h(x)=(1-x^p)^{\frac{1}{p}}$，中介元为 $x_p=\left(\dfrac{1}{2}\right)^{\frac{1}{p}}$。
+
+(i) 当 $0 < p \leqslant 1$ 时，$\dfrac{1}{p} \geqslant 1$，中介元为 $x_p=\left(\dfrac{1}{2}\right)^{\frac{1}{p}} \leqslant \dfrac{1}{2}$，
+
+所以点 $(x_p, h(x_p))$ 不在直线 $y=1-x$ 的上方，不符合条件；
+
+(ii) 当 $p > 1$ 时，依题意只需 $(1-x^p)^{\frac{1}{p}} > 1-x$ 在 $x \in (0,1)$ 时恒成立，
+也即 $x^p+(1-x)^p < 1$ 在 $x \in (0,1)$ 时恒成立。
+
+设 $\varphi(x)=x^p+(1-x)^p, x \in [0,1]$，则 $\varphi'(x)=p[x^{p-1}-(1-x)^{p-1}]$。
+由 $\varphi'(x)=0$ 得 $x=\dfrac{1}{2}$，且当 $x \in \left(0,\dfrac{1}{2}\right)$ 时，$\varphi'(x) < 0$，当 $x \in \left(\dfrac{1}{2},1\right)$ 时，$\varphi'(x) > 0$。
+又因为 $\varphi(0)=\varphi(1)=1$，所以当 $x \in (0,1)$ 时，$\varphi(x) < 1$ 恒成立。
+综上：$p$ 的取值范围是 $(1, +\infty)$。
+\end{solutions}

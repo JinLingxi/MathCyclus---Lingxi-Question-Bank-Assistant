@@ -1,0 +1,58 @@
+% === Begin Label Data ===
+% ID: 246
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{江苏南京市、盐城市2026届高三年级第一次模拟考试}{11}{解三角形}
+在 $\triangle ABC$ 中，角 $A,B,C$ 所对的边分别为 $a,b,c$．已知 $a=2\sqrt{2}\sin A$，三角形的面积为 2，下列说法正确的是
+(\hspace{1cm})
+\begin{choices}
+\choice{{$abc=8\sqrt{2}$}}
+\choice{{ $a^2+b^2\ge c^2$}}
+\choice{{当 $a$ 最小时，$\sin A+\sin A\cos A=1$ }}
+\choice{{当 $a=b$ 时，$\sin A+\sin B=\sqrt{2}\sin C$}}
+\end{choices}
+
+\begin{solution}
+对于选项 A：
+由面积公式 $S=\dfrac{1}{2}ab\sin C=2$，得 $ab\sin C=4$.
+由正弦定理 $\dfrac{a}{\sin A}=\dfrac{b}{\sin B}=\dfrac{c}{\sin C}=2\sqrt{2}$，可得 $\sin C=\dfrac{c}{2\sqrt{2}}$.
+代入前式得 $ab \cdot \dfrac{c}{2\sqrt{2}}=4$，解得 $abc=8\sqrt{2}$. 故 A 正确。
+
+对于选项 B：
+由 $ab\sin C=4$ 且 $\sin C \leqslant 1$，必有 $ab \geqslant 4$.
+又 $c = \dfrac{abc}{ab} = \dfrac{8\sqrt{2}}{ab} \implies c^2 = \dfrac{128}{(ab)^2}$.
+利用基本不等式放缩：
+$$
+a^2+b^2-c^2 \geqslant 2ab-\dfrac{128}{(ab)^2} \geqslant 2(4)-\dfrac{128}{4^2} = 8-8 = 0.
+$$
+即 $a^2+b^2 \geqslant c^2$. 故 B 正确。
+
+对于选项 C：
+由正弦定理，$a$ 最小等价于 $\sin A$ 最小。
+将 $a=2\sqrt{2}\sin A, b=2\sqrt{2}\sin B, c=2\sqrt{2}\sin C$ 代入 $abc=8\sqrt{2}$，得：
+$$
+16\sqrt{2}\sin A\sin B\sin C=8\sqrt{2} \implies 2\sin A\sin B\sin C=1.
+$$
+利用积化和差与 $B+C=\pi-A$ 进行变形：
+$$
+\sin A[\cos(B-C)-\cos(B+C)] = \sin A[\cos(B-C)+\cos A] = 1.
+$$
+由于 $\cos(B-C) \leqslant 1$，必然有 $\sin A(1+\cos A) \geqslant 1$，即 $\sin A+\sin A\cos A \geqslant 1$.
+设 $g(x)=\sin x+\sin x\cos x-1$，求导得 $g'(x)=(\cos x+1)(2\cos x-1)$.
+可知 $g(x)$ 在 $\left(0,\dfrac{\pi}{3}\right)$ 单调递增，在 $\left(\dfrac{\pi}{3},\dfrac{\pi}{2}\right]$ 单调递减，且 $g(0)=-1, g\left(\dfrac{\pi}{2}\right)=0$。
+故在 $\left(0,\dfrac{\pi}{2}\right)$ 内存在唯一极小根 $x_0$ 使 $g(x_0)=0$。此时 $\sin A$ 取到满足条件的最小值。
+故当 $a$ 最小时，等号成立，必有 $\sin A+\sin A\cos A=1$. 故 C 正确。
+
+对于选项 D：
+若 $a=b$，则 $A=B$。同理于 C 的推导，剥离变量 $C$ 必有 $\sin C(1+\cos C)=1$.
+由上述函数性质知，$C$ 的解为 $C=x_0$（某锐角）或 $C=\dfrac{\pi}{2}$.
+若 D 选项成立，则 $2\sin A=\sqrt{2}\sin C \implies 2a=\sqrt{2}c \implies c^2=2a^2=a^2+b^2$.
+这要求 $C$ 必须恒为 $\dfrac{\pi}{2}$。但这忽略了方程还有锐角根 $C=x_0$ 的情况，此时 $D$ 选项的等式不成立。故 D 错误。
+
+综上所述，正确的选项为 A、B、C。
+\end{solution}
+\end{problem}

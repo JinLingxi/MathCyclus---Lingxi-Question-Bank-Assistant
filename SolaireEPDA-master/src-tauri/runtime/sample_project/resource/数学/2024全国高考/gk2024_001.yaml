@@ -1,0 +1,12 @@
+id: gk2024_001
+type: choice
+content: 已知集合$A=\left\{x\mid-5<x^3<5\right\}$， $B=\left\{-3,-1,0,2,3\right\}$，则$A\cap
+  B=$
+options:
+  A: $\{-1,0\}$
+  B: $\{2,3\}$
+  C: $\{-3,-1,0\}$
+  D: $\{-1,0,2\}$
+answer: A
+analysis: 略
+metadata: {}

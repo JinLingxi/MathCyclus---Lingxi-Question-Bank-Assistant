@@ -1,0 +1,37 @@
+exam_id: gaokao2024_math_ref
+template_ref: gaokao2024_math
+metadata:
+  title: 数学
+  school: 2024年普通高等学校招生全国统一考试
+template_path: templates/gaokao2024.yaml
+question_libraries:
+  - path: resource/gaokao2024
+    namespace: gk
+selected_items:
+  - section_id: 一、选择题
+    question_ids:
+      - gk/gk2024_001
+      - gk/gk2024_002
+      - gk/gk2024_003
+      - gk/gk2024_004
+      - gk/gk2024_005
+      - gk/gk2024_006
+      - gk/gk2024_007
+      - gk/gk2024_008
+  - section_id: 二、选择题
+    question_ids:
+      - gk/gk2024_009
+      - gk/gk2024_010
+      - gk/gk2024_011
+  - section_id: 三、填空题
+    question_ids:
+      - gk/gk2024_012
+      - gk/gk2024_013
+      - gk/gk2024_014
+  - section_id: 四、解答题
+    question_ids:
+      - gk/gk2024_015
+      - gk/gk2024_016
+      - gk/gk2024_017
+      - gk/gk2024_018
+      - gk/gk2024_019

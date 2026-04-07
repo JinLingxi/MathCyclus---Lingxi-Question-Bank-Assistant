@@ -1,0 +1,12 @@
+template_id: demo_math_v1
+layout: single_column
+latex_base: exam-zh-base.tex.j2
+sections:
+  - section_id: section_choice
+    type: choice
+    required_count: 2
+    score_per_item: 5
+  - section_id: section_fill
+    type: fill
+    required_count: 1
+    score_per_item: 5

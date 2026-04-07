@@ -1,0 +1,52 @@
+% === Begin Label Data ===
+% ID: 181
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{上海卷（文）}{14}{数列}
+已知 $f(x)=\dfrac{1}{1+x}$, 各项均为正数的数列 $\{a_n\}$ 满足 $a_1=1, a_{n+2}=f(a_n)$. 若 $a_{2010}=a_{2012}$, 则 $a_{20}+a_{11}$ 的值是 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+$\dfrac{13\sqrt{5}+3}{26}$
+\end{answer}
+
+\begin{solutions}[解法一]
+因为 $f(x) = \dfrac{1}{1+x}$，各项均为正数的数列 $\{a_n\}$ 满足 $a_1=1, a_{n+2}=f(a_n)$，
+
+所以 $a_1=1, a_3=\dfrac{1}{2}, a_5=\dfrac{2}{3}, a_7=\dfrac{3}{5}, a_9=\dfrac{5}{8}, a_{11}=\dfrac{8}{13}$.
+
+因为 $a_{2010}=a_{2012}$，所以 $\dfrac{1}{1+a_{2010}}=a_{2012}$，$a_{2010}=\dfrac{\sqrt{5}-1}{2}$（负值舍去），由 $a_{2010}=\dfrac{1}{1+a_{2008}}$ 得 $a_{2008}=\dfrac{\sqrt{5}-1}{2}$， ... 依次往前推得到 $a_{20}=\dfrac{\sqrt{5}-1}{2}$.
+
+因此 $a_{20}+a_{11} = \dfrac{13\sqrt{5}+3}{26}$.
+
+故答案为：$\dfrac{13\sqrt{5}+3}{26}$
+\end{solutions}
+
+\begin{solutions}[解法二]
+这道题目的斐波那契数列背景如下：
+
+设 $a_{2010}=t$。由 $a_{2010}=a_{2012}$ 得 $\dfrac{1}{1+t}=\dfrac{1}{1+\dfrac{\sqrt{5}-1}{2}}=\dfrac{\sqrt{5}-1}{2}$，解得正数 $t = \dfrac{\sqrt{5}-1}{2}$，于是
+$$
+a_{2k} = \dfrac{\sqrt{5}-1}{2}.
+$$
+又因为
+$$
+a_1=1, a_{n+2} = \dfrac{1}{1+a_n},
+$$
+所以
+$$
+a_1=1, a_3=\dfrac{1}{2}, a_5=\dfrac{2}{3}, a_7=\dfrac{3}{5}.
+$$
+利用数学归纳法可证明 $a_{2k-1} = \dfrac{F_k}{F_{k+1}}$ ($F_k$ 是斐波那契数列通项公式)，其中 $F_1=F_2=1, F_{n+2}=F_n+F_{n+1} (n \in \mathbf{N}^*)$。于是
+$$
+a_{11} = \dfrac{F_6}{F_7} = \dfrac{8}{13},
+$$
+故
+$$
+a_{20}+a_{11} = \dfrac{\sqrt{5}-1}{2} + \dfrac{8}{13} = \dfrac{3+13\sqrt{5}}{26}.
+$$
+\end{solutions}

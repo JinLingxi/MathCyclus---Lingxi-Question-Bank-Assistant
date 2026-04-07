@@ -1,0 +1,28 @@
+primebrush:
+  type: plot_2D
+  seed: 42
+  canvas: { width: 480, height: 360, unit: px }
+  style:
+    font_size: 11
+
+  axes:
+    x: { label: "x", range: [-5, 5], ticks: 1 }
+    y: { label: "y", range: [-2, 2], ticks: 0.5, arrows: true }
+    grid: true
+
+  elements:
+    - f: "sin(x)"
+      domain: [-3.14, 3.14]
+      color: "#1a5fb4"
+      width: 2
+      label: "sin"
+
+    - f: "x**2 - 1"
+      color: "#c01c28"
+      style: dotted
+
+    - op: point_on_f
+      f_id: 0
+      x: 1.57
+      label: "P"
+      show_projection: true

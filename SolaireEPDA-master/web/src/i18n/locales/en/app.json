@@ -1,0 +1,53 @@
+{
+  "brand": "Solaire",
+  "errorBannerLogHint": "(Full message in runtime log)",
+  "nav": {
+    "compose": "Compose",
+    "bank": "Question bank",
+    "template": "Templates",
+    "graph": "Knowledge map",
+    "analysis": "Analysis",
+    "analysisTitle": "Scores and statistics",
+    "assistant": "Assistant",
+    "assistantTitle": "Show or hide the assistant panel",
+    "settings": "Settings",
+    "settingsTitle": "Assistant model service",
+    "help": "Manual",
+    "helpTitle": "User guide and advanced topics",
+    "log": "Log",
+    "logTitle": "Runtime log"
+  },
+  "header": {
+    "project": "Project: "
+  },
+  "titleBar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "route": {
+    "composeSummary": "Open or create a project first. After the project is bound, use the assistant panel to validate and export papers.",
+    "bankSummary": "Open or create a project before managing the question bank.",
+    "templateSummary": "Open or create a project before editing exam templates.",
+    "graphSummary": "Open or create a project before editing the knowledge map."
+  },
+  "project": {
+    "openTitle": "Open project",
+    "openIntroBefore": "The page cannot read disk paths directly. When you click the button below, the ",
+    "openIntroStrong": "local backend",
+    "openIntroMid": " opens a system folder dialog (same machine and user session as the browser). You can also paste an absolute path. To auto-open a folder as the project root when the backend starts, set ",
+    "openIntroAnd": " and ",
+    "openIntroAfter": ".",
+    "pickFolder": "Choose folder…",
+    "rootLabel": "Project root path (paste allowed)",
+    "rootPlaceholder": "e.g. D:\\work\\my_project",
+    "openButton": "Open",
+    "newTitle": "New project",
+    "pickParent": "Choose parent folder…",
+    "parentLabel": "Parent folder",
+    "parentPlaceholder": "e.g. D:\\work",
+    "folderName": "Folder name",
+    "createButton": "Create"
+  }
+}

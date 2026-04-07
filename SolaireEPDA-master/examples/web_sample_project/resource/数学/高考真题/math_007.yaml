@@ -1,0 +1,11 @@
+﻿id: math_007
+type: choice
+content: 集合 $A=\{1,2,3\}$，$B=\{2,3,4\}$，则 $A\cap B=$
+options:
+  A: $\{2,3\}$
+  B: $\{1,2\}$
+  C: $\{3,4\}$
+  D: $\{1,4\}$
+answer: A
+analysis: 交集为两个集合共同元素。
+metadata: {}

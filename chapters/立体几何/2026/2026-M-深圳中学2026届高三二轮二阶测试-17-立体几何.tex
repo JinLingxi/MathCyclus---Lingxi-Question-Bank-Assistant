@@ -1,0 +1,44 @@
+% === Begin Label Data ===
+% ID: 274
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{深圳中学2026届高三二轮二阶测试}{17}{立体几何}
+如图，四棱锥 $P-ABCD$ 中，$PA=PD=AD=CD=2$，$AB=1$，$AB\mathop{//}CD$ 且 $AB\perp AD$.
+
+\begin{tikzpicture}[scale=1.2, line join=round]
+    % 1. 定义底面与顶点的二维投影坐标
+    \coordinate (A) at (1.2, 1.5);
+    \coordinate (B) at (0, 0.5);
+    \coordinate (D) at (4, 1);
+    \coordinate (C) at (2.5, -0.5);
+    \coordinate (P) at (3, 3.75);
+
+    % 2. 绘制不可见的虚线边
+    \draw[dashed, thick] (P) -- (A);
+    \draw[dashed, thick] (B) -- (A);
+    \draw[dashed, thick] (D) -- (A);
+
+    % 3. 绘制可见的实线边
+    \draw[thick] (P) -- (B);
+    \draw[thick] (P) -- (C);
+    \draw[thick] (P) -- (D);
+    \draw[thick] (B) -- (C);
+    \draw[thick] (C) -- (D);
+
+    % 4. 标注顶点
+    \node[below] at (A) {$A$};
+    \node[left] at (B) {$B$};
+    \node[below right] at (C) {$C$};
+    \node[right] at (D) {$D$};
+    \node[above] at (P) {$P$};
+
+\end{tikzpicture}
+
+（1）若平面 $PAD\perp$ 平面 $ABCD$，证明：平面 $PBC\perp$ 平面 $PCD$；
+
+（2）若 $BC\perp PB$，求平面 $PBC$ 与平面 $PCD$ 的夹角的余弦值.
+\end{problem}

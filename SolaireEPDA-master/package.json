@@ -1,0 +1,13 @@
+{
+  "name": "solaire-education",
+  "private": true,
+  "description": "根级脚本：Tauri CLI（避免依赖 cargo install tauri-cli）",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0"
+  }
+}

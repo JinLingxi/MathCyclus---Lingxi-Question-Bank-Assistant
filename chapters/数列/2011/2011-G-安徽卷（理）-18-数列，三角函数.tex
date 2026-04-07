@@ -1,0 +1,47 @@
+% === Begin Label Data ===
+% ID: 238
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2011}{G}{安徽卷（理）}{18}{数列，三角函数}
+在数 $1$ 和 $100$ 之间插入 $n$ 个实数, 使得这 $n+2$ 个数构成递增的等比数列, 将这 $n+2$ 个数的乘积记作 $T_n$, 再令 $a_n = \lg T_n, n \ge 1$.
+
+（1）求数列 $\{a_n\}$ 的通项公式;
+
+（2）设 $b_n = \tan a_n \cdot \tan a_{n+1}$, 求数列 $\{b_n\}$ 的前 $n$ 项和 $S_n$.
+\end{problem}
+
+\begin{solutions}
+(1) 设 $t_1, t_2, \cdots, t_{n+2}$ 构成等比数列，其中 $t_1=1, t_{n+2}=100$，则
+$$
+T_n=t_1 t_2 \cdots t_{n+1} t_{n+2}, T_n=t_{n+2} t_{n+1} \cdots t_2 t_1.
+$$
+
+两式相乘，并利用 $t_i t_{n+3-i} = t_1 t_{n+2} = 10^2 (1 \leqslant i \leqslant n+2)$，可得
+$$
+T_n^2=(t_1 t_{n+2})(t_2 t_{n+1}) \cdots (t_{n+1} t_2)(t_{n+2} t_1) = 10^{2(n+2)}.
+$$
+
+从而
+$$
+a_n=\lg T_n=n+2 (n \geqslant 1).
+$$
+
+(2) 依题意并结合(1)中的计算结果，可知
+$$
+b_n=\tan(n+2) \cdot \tan(n+3) (n \geqslant 1).
+$$
+
+利用 $\tan 1 = \tan[(k+1)-k] = \dfrac{\tan(k+1)-\tan k}{1+\tan(k+1) \cdot \tan k}$，得
+$$
+\tan(k+1) \cdot \tan k = \frac{\tan(k+1)-\tan k}{\tan 1} - 1.
+$$
+
+所以
+$$
+S_n = \sum_{k=1}^n b_k = \sum_{k=3}^{n+2} \tan(k+1) \cdot \tan k = \sum_{k=3}^{n+2} \left[\frac{\tan(k+1)-\tan k}{\tan 1} - 1\right] = \frac{\tan(n+3)-\tan 3}{\tan 1} - n.
+$$
+\end{solutions}

@@ -1,0 +1,11 @@
+id: gk2024_002
+type: choice
+content: 若$\dfrac{z}{z-1}=1+i$，则$z=$
+options:
+  A: $-1-\i$
+  B: $-1+\i$
+  C: $1-\i$
+  D: $1+\i$
+answer: C
+analysis: 略
+metadata: {}

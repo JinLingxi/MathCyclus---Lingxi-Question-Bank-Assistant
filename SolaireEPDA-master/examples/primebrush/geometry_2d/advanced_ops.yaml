@@ -1,0 +1,50 @@
+# 垂直平分线、角平分线、圆、椭圆（示例）
+primebrush:
+  type: geometry_2d
+  seed: 42
+  canvas: { width: 520, height: 380, unit: px }
+  style:
+    stroke_width: 1.1
+    font_family: sans-serif
+
+  constructions:
+    - op: triangle
+      id: T1
+      nodes: [A, B, C]
+      attr: { type: random, min_angle: 35 }
+      label:
+        A: top
+        B: bottom_left
+        C: bottom_right
+
+    # AC 中点，作圆心用
+    - op: in_line
+      id: O
+      source: [A, C]
+      params: 0.5
+
+    - op: perpendicular_bisector
+      id: pb_AB
+      source: [A, B]
+      style: dashed
+      label: { text: "中垂线", pos: 0.35 }
+
+    - op: angle_bisector
+      id: bis_B
+      source: { vertex: B, arms: [A, C] }
+      style: dashed
+      label: { text: "角平分线", pos: 0.55 }
+
+    - op: circle
+      id: c1
+      center: O
+      through: B
+      style: solid
+
+    - op: ellipse
+      id: e1
+      center: A
+      rx: 55
+      ry: 32
+      rotation_deg: 18
+      style: solid

@@ -1,0 +1,19 @@
+# 与 examples/gaokao.tex 版式接近的默认 metadata；可由 template.yaml / exam.yaml 覆盖。
+metadata_defaults:
+  show_binding_line: false
+  body_font_size_pt: 11
+  line_stretch: 1.5
+  show_page_number_footer: true
+  title_block_style: exam2024
+  section_heading_style: hang_bold
+  include_common_math_macros: true
+  margins_mm:
+    left: 31.7
+    right: 31.7
+    top: 30.4
+    bottom: 30.4
+  preamble_notices: |
+    \noindent\textbf{注意事项：}\par\smallskip
+    1. 答卷前，考生务必将自己的姓名、准考证号填写在答题卡上。\par
+    2. 回答选择题时，选出每小题答案后，用铅笔把答题卡上对应题目的答案标号涂黑。如需改动，用橡皮擦干净后，再选涂其他答案标号。回答非选择题时，将答案写在答题卡上。写在本试卷上无效。\par
+    3. 考试结束后，将本试卷和答题卡一并交回。

@@ -23,7 +23,14 @@ load_dotenv()
 from utils.core_config import *
 from utils.file_ops import *
 from utils.tikz_ops import *
+
+import importlib
+import utils.latex_ops
+import utils.csv_ops
+importlib.reload(utils.latex_ops)
+importlib.reload(utils.csv_ops)
 from utils.latex_ops import *
+from utils.csv_ops import add_to_csv_index, update_csv_index_for_edit
 
 # ================= 工具函数 =================
 # 注入自定义 CSS
@@ -238,10 +245,10 @@ def ocr_image_to_latex(images=None):
             print(f"Requesting URL: {url}") # 控制台打印
 
             try:
-                # 设置超时时间为 60 秒
-                response = requests.post(url, headers=headers, json=payload, timeout=60)
+                # 设置超时时间为 180 秒 (3分钟)
+                response = requests.post(url, headers=headers, json=payload, timeout=180)
             except requests.exceptions.Timeout:
-                return "❌ 请求超时 (60s)，请检查网络或稍后重试。"
+                return "❌ 请求超时 (180s)，请检查网络或稍后重试。"
             except requests.exceptions.RequestException as req_err:
                  return f"❌ 网络请求失败: {str(req_err)}\n请检查 URL ({url}) 是否正确及服务是否可达。"
 
@@ -450,8 +457,6 @@ def page_entry():
         else:
             st.info("已达到最大图片数量 (5张)")
 
-        st.divider()
-
         # 2. 图片队列展示与管理
         if st.session_state["ocr_queue"]:
             c_q_header, c_q_clear = st.columns([3, 1])
@@ -521,37 +526,18 @@ def page_entry():
                             st.toast("替换完成", icon="✅")
                             st.rerun()
 
-            c1, c2 = st.columns(2)
-            with c1:
+            c_r1_1, c_r1_2, c_r1_3 = st.columns([1, 2, 1.5])
+            with c_r1_1:
                 year = st.text_input("年份", key="entry_year")
-                
-                # 修复试卷类别选择：如果 session_state 中的值不在选项中，回退到默认
-                current_p_type = st.session_state.get("entry_p_type", "G")
-                type_opts = list(PAPER_TYPES.keys())
-                if current_p_type not in type_opts:
-                    current_p_type = "G"
-                    st.session_state["entry_p_type"] = "G"
-                default_type_idx = type_opts.index(current_p_type)
-                
-                p_type_code = st.selectbox("试卷类别", options=type_opts, index=default_type_idx, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})")
-                # 手动更新 session_state，防止 key 绑定引发的刷新问题
-                st.session_state["entry_p_type"] = p_type_code
-                
-            with c2:
+            with c_r1_2:
                 # 知识板块推断与选择逻辑优化
-                
-                # 只有当内容发生实质性变化（如粘贴、AI返回）时，才去触发自动推断，
-                # 而不是每次渲染都强制推断并覆盖 session_state。
-                # 为此，我们对比上一次推断时的内容。
                 current_content = st.session_state.get("entry_content", "")
                 last_inferred_content = st.session_state.get("_last_inferred_content", None)
                 
                 if st.session_state.get("_ai_override_subjects", False):
-                    # AI 刚刚返回，绝对优先 AI 提取的标签
                     st.session_state["_ai_override_subjects"] = False
-                    st.session_state["_last_inferred_content"] = current_content # 标记当前内容已处理
+                    st.session_state["_last_inferred_content"] = current_content
                 elif current_content != last_inferred_content and current_content.strip() != "":
-                    # 发现内容有新变动（比如用户刚粘贴了一段文本），触发简单的关键词推断
                     inferred_subjects = []
                     for s in SUBJECTS:
                         if len(s) > 1 and s in current_content:
@@ -560,22 +546,45 @@ def page_entry():
                         st.session_state["entry_subject_multi"] = inferred_subjects
                     st.session_state["_last_inferred_content"] = current_content
 
-                # 使用 st.multiselect，不要绑定 key 到 entry_subject_multi 强制双向绑定，
-                # 而是使用 default 参数读取，这样用户可以自由增删标签。
                 current_multi = st.session_state.get("entry_subject_multi", [SUBJECTS[0]])
-                # 过滤掉不在 SUBJECTS 里的非法值
                 valid_current_multi = [s for s in current_multi if s in SUBJECTS]
                 if not valid_current_multi:
                     valid_current_multi = [SUBJECTS[0]]
                     
                 subjects = st.multiselect("知识板块 (首个为主)", options=SUBJECTS, default=valid_current_multi)
-                # 将用户的选择实时同步回 session_state
                 st.session_state["entry_subject_multi"] = subjects
-                
                 subject = "，".join(subjects) if subjects else SUBJECTS[0]
-                number = st.text_input("题号", key="entry_number")
+            with c_r1_3:
+                current_p_type = st.session_state.get("entry_p_type", "G")
+                type_opts = list(PAPER_TYPES.keys())
+                if current_p_type not in type_opts:
+                    current_p_type = "G"
+                    st.session_state["entry_p_type"] = "G"
+                default_type_idx = type_opts.index(current_p_type)
                 
-            paper_name = st.text_input("试卷名称", key="entry_paper_name")
+                p_type_code = st.selectbox("试卷类别", options=type_opts, index=default_type_idx, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})")
+                st.session_state["entry_p_type"] = p_type_code
+
+            c_r2_1, c_r2_2 = st.columns([3, 1])
+            with c_r2_1:
+                paper_name = st.text_input("试卷名称", key="entry_paper_name")
+            with c_r2_2:
+                number = st.text_input("题号", key="entry_number")
+            
+            st.markdown("##### 🏷️ 附加属性")
+            c_attr1, c_attr2, c_attr3 = st.columns([1.2, 2, 2])
+            with c_attr1:
+                st.markdown("<div style='font-size: 14px; color: #31333F; margin-bottom: 5px;'><b>难度星级</b></div>", unsafe_allow_html=True)
+                from utils.star_rating import st_star_rating
+                s_difficulty_val = st_star_rating(label="", value=st.session_state.get("entry_difficulty", 0.0), max_stars=6, key="star_entry_difficulty")
+                if s_difficulty_val != st.session_state.get("entry_difficulty", 0.0):
+                    st.session_state["entry_difficulty"] = s_difficulty_val
+            with c_attr2:
+                st.markdown("<div style='font-size: 14px; color: #31333F; margin-bottom: 5px;'><b>标签 (用逗号“，”分隔)</b></div>", unsafe_allow_html=True)
+                s_tags = st.text_input("标签", placeholder="例如: 压轴题, 易错点", key="entry_custom_tags", label_visibility="collapsed")
+            with c_attr3:
+                st.markdown("<div style='font-size: 14px; color: #31333F; margin-bottom: 5px;'><b>备注</b></div>", unsafe_allow_html=True)
+                s_remark = st.text_input("备注", placeholder="例如: 2025新高考题型", key="entry_remark", label_visibility="collapsed")
             
             content = st.text_area("题目内容 (LaTeX)", height=400, placeholder="在此粘贴题目内容...", key="entry_content")
             
@@ -606,6 +615,12 @@ def page_entry():
                 s_num = st.session_state.get("entry_number", "")
                 s_paper = st.session_state.get("entry_paper_name", "")
                 
+                # 获取附加属性
+                s_diff_raw = st.session_state.get("entry_difficulty", 0.0)
+                s_diff = "" if s_diff_raw == 0.0 else str(s_diff_raw)
+                s_tag = st.session_state.get("entry_custom_tags", "")
+                s_rem = st.session_state.get("entry_remark", "")
+                
                 if not s_content:
                     st.toast("题目内容不能为空", icon="⚠️")
                     return
@@ -616,20 +631,66 @@ def page_entry():
                 ensure_dir(s_save_dir)
                 s_file_path = os.path.join(s_save_dir, s_filename)
                 
-                full_text = generate_latex_template(s_year, s_type, s_paper, s_num, s_subj, s_content)
+                # 构造 LaTeX 模板内容
+                # 注意：如果 s_content 中已经包含了 \begin{answer} 或 \begin{solution} 等环境，
+                # 我们需要将其剥离出来，放到 \end{problem} 的后面，以符合结构规范。
+                
+                # 提取解答
+                sol_match = re.search(r'\\begin\{solutions?\}(.*?)\\end\{solutions?\}', s_content, re.DOTALL)
+                sol_text = sol_match.group(0) if sol_match else ""
+                
+                # 提取答案
+                ans_match = re.search(r'\\begin\{answer\}(.*?)\\end\{answer\}', s_content, re.DOTALL)
+                ans_text = ans_match.group(0) if ans_match else ""
+                
+                # 清理题干中的解析和答案
+                clean_content = s_content
+                if sol_match:
+                    clean_content = clean_content.replace(sol_match.group(0), "")
+                if ans_match:
+                    clean_content = clean_content.replace(ans_match.group(0), "")
+                clean_content = clean_content.strip()
+                
+                full_text = f"\\begin{{problem}}{{{s_year}}}{{{s_type}}}{{{s_paper}}}{{{s_num}}}{{{s_subj}}}\n{clean_content}\n\\end{{problem}}"
+                
+                if ans_text:
+                    full_text += f"\n\n{ans_text}"
+                if sol_text:
+                    full_text += f"\n\n{sol_text}"
                 
                 # 提取并替换 TikZ 代码
                 full_text = extract_and_replace_tikz(full_text, s_filename, s_save_dir)
                 
+                # 获取新ID并注入 Meta Data (新版 Label Data 格式)
+                from utils.csv_ops import get_next_id
+                new_id = get_next_id()
+                meta_dict = {
+                    "ID": new_id,
+                    "难度星级": s_diff,
+                    "标签": s_tag,
+                    "备注": s_rem,
+                    "组卷引用次数": 0
+                }
+                from utils.latex_ops import inject_meta_data
+                full_text = inject_meta_data(full_text, meta_dict)
+                
                 try:
                     with open(s_file_path, "w", encoding="utf-8") as f:
                         f.write(full_text)
-                    st.toast(f"成功保存到: {s_filename}", icon="✅")
+                    
+                    # 同步追加到 CSV 索引
+                    add_to_csv_index(s_file_path, full_text, s_year, s_type, s_paper, s_num, s_subj)
+                    
+                    st.toast(f"成功保存到: {s_filename} (分配ID: {new_id})", icon="✅")
+                    # 清空缓存让统计立刻更新
+                    clear_statistics_cache()
                     # 清空内容以便下一题
                     st.session_state["entry_content"] = ""
-                    # 题号自动+1
-                    if s_num.isdigit():
-                         st.session_state["entry_number"] = str(int(s_num) + 1)
+                    st.session_state["entry_difficulty"] = 0.0
+                    st.session_state["entry_custom_tags"] = ""
+                    st.session_state["entry_remark"] = ""
+                    # 根据用户要求，取消题号自动+1，保存后清空题号以防误覆盖
+                    st.session_state["entry_number"] = ""
                 except Exception as e:
                     st.toast(f"保存失败: {e}", icon="❌")
 
@@ -648,28 +709,35 @@ def page_entry():
             with c_u3:
                 u_paper = st.text_input("**统一试卷名称**", key="u_batch_paper")
             with c_u4:
-                # 垂直对齐占位符 (约等于 Label 高度)
-                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("🔄 同步", help="将当前设置的统一信息应用到下方文本框中的所有简写文件名"):
+                st.markdown("<div style='padding-top: 28px;'></div>", unsafe_allow_html=True)
+                def on_sync_click():
                     current_txt = st.session_state.get("batch_content", "")
-                    if current_txt and u_year and u_paper:
-                        # 正则查找 ---...---
-                        # 替换逻辑：找到 ---...---，如果内容只是 题号-板块，则替换为全名
+                    uy = st.session_state.get("u_batch_year", "")
+                    ut = st.session_state.get("u_batch_type", "G")
+                    up = st.session_state.get("u_batch_paper", "")
+                    if current_txt and uy and up:
                         def replace_header(match):
-                            content = match.group(1).strip() # e.g. "1-集合.tex"
+                            content = match.group(1).strip()
                             name_body = content.replace('.tex', '')
                             segs = name_body.split('-')
-                            if len(segs) == 2: # 只有题号和板块
-                                full_name = generate_filename(u_year, u_type, u_paper, segs[0], segs[1])
+                            # 支持用户可能带了后缀或者没带后缀
+                            # 以及容错空格
+                            segs = [s.strip() for s in segs]
+                            
+                            # 如果原本就是五段式，也需要支持"试卷名"被更新（比如用户原本填了2024-G-老名字-1-集合，想要一键改成新名字）
+                            if len(segs) == 5:
+                                full_name = generate_filename(uy, ut, up, segs[3], segs[4])
                                 return f"---{full_name}---"
-                            return match.group(0) # 保持原样
-
+                            
+                            if len(segs) == 2:
+                                full_name = generate_filename(uy, ut, up, segs[0], segs[1])
+                                return f"---{full_name}---"
+                            return match.group(0)
+                        import re
                         new_txt = re.sub(r'---(.+?)---', replace_header, current_txt)
                         st.session_state["batch_content"] = new_txt
-                        st.toast("文件名已同步更新", icon="✅")
-                        st.rerun()
-                    else:
-                        st.warning("请先填写完整信息和文本内容")
+                if st.button("🔄 同步", help="将当前设置的统一信息应用到下方文本框中的所有简写文件名", on_click=on_sync_click, use_container_width=True):
+                    st.toast("同步操作已执行，请检查下方文本框", icon="✅")
 
 
             # 批量查找与替换 (同卷模式)
@@ -727,9 +795,24 @@ def page_entry():
                                 # 提取并替换 TikZ 代码
                                 file_content = extract_and_replace_tikz(file_content, final_filename, save_dir)
                                 
+                                # 注入 Label Data
+                                from utils.csv_ops import get_next_id
+                                from utils.latex_ops import inject_meta_data
+                                new_id = get_next_id()
+                                meta_dict = {
+                                    "ID": new_id,
+                                    "难度星级": "",
+                                    "标签": "",
+                                    "备注": "",
+                                    "组卷引用次数": 0
+                                }
+                                file_content = inject_meta_data(file_content, meta_dict)
+                                
                                 try:
                                     with open(file_path, "w", encoding="utf-8") as f:
                                         f.write(file_content)
+                                    # 同步追加到 CSV 索引
+                                    add_to_csv_index(file_path, file_content, str(u_year), u_type, u_paper, q_num, q_subj)
                                     count += 1
                                     log_msg.append({"status": "success", "file": final_filename, "path": file_path})
                                 except Exception as e:
@@ -813,17 +896,38 @@ def page_entry():
                                 # 提取并替换 TikZ 代码
                                 file_content = extract_and_replace_tikz(file_content, filename, save_dir)
                                 
+                                # 注入 Label Data
+                                from utils.csv_ops import get_next_id
+                                from utils.latex_ops import inject_meta_data
+                                new_id = get_next_id()
+                                meta_dict = {
+                                    "ID": new_id,
+                                    "难度星级": "",
+                                    "标签": "",
+                                    "备注": "",
+                                    "组卷引用次数": 0
+                                }
+                                file_content = inject_meta_data(file_content, meta_dict)
+                                
                                 try:
                                     with open(file_path, "w", encoding="utf-8") as f:
                                         f.write(file_content)
+                                        
+                                    # 同步追加到 CSV 索引
+                                    add_to_csv_index(
+                                        file_path, file_content, 
+                                        segments[0], segments[1], segments[2], segments[3], segments[4]
+                                    )
+                                    
                                     count += 1
-                                    log_msg.append({"status": "success", "file": filename, "path": file_path})
+                                    log_msg.append({"status": "success", "file": filename, "path": file_path, "id": new_id})
                                 except Exception as e:
                                     log_msg.append({"status": "error", "file": filename, "msg": str(e)})
                             else:
                                 log_msg.append({"status": "skip", "file": filename, "msg": "文件名格式错误"})
                     
                     st.success(f"处理完成，共保存 {count} 个文件")
+                    clear_statistics_cache()
                     st.toast(f"批量处理完成！共保存 {count} 个文件", icon="✅")
                     
                     with st.expander("查看处理日志", expanded=True):
@@ -854,7 +958,7 @@ def page_browse(is_exam_mode=False):
     # 浏览模式选择
     if not is_exam_mode:
         st.subheader("浏览模式")
-    browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览"], horizontal=True, label_visibility="collapsed")
+    browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览", "按录入顺序浏览"], horizontal=True, label_visibility="collapsed")
     
     selected_file_path = None
     
@@ -965,7 +1069,7 @@ def page_browse(is_exam_mode=False):
                                 else:
                                     q_label = fname
 
-                                st.markdown(f"### {q_label}")
+                                render_question_header(q_label, content, fpath)
                                 
                                 if is_exam_mode:
                                     # 组卷模式：仅展示渲染结果及操作按钮
@@ -1091,7 +1195,7 @@ def page_browse(is_exam_mode=False):
                                 else:
                                     q_label = fname
 
-                                st.markdown(f"### {q_label}")
+                                render_question_header(q_label, content, fpath)
                                 
                                 if is_exam_mode:
                                     # 组卷模式：仅展示渲染结果及操作按钮
@@ -1192,7 +1296,7 @@ def page_browse(is_exam_mode=False):
             else:
                 st.warning("该板块暂无年份数据")
                 
-    else: # 按试卷浏览
+    elif browse_mode == "按试卷浏览":
 
         all_years = get_all_years_globally()
         if not all_years:
@@ -1273,7 +1377,7 @@ def page_browse(is_exam_mode=False):
                             
                         # 题目编号
                         q_label = f"第{q['file'].split('-')[3]}题 ({q['subject']})"
-                        st.subheader(q_label)
+                        render_question_header(q_label, content, q_path)
                         
                         if is_exam_mode:
                             # 组卷模式：不展示源码，仅展示渲染后的问题和组卷操作按钮
@@ -1365,6 +1469,141 @@ def page_browse(is_exam_mode=False):
                             st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
                         
                         st.divider()
+    
+    elif browse_mode == "按录入顺序浏览":
+        st.subheader("🕒 按录入顺序浏览")
+        
+        # 排序选项
+        sort_order = st.radio("排序方式", ["最新录入在最前 (从后往前)", "最早录入在最前 (从前往后)"], horizontal=True)
+        
+        try:
+            from utils.csv_ops import read_csv_index
+            csv_data = read_csv_index()
+        except Exception as e:
+            csv_data = []
+            st.error(f"读取索引失败: {e}")
+            
+        if not csv_data:
+            st.info("题库为空或索引未建立，请先一键重建题库索引。")
+        else:
+            # 根据时间排序
+            def get_time(row):
+                # 优先使用“初次录入的时间”，如果没有则退化为“最后修改时间”，再没有则为空字符串
+                t = row.get("初次录入的时间", "")
+                if not t:
+                    t = row.get("最后修改时间", "")
+                return t
+                
+            sorted_data = sorted(csv_data, key=get_time, reverse=(sort_order == "最新录入在最前 (从后往前)"))
+            
+            # 分页或展示数量限制 (避免一次性渲染几百个卡顿)
+            max_show = st.slider("最多展示题目数量", min_value=10, max_value=200, value=50, step=10)
+            display_data = sorted_data[:max_show]
+            
+            st.markdown(f"共找到 **{len(sorted_data)}** 道题目，当前展示前 **{len(display_data)}** 道。")
+            st.divider()
+            
+            for i, row in enumerate(display_data):
+                # 构建文件真实路径
+                fpath = os.path.join(CHAPTERS_DIR, row["相对文件路径"])
+                if not os.path.exists(fpath): 
+                    continue
+                    
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    
+                fname = row["文件名称"]
+                parts = fname.split("-")
+                if len(parts) >= 5:
+                    q_label = f"【{parts[0]} {parts[2]} 第{parts[3]}题】 （{parts[4]}）"
+                elif len(parts) >= 4:
+                    q_label = f"【{parts[0]} {parts[2]} 第{parts[3]}题】"
+                else:
+                    q_label = fname
+
+                # 增加时间标识显示
+                time_str = get_time(row)
+                extra_label = ""
+                if time_str:
+                    extra_label = f"<span style='font-size:0.5em; color:gray; font-weight:normal; margin-left: 10px;'>🕒 {time_str}</span>"
+                    
+                render_question_header(q_label, content, fpath, extra_html_label=extra_label)
+                
+                if is_exam_mode:
+                    st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+                    is_selected = fpath in st.session_state.get("exam_selected_qs", [])
+                    if is_selected:
+                        st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
+                        if st.button("❌ 本题取消组卷", key=f"exam_rm_time_{fpath}", type="primary"):
+                            st.session_state["exam_selected_qs"].remove(fpath)
+                            if st.session_state.get("ai_exam_active"):
+                                st.session_state["ai_exam_modified"] = True
+                            st.rerun()
+                    else:
+                        if st.button("➕ 本题加入组卷", key=f"exam_add_time_{fpath}", type="secondary"):
+                            st.session_state["exam_selected_qs"].append(fpath)
+                            if st.session_state.get("ai_exam_active"):
+                                st.session_state["ai_exam_modified"] = True
+                            st.rerun()
+                    st.divider()
+                    continue
+                
+                c1, c2 = st.columns([1, 1])
+                edit_mode_key = f"time_edit_mode_{fpath}"
+                
+                with c1:
+                    est_height = get_editor_height(content)
+                    is_editing = st.session_state.get(edit_mode_key, False)
+                    text_area_key = f"time_edit_{fpath}"
+                    
+                    if is_editing:
+                        new_content = st.text_area("源码", value=content, height=est_height, key=text_area_key)
+                        if st.button("💾 保存修改", key=f"time_save_btn_{fpath}", type="primary"):
+                            save_modified_tex_file(fpath, new_content)
+                            st.session_state[edit_mode_key] = False
+                            st.toast("已保存", icon="✅")
+                            time.sleep(0.5)
+                            st.rerun()
+                    else:
+                        st.text_area("源码", value=content, height=est_height, disabled=True, key=text_area_key + "_readonly")
+                        
+                        tag_edit_key = f"time_tag_edit_mode_{fpath}"
+                        is_tag_editing = st.session_state.get(tag_edit_key, False)
+                        
+                        btn_c1, btn_c2 = st.columns(2)
+                        with btn_c1:
+                            if st.button("✏️ 开始修改tex内容", key=f"time_start_btn_{fpath}"):
+                                st.session_state[edit_mode_key] = True
+                                st.rerun()
+                        with btn_c2:
+                            if is_tag_editing:
+                                if st.button("✅ 完成修改板块标签", key=f"time_tag_save_btn_{fpath}", type="primary"):
+                                    new_tags = st.session_state.get(f"time_tag_select_{fpath}")
+                                    if new_tags:
+                                        if update_file_tags(fpath, new_tags):
+                                            st.toast("标签修改成功！", icon="✅")
+                                            st.session_state[tag_edit_key] = False
+                                            time.sleep(0.5)
+                                            st.rerun()
+                                        else:
+                                            st.error("文件名格式不支持修改标签")
+                            else:
+                                if st.button("🏷️ 开始修改板块标签", key=f"time_tag_start_btn_{fpath}"):
+                                    st.session_state[tag_edit_key] = True
+                                    st.rerun()
+                                
+                        if is_tag_editing:
+                            current_tags = extract_tags_from_fpath(fpath)
+                            valid_tags = [t for t in current_tags if t in SUBJECTS] or [SUBJECTS[0]]
+                            st.multiselect("修改知识板块 (首个为主)", options=SUBJECTS, default=valid_tags, key=f"time_tag_select_{fpath}")
+
+                with c2:
+                    try:
+                        st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+                    except Exception as e:
+                        st.error(f"渲染错误: {e}")
+                
+                st.divider()
 
     # 编辑区域 (Split View) - 仅在选择了文件时显示
     if selected_file_path and os.path.exists(selected_file_path):
@@ -1472,9 +1711,155 @@ def page_exam_paper_generation():
     .stButton > button:active {
         transform: none !important;
     }
+    
+    /* 调整“选择组卷服务模块”的单选按钮字号，使其与 h3 (###) 差不多大 */
+    div.big-radio-container + div[data-testid="stRadio"] label[data-baseweb="radio"] div {
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+        line-height: 1.2 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
     
+    st.markdown('<div class="big-radio-container"></div>', unsafe_allow_html=True)
+    exam_service_mode = st.radio("选择组卷服务模块", ["🖨️ 试卷排版工作台", "📂 历史组卷浏览"], horizontal=True, label_visibility="collapsed")
+    st.markdown("---")
+
+    if exam_service_mode == "📂 历史组卷浏览":
+        # ================= 新增：历史组卷浏览 =================
+        export_base_dir = os.path.join(BASE_DIR, "Test Paper Group", "导出文件")
+        if not os.path.exists(export_base_dir):
+            st.info("暂无组卷记录")
+        else:
+            years = sorted([d for d in os.listdir(export_base_dir) if os.path.isdir(os.path.join(export_base_dir, d))], reverse=True)
+            if not years:
+                st.info("暂无组卷记录")
+            else:
+                c_y1, c_y2 = st.columns([1, 6])
+                with c_y1:
+                    st.markdown("##### 📅 选择年份")
+                with c_y2:
+                    selected_year = st.radio("选择年份", ["显示所有年份"] + years, horizontal=True, label_visibility="collapsed")
+                
+                months = []
+                if selected_year != "显示所有年份":
+                    year_dir = os.path.join(export_base_dir, selected_year)
+                    if os.path.exists(year_dir):
+                        months = sorted([d for d in os.listdir(year_dir) if os.path.isdir(os.path.join(year_dir, d))], reverse=True)
+                else:
+                    for y in years:
+                        y_dir = os.path.join(export_base_dir, y)
+                        months.extend([d for d in os.listdir(y_dir) if os.path.isdir(os.path.join(y_dir, d))])
+                    months = sorted(list(set(months)), reverse=True)
+                
+                c_m1, c_m2 = st.columns([1, 6])
+                with c_m1:
+                    st.markdown("##### 📅 选择月份")
+                with c_m2:
+                    if months:
+                        selected_month = st.radio("选择月份", ["显示所有月份"] + months, horizontal=True, label_visibility="collapsed")
+                    else:
+                        st.info("该年份下暂无记录")
+                        selected_month = "显示所有月份"
+                
+                # 收集试卷列表
+                papers = []
+                years_to_search = years if selected_year == "显示所有年份" else [selected_year]
+                for y in years_to_search:
+                    y_dir = os.path.join(export_base_dir, y)
+                    months_to_search = [m for m in os.listdir(y_dir) if os.path.isdir(os.path.join(y_dir, m))] if selected_month == "显示所有月份" else [selected_month]
+                    for m in months_to_search:
+                        m_dir = os.path.join(y_dir, m)
+                        if os.path.exists(m_dir):
+                            for p in os.listdir(m_dir):
+                                p_dir = os.path.join(m_dir, p)
+                                if os.path.isdir(p_dir):
+                                    tex_file = os.path.join(p_dir, f"{p}.tex")
+                                    if os.path.exists(tex_file):
+                                        papers.append({"name": p, "path": tex_file, "dir": p_dir, "year": y, "month": m})
+                
+                if not papers:
+                    st.info("未找到符合条件的试卷")
+                else:
+                    st.markdown("---")
+                    paper_names = [p["name"] for p in papers]
+                    selected_paper_name = st.selectbox("📄 试卷列表", paper_names)
+                    selected_paper = next(p for p in papers if p["name"] == selected_paper_name)
+                    
+                    st.markdown("---")
+                    present_mode = st.radio("呈现形式", ["以题目组合形式呈现", "以整卷形式呈现"], horizontal=True, label_visibility="collapsed")
+                    
+                    if present_mode == "以整卷形式呈现":
+                        c_src, c_pdf = st.columns(2)
+                        with c_src:
+                            st.markdown("##### 📜 LaTeX 源码")
+                            with open(selected_paper["path"], "r", encoding="utf-8") as f:
+                                tex_content = f.read()
+                            st.code(tex_content, language="latex", line_numbers=True)
+                        with c_pdf:
+                            st.markdown("##### 📑 PDF 预览")
+                            pdf_path = os.path.join(selected_paper["dir"], f"{selected_paper['name']}.pdf")
+                            if os.path.exists(pdf_path):
+                                import base64
+                                with open(pdf_path, "rb") as f:
+                                    base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+                                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800px" type="application/pdf"></iframe>'
+                                st.markdown(pdf_display, unsafe_allow_html=True)
+                            else:
+                                st.warning("未找到生成的 PDF 文件。请确认该试卷是否已成功编译。")
+                    
+                    elif present_mode == "以题目组合形式呈现":
+                        st.markdown("##### 🧩 题目组合排列")
+                        with open(selected_paper["path"], "r", encoding="utf-8") as f:
+                            tex_content = f.read()
+                        
+                        # 简易解析：按 \section, \subsection, \chapter, \begin{problem}, \begin{question}, \begin{lanbox} 分块
+                        import re
+                        blocks = []
+                        
+                        # 使用正则提取所有的块
+                        # 查找所有的开始标记位置
+                        pattern = r'(\\chapter\{.*?\}|\\section\{.*?\}|\\subsection\{.*?\}|\\begin\{problem\}.*?\\end\{problem\}|\\begin\{question\}.*?\\end\{question\}|\\begin\{lanbox\}.*?\\end\{lanbox\})'
+                        matches = re.finditer(pattern, tex_content, flags=re.DOTALL)
+                        
+                        for idx, match in enumerate(matches):
+                            block_text = match.group(1)
+                            if block_text.startswith(r'\chapter{'):
+                                title = re.search(r'\\chapter\{(.*?)\}', block_text).group(1)
+                                title = re.sub(r'\s+', ' ', title.replace('\n', ' ')).strip()
+                                blocks.append({"type": "chapter", "content": title})
+                            elif block_text.startswith(r'\section{'):
+                                title = re.search(r'\\section\{(.*?)\}', block_text, re.DOTALL).group(1)
+                                title = re.sub(r'\s+', ' ', title.replace('\n', ' ')).strip()
+                                blocks.append({"type": "section", "content": title})
+                            elif block_text.startswith(r'\subsection{'):
+                                title = re.search(r'\\subsection\{(.*?)\}', block_text, re.DOTALL).group(1)
+                                title = re.sub(r'\s+', ' ', title.replace('\n', ' ')).strip()
+                                blocks.append({"type": "subsection", "content": title})
+                            else:
+                                # 清除可能会遗留的 \begin{lanbox} 和 \end{lanbox} 标记
+                                clean_text = re.sub(r'\\begin\{lanbox\}', '', block_text)
+                                clean_text = re.sub(r'\\end\{lanbox\}', '', clean_text)
+                                blocks.append({"type": "question", "content": clean_text.strip()})
+                                
+                        if not blocks:
+                            st.info("未能从源码中解析出具体的题目和章节，这可能是因为文件尚未插入任何题目，或者结构与预期不符。")
+                        else:
+                            q_count = 1
+                            for b in blocks:
+                                if b["type"] == "chapter":
+                                    st.markdown(f"### 🗂️ {b['content']}")
+                                elif b["type"] == "section":
+                                    st.markdown(f"#### 🗂️ {b['content']}")
+                                elif b["type"] == "subsection":
+                                    st.markdown(f"##### 📝 {b['content']}")
+                                elif b["type"] == "question":
+                                    st.markdown(f"**第 {q_count} 题**")
+                                    st.markdown(latex_to_markdown(b["content"]), unsafe_allow_html=True)
+                                    q_count += 1
+                                st.markdown("---")
+        return
+
     # 1. 主题选择与组卷按钮
     template_dir = os.path.join(BASE_DIR, "Test Paper Group", "主题模板")
     theme_options = []
@@ -1514,14 +1899,16 @@ def page_exam_paper_generation():
 
     # ================= 阶段一：选题购物车 =================
     # 提前处理状态同步，避免在 widget 渲染后修改其 session_state 导致 StreamlitAPIException
-    if st.session_state.get("exam_theme_select") != st.session_state.get("exam_theme"):
-        st.session_state["exam_theme"] = st.session_state["exam_theme_select"]
-        # Only change the default value if the user hasn't actively modified the count
-        if "试卷类" in st.session_state["exam_theme"]:
-            st.session_state["exam_q_count_input"] = 19
-        else:
-            st.session_state["exam_q_count_input"] = 10
-        st.session_state["_count_widget"] = st.session_state["exam_q_count_input"]
+    # 这里非常关键，必须把用户选择的 theme 实时同步并保存到持久化变量中
+    if "exam_theme_select" in st.session_state:
+        if st.session_state.get("exam_theme_select") != st.session_state.get("exam_theme"):
+            st.session_state["exam_theme"] = st.session_state["exam_theme_select"]
+            # Only change the default value if the user hasn't actively modified the count
+            if "试卷类" in st.session_state["exam_theme"]:
+                st.session_state["exam_q_count_input"] = 19
+            else:
+                st.session_state["exam_q_count_input"] = 10
+            st.session_state["_count_widget"] = st.session_state["exam_q_count_input"]
 
     selected_count = len(st.session_state.get("exam_selected_qs", []))
     if selected_count > st.session_state.get("exam_q_count_input", 10):
@@ -1617,9 +2004,10 @@ def page_exam_paper_generation():
                     st.session_state["exam_blocks"].append({"id": str(uuid.uuid4()), "type": "question", "path": p})
             
             # 把购物车中已经移除的题目，也从 exam_blocks 中同步移除
+            # 修复点：保留 section, subsection, chapter 等非 question 类型
             st.session_state["exam_blocks"] = [
                 b for b in st.session_state["exam_blocks"]
-                if b["type"] == "section" or b["path"] in st.session_state["exam_selected_qs"]
+                if b["type"] in ("chapter", "section", "subsection") or b.get("path") in st.session_state["exam_selected_qs"]
             ]
             
             st.session_state["exam_mode_stage"] = "typesetting"
@@ -1675,18 +2063,238 @@ def page_exam_paper_generation():
     # 3. 复用浏览界面进行选题
     page_browse(is_exam_mode=True)
 
+def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
+    # 确保导出目录存在
+    ensure_dir(export_dir)
+    
+    # 读取模板内容
+    template_path = os.path.join(BASE_DIR, "Test Paper Group", "主题模板", theme_name, f"{theme_name}.tex")
+    if not os.path.exists(template_path):
+        return None
+        
+    with open(template_path, "r", encoding="utf-8") as f:
+        template_content = f.read()
+        
+    # 生成要插入的 content
+    body_lines = []
+    for blk in blocks:
+        if blk["type"] == "chapter":
+            body_lines.append(f"\\chapter{{{blk['title']}}}")
+            if blk.get("content"):
+                body_lines.append(blk["content"])
+        elif blk["type"] == "section":
+            body_lines.append(f"\\section{{{blk['title']}}}")
+            if blk.get("content"):
+                body_lines.append(blk["content"])
+        elif blk["type"] == "subsection":
+            body_lines.append(f"\\subsection{{{blk['title']}}}")
+            if blk.get("content"):
+                body_lines.append(blk["content"])
+        elif blk["type"] == "question":
+            q_path = blk["path"]
+            if os.path.exists(q_path):
+                with open(q_path, "r", encoding="utf-8") as qf:
+                    q_content = qf.read()
+                    if theme_name == "讲义类模板":
+                        body_lines.append("\\begin{lanbox}\n" + q_content + "\n\\end{lanbox}")
+                    else:
+                        body_lines.append(q_content)
+                        
+    # 如果是试卷类模板，需要对题目格式和分数进行二次加工
+    if theme_name == "试卷类模板":
+        import re
+        q_index = 0
+        current_section = 0
+        new_body_lines = []
+        for line in body_lines:
+            if line.startswith(r"\section{"):
+                current_section += 1
+                new_body_lines.append(line)
+            elif r"\begin{problem}" in line:
+                q_index += 1
+                
+                # 第一步：增加题目序号注释 %*
+                line = f"% {q_index}.\n" + line
+                
+                if current_section == 4:
+                    # 对于第四个 section (解答题) 后的题目
+                    # 1. 替换为 \begin{problem} 并带上对应分数
+                    # 2. 删除后面紧跟的5个参数括号 {...}
+                    if q_index == 15:
+                        points = 13
+                    elif q_index in (16, 17):
+                        points = 15
+                    elif q_index in (18, 19):
+                        points = 17
+                    else:
+                        points = 12 # fallback
+                        
+                    # 替换 \begin{problem}{...}{...}{...}{...}{...} -> \begin{problem}[points = xx]
+                    # 容错：有些参数可能换行了或者有空格，用 \s* 和 dotall 处理
+                    line = re.sub(r'\\begin\{problem\}\s*\{.*?\}\s*\{.*?\}\s*\{.*?\}\s*\{.*?\}\s*\{.*?\}', f'\\\\begin{{problem}}[points = {points}]', line, flags=re.DOTALL)
+                else:
+                    # 对于前三个 section (选择填空) 的题目
+                    # 1. 替换为 \begin{question}
+                    # 2. 删除后面紧跟的5个参数括号 {...}
+                    # 3. 将对应的 \end{problem} 替换为 \end{question}
+                    line = re.sub(r'\\begin\{problem\}\s*\{.*?\}\s*\{.*?\}\s*\{.*?\}\s*\{.*?\}\s*\{.*?\}', r'\\begin{question}', line, flags=re.DOTALL)
+                    line = line.replace(r'\end{problem}', r'\end{question}')
+                    
+                # 【新增修复】：将 \begin{choices} 替换为没有方括号的形式（比如去除 \begin{choices}[2] 等，恢复为 exam-zh 默认选项）
+                # 题库里带参数的 \begin{choices}[2] 可能会在试卷模板里报错或者不兼容
+                # 用户要求类似原来模板的纯净 \begin{choices}
+                # 但是实际上用户刚才提到的是 choices，而模板里使用的是 \begin{choices} \item ...
+                # 题库中用的是 \choice{{...}}，模板中似乎需要 \item
+                # 我们在这里将 \choice{{...}} 转换为 \item ... 
+                # 同时将带参数的 \begin{choices}[2] 去除参数
+                line = re.sub(r'\\begin\{choices\}\[.*?\]', r'\\begin{choices}', line)
+                
+                def replace_choices_with_items(text):
+                    idx = 0
+                    while True:
+                        idx = text.find(r'\choice', idx)
+                        if idx == -1: break
+                        start_brace = text.find('{', idx)
+                        if start_brace == -1:
+                            idx += len(r'\choice')
+                            continue
+                        if text[idx+7:start_brace].strip() != '':
+                            idx += len(r'\choice')
+                            continue
+                        next_char_idx = start_brace + 1
+                        while next_char_idx < len(text) and text[next_char_idx].isspace():
+                            next_char_idx += 1
+                        is_double = False
+                        if next_char_idx < len(text) and text[next_char_idx] == '{':
+                            is_double = True
+                            content_start = next_char_idx + 1
+                        else:
+                            content_start = start_brace + 1
+                        brace_count = 2 if is_double else 1
+                        match_end = -1
+                        content = ''
+                        for i in range(content_start, len(text)):
+                            if text[i] == '{': brace_count += 1
+                            elif text[i] == '}': brace_count -= 1
+                            if brace_count == 0:
+                                match_end = i + 1
+                                inner = text[content_start:i]
+                                if is_double:
+                                    last_brace_idx = inner.rfind('}')
+                                    if last_brace_idx != -1:
+                                        content = inner[:last_brace_idx].strip()
+                                    else:
+                                        content = inner.strip()
+                                else:
+                                    content = inner.strip()
+                                break
+                        if match_end != -1:
+                            prefix = text[:idx]
+                            suffix = text[match_end:]
+                            text = prefix + r'\item ' + content + suffix
+                            idx = len(prefix) + len(r'\item ') + len(content)
+                        else:
+                            idx += len(r'\choice')
+                    return text
+
+                line = replace_choices_with_items(line)
+                    
+                new_body_lines.append(line)
+            else:
+                # 处理可能散落在别的行的 \end{problem} 和 \choice 等
+                if current_section < 4 and r'\end{problem}' in line:
+                    line = line.replace(r'\end{problem}', r'\end{question}')
+                    
+                line = re.sub(r'\\begin\{choices\}\[.*?\]', r'\\begin{choices}', line)
+                line = replace_choices_with_items(line)
+                
+                new_body_lines.append(line)
+        body_lines = new_body_lines
+
+    generated_body = "\n\n".join(body_lines)
+    
+    # 替换标题（如果有的话）
+    import re
+    if theme_name == "试卷类模板":
+        # 试卷类模板使用的是 \title{...}
+        template_content = re.sub(r'\\title\{.*?\}', f'\\\\title{{{export_filename}}}', template_content)
+    elif r'\renewcommand{\mytitle}' in template_content:
+        template_content = re.sub(r'\\renewcommand\{\\mytitle\}\{.*?\}', f'\\\\renewcommand{{\\\\mytitle}}{{{export_filename}}}', template_content)
+    
+    # 查找 \begin{document} 之后的内容
+    doc_idx = template_content.find(r'\begin{document}')
+    if doc_idx != -1:
+        # 寻找正文里第一个 \chapter 或者 \section 或者 \begin{problem} 或者 \begin{question} 作为切割点
+        chap_idx = template_content.find(r'\chapter{', doc_idx)
+        sec_idx = template_content.find(r'\section{', doc_idx)
+        prob_idx = template_content.find(r'\begin{problem}', doc_idx)
+        ques_idx = template_content.find(r'\begin{question}', doc_idx)
+        
+        candidates = [idx for idx in (chap_idx, sec_idx, prob_idx, ques_idx) if idx != -1]
+        if candidates:
+            insert_idx = min(candidates)
+            end_idx = template_content.rfind(r'\end{document}')
+            
+            if end_idx != -1:
+                # 头部内容保留（包括 \renewcommand{\mytitle}{...} 和所有前置的格式设置）
+                pre_content = template_content[:insert_idx]
+                # 尾部内容保留（\end{document}及以后）
+                post_content = template_content[end_idx:]
+                
+                final_content = pre_content + generated_body + "\n\n" + post_content
+                
+                # 修改点：在年月目录下，再创建一个与试卷名相同的独立文件夹
+                final_export_dir = os.path.join(export_dir, export_filename)
+                ensure_dir(final_export_dir)
+                
+                output_file = os.path.join(final_export_dir, f"{export_filename}.tex")
+                with open(output_file, "w", encoding="utf-8") as f:
+                    f.write(final_content)
+                return output_file
+            
+    return None
+
 def render_typesetting_workspace():
     st.subheader("🖨️ 试卷排版工作台")
     
+    # 动态生成默认的输出文件名
+    import datetime
+    today = datetime.date.today()
+    y_str = today.strftime("%Y")
+    m_str = today.strftime("%m")
+    d_str = today.strftime("%d")
+    
+    theme_name = st.session_state.get("exam_theme", "练习类模板")
+    export_dir = os.path.join(BASE_DIR, "Test Paper Group", "导出文件", y_str, m_str)
+    
+    # 确定当天的序号
+    daily_count = 1
+    if os.path.exists(export_dir):
+        prefix = f"{y_str}年{m_str}月{d_str}日 {theme_name}组卷"
+        for f in os.listdir(export_dir):
+            if f.startswith(prefix) and f.endswith(".tex"):
+                daily_count += 1
+                
+    default_filename = f"{y_str}年{m_str}月{d_str}日 {theme_name}组卷{daily_count}"
+    
     # 返回按钮与生成按钮栏
-    c_back, c_gen = st.columns([1, 1])
+    c_back, c_name, c_gen = st.columns([1, 1.5, 1])
     with c_back:
         def go_back_to_selection():
             st.session_state["exam_mode_stage"] = "selection"
-        st.button("⬅️ 返回继续选题", on_click=go_back_to_selection)
+        st.button("⬅️ 返回继续选题", on_click=go_back_to_selection, use_container_width=True)
+    with c_name:
+        export_filename = st.text_input("输出文件名", value=default_filename, label_visibility="collapsed")
     with c_gen:
-        if st.button("🖨️ 确认生成试卷 (开发中)", type="primary", use_container_width=True):
-            st.toast("即将开发真实的 PDF 生成与 LaTeX 拼装功能！", icon="🚀")
+        if st.button("🖨️ 确认生成试卷", type="primary", use_container_width=True):
+            if theme_name in ("练习类模板", "讲义类模板", "试卷类模板"):
+                output_path = generate_exam_paper(export_filename, export_dir, st.session_state["exam_blocks"], theme_name)
+                if output_path:
+                    st.success(f"试卷已成功生成至：{output_path}")
+                else:
+                    st.error("生成失败，请检查模板文件是否存在或格式是否正确！")
+            else:
+                st.warning("暂不支持其他模板的生成，敬请期待！")
     
     st.markdown("---")
     
@@ -1730,49 +2338,202 @@ def render_typesetting_workspace():
                         break
             st.session_state["exam_blocks"].insert(insert_idx, new_block)
             
-    # 第一行：大题/章节
-    c_label_1, c_input_1, c_pos_1, c_submit_1 = st.columns([1.5, 3.5, 1.5, 1.5])
-    with c_label_1:
-        st.markdown("<div style='padding-top:8px;'><b>🗂️ 插入大题/章节</b></div>", unsafe_allow_html=True)
-    with c_input_1:
-        sec_title = st.text_input("文本内容", placeholder="例如：一、选择题", label_visibility="collapsed", key="sec_title_input")
-    with c_pos_1:
-        sec_pos = st.selectbox("插入位置", insert_positions, index=len(insert_positions)-1, label_visibility="collapsed", key="sec_pos")
-    with c_submit_1:
-        if st.button("确认插入", key="sec_submit", use_container_width=True):
-            if sec_title:
-                _insert_block("section", sec_title, sec_pos)
-                st.rerun()
+    # 动态渲染根据不同模板决定是 2 层还是 3 层结构
+    if theme_name == "讲义类模板":
+        # 讲义类有 章、节、小节 三层
+        c_label_0, c_input_0, c_pos_0, c_submit_0 = st.columns([1.5, 3.5, 1.5, 1.5])
+        with c_label_0:
+            st.markdown("<div style='padding-top:8px;'><b>📚 插入章</b></div>", unsafe_allow_html=True)
+        with c_input_0:
+            chap_title = st.text_input("文本内容", placeholder="例如：第一章 集合", label_visibility="collapsed", key="chap_title_input")
+        with c_pos_0:
+            chap_pos = st.selectbox("插入位置", insert_positions, index=0, label_visibility="collapsed", key="chap_pos")
+        with c_submit_0:
+            def on_chap_submit():
+                t = st.session_state.get("chap_title_input", "")
+                p = st.session_state.get("chap_pos", insert_positions[0])
+                if t:
+                    _insert_block("chapter", t, p)
+                    st.session_state["chap_title_input"] = ""
+            st.button("确认插入", key="chap_submit", on_click=on_chap_submit, use_container_width=True)
+
+        # 节
+        c_label_1, c_input_1, c_pos_1, c_submit_1 = st.columns([1.5, 3.5, 1.5, 1.5])
+        with c_label_1:
+            st.markdown("<div style='padding-top:8px; color: #58a6ff;'><b>🗂️ 插入节</b></div>", unsafe_allow_html=True)
+        with c_input_1:
+            sec_title = st.text_input("文本内容", placeholder="例如：第一节 集合的概念", label_visibility="collapsed", key="sec_title_input")
+        with c_pos_1:
+            sec_pos = st.selectbox("插入位置", insert_positions, index=0, label_visibility="collapsed", key="sec_pos")
+        with c_submit_1:
+            def on_sec_submit():
+                t = st.session_state.get("sec_title_input", "")
+                p = st.session_state.get("sec_pos", insert_positions[0])
+                if t:
+                    _insert_block("section", t, p)
+                    st.session_state["sec_title_input"] = ""
+            st.button("确认插入", key="sec_submit", on_click=on_sec_submit, use_container_width=True)
+                    
+        # 小节
+        c_label_2, c_input_2, c_pos_2, c_submit_2 = st.columns([1.5, 3.5, 1.5, 1.5])
+        with c_label_2:
+            st.markdown("<div style='padding-top:8px; color: #8b949e;'><b>📝 插入小节</b></div>", unsafe_allow_html=True)
+        with c_input_2:
+            subsec_title = st.text_input("文本内容", placeholder="例如：考点一", label_visibility="collapsed", key="subsec_title_input")
+        with c_pos_2:
+            subsec_pos = st.selectbox("插入位置", insert_positions, index=0, label_visibility="collapsed", key="subsec_pos")
+        with c_submit_2:
+            def on_subsec_submit():
+                t = st.session_state.get("subsec_title_input", "")
+                p = st.session_state.get("subsec_pos", insert_positions[0])
+                if t:
+                    _insert_block("subsection", t, p)
+                    st.session_state["subsec_title_input"] = ""
+            st.button("确认插入", key="subsec_submit", on_click=on_subsec_submit, use_container_width=True)
+            
+    elif theme_name == "试卷类模板":
+        # 试卷类模板具有四个固定的 section，提供默认内容和位置，并且只允许修改这些节，不再随意新增
+        st.markdown("<div style='color: #8b949e; font-size: 0.9em; margin-bottom: 10px;'>💡 提示：试卷类模板提供四个固定的试卷题型模块，您可以直接点击下方按钮快速插入到对应位置。</div>", unsafe_allow_html=True)
+        
+        # 预设的四个节信息
+        exam_presets = [
+            {
+                "label": "插入单选题节",
+                "default_title": "%\n  选择题：本题共 8 小题，每小题 5 分，共 40 分。\n  在每小题给出的四个选项中，只有一项是符合题目要求的。\n",
+                "default_pos_index": 0 # 第1题前
+            },
+            {
+                "label": "插入多选题节",
+                "default_title": "%\n  选择题：本题共 3 小题，每小题 6 分，共 18 分。\n  在每小题给出的选项中，有多项符合题目要求的。\n  全部选对的得 6 分，部分选择的得部分分，有选错的得 0 分。\n",
+                "default_pos_index": min(8, len(insert_positions)-1) # 第9题前
+            },
+            {
+                "label": "插入填空题节",
+                "default_title": "填空题：本题共 3 小题，每小题 5 分，共 15 分。",
+                "default_pos_index": min(11, len(insert_positions)-1) # 第12题前
+            },
+            {
+                "label": "插入解答题节",
+                "default_title": "解答题：本题共 5 小题，共 77 分。解答应写出文字说明、证明过程或者演算步骤。",
+                "default_pos_index": min(14, len(insert_positions)-1) # 第15题前
+            }
+        ]
+        
+        for i, preset in enumerate(exam_presets):
+            c_label, c_input, c_pos, c_submit = st.columns([1.5, 3.5, 1.5, 1.5])
+            with c_label:
+                st.markdown(f"<div style='padding-top:8px;'><b>🗂️ {preset['label']}</b></div>", unsafe_allow_html=True)
+            with c_input:
+                # 试卷模板的标题通常比较长，直接放入 content 中，把真正的 title 留空，或者将这段话当作 title
+                # 按照用户的代码，这些其实是放在 \section{...} 里面的，所以还是算作 title
+                sec_title = st.text_area("文本内容", value=preset["default_title"], height=68, label_visibility="collapsed", key=f"exam_sec_title_{i}")
+            with c_pos:
+                sec_pos = st.selectbox("插入位置", insert_positions, index=preset["default_pos_index"], label_visibility="collapsed", key=f"exam_sec_pos_{i}")
+            with c_submit:
+                def make_submit_callback(i_val):
+                    def callback():
+                        t = st.session_state.get(f"exam_sec_title_{i_val}", "")
+                        p = st.session_state.get(f"exam_sec_pos_{i_val}", insert_positions[0])
+                        if t:
+                            _insert_block("section", t, p)
+                    return callback
                 
-    # 第二行：小节/说明文字
-    c_label_2, c_input_2, c_pos_2, c_submit_2 = st.columns([1.5, 3.5, 1.5, 1.5])
-    with c_label_2:
-        st.markdown("<div style='padding-top:8px; color: #8b949e;'><b>📝 插入小节/说明</b></div>", unsafe_allow_html=True)
-    with c_input_2:
-        subsec_title = st.text_input("文本内容", placeholder="例如：(一) 单选题", label_visibility="collapsed", key="subsec_title_input")
-    with c_pos_2:
-        subsec_pos = st.selectbox("插入位置", insert_positions, index=len(insert_positions)-1, label_visibility="collapsed", key="subsec_pos")
-    with c_submit_2:
-        if st.button("确认插入", key="subsec_submit", use_container_width=True):
-            if subsec_title:
-                _insert_block("subsection", subsec_title, subsec_pos)
-                st.rerun()
-                
+                # 垂直居中对齐
+                st.markdown("<div style='padding-top:12px;'></div>", unsafe_allow_html=True)
+                st.button("确认插入", key=f"exam_sec_submit_{i}", on_click=make_submit_callback(i), use_container_width=True)
+
+    else:
+        # 练习类及其他模板，仅保留 章节 和 小节
+        c_label_1, c_input_1, c_pos_1, c_submit_1 = st.columns([1.5, 3.5, 1.5, 1.5])
+        with c_label_1:
+            st.markdown("<div style='padding-top:8px;'><b>🗂️ 插入章节</b></div>", unsafe_allow_html=True)
+        with c_input_1:
+            sec_title = st.text_input("文本内容", placeholder="例如：一、选择题", label_visibility="collapsed", key="sec_title_input")
+        with c_pos_1:
+            sec_pos = st.selectbox("插入位置", insert_positions, index=0, label_visibility="collapsed", key="sec_pos")
+        with c_submit_1:
+            def on_sec_submit():
+                t = st.session_state.get("sec_title_input", "")
+                p = st.session_state.get("sec_pos", insert_positions[0])
+                if t:
+                    _insert_block("section", t, p)
+                    st.session_state["sec_title_input"] = ""
+            st.button("确认插入", key="sec_submit", on_click=on_sec_submit, use_container_width=True)
+                    
+        c_label_2, c_input_2, c_pos_2, c_submit_2 = st.columns([1.5, 3.5, 1.5, 1.5])
+        with c_label_2:
+            st.markdown("<div style='padding-top:8px; color: #8b949e;'><b>📝 插入小节</b></div>", unsafe_allow_html=True)
+        with c_input_2:
+            subsec_title = st.text_input("文本内容", placeholder="例如：(一) 单选题", label_visibility="collapsed", key="subsec_title_input")
+        with c_pos_2:
+            subsec_pos = st.selectbox("插入位置", insert_positions, index=0, label_visibility="collapsed", key="subsec_pos")
+        with c_submit_2:
+            def on_subsec_submit():
+                t = st.session_state.get("subsec_title_input", "")
+                p = st.session_state.get("subsec_pos", insert_positions[0])
+                if t:
+                    _insert_block("subsection", t, p)
+                    st.session_state["subsec_title_input"] = ""
+            st.button("确认插入", key="subsec_submit", on_click=on_subsec_submit, use_container_width=True)
+                    
     st.markdown("<br>", unsafe_allow_html=True)
     
     # 遍历显示 Blocks (单列流式布局，改为左右两栏)
     blocks = st.session_state["exam_blocks"]
     q_counter = 1
+    chap_counter = 0
+    sec_counter = 0
+    subsec_counter = 0
     
     for i, blk in enumerate(blocks):
         # 每一行分为左右两列：左侧显示标题和控制按钮，右侧显示渲染结果
         c_left, c_right = st.columns([3, 7], gap="large")
         
         with c_left:
-            if blk["type"] == "section":
-                st.markdown(f"<h4 style='color: #58a6ff; margin-top: 0;'>🗂️ {blk['title']}</h4>", unsafe_allow_html=True)
+            if blk["type"] == "chapter":
+                chap_counter += 1
+                sec_counter = 0
+                subsec_counter = 0
+                # 允许动态修改章节标题
+                col_l, col_r = st.columns([1.5, 3.5])
+                with col_l:
+                    st.markdown(f"<div style='padding-top:8px; white-space:nowrap;'><b>📚 第{chap_counter}章标题</b></div>", unsafe_allow_html=True)
+                with col_r:
+                    # 修复性能问题：不将 widget 的返回值直接硬塞回 blk 中，除非它发生了改变
+                    # 使用 on_change 回调或直接依赖 session_state 来存储值
+                    new_val = st.text_input("章标题", value=blk['title'], key=f"blk_title_{blk['id']}", label_visibility="collapsed")
+                    if new_val != blk['title']: blk['title'] = new_val
+                new_c = st.text_area("内容源码", value=blk.get("content", ""), key=f"blk_content_{blk['id']}", placeholder="在此输入章说明源码（可选）", label_visibility="collapsed")
+                if new_c != blk.get("content", ""): blk["content"] = new_c
+            elif blk["type"] == "section":
+                sec_counter += 1
+                subsec_counter = 0
+                # 允许动态修改章节标题
+                col_l, col_r = st.columns([1.5, 3.5])
+                with col_l:
+                    if theme_name == "讲义类模板":
+                        st.markdown(f"<div style='padding-top:8px; color: #58a6ff; white-space:nowrap;'><b>🗂️ 第{chap_counter}.{sec_counter}节标题</b></div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div style='padding-top:8px; white-space:nowrap;'><b>🗂️ 第{sec_counter}章标题</b></div>", unsafe_allow_html=True)
+                with col_r:
+                    new_val = st.text_input("节/章标题", value=blk['title'], key=f"blk_title_{blk['id']}", label_visibility="collapsed")
+                    if new_val != blk['title']: blk['title'] = new_val
+                new_c = st.text_area("内容源码", value=blk.get("content", ""), key=f"blk_content_{blk['id']}", placeholder="在此输入节/章说明源码（可选）", label_visibility="collapsed")
+                if new_c != blk.get("content", ""): blk["content"] = new_c
             elif blk["type"] == "subsection":
-                st.markdown(f"<h5 style='color: #8b949e; margin-top: 0;'>📝 {blk['title']}</h5>", unsafe_allow_html=True)
+                subsec_counter += 1
+                # 允许动态修改小节标题
+                col_l, col_r = st.columns([1.5, 3.5])
+                with col_l:
+                    if theme_name == "讲义类模板":
+                        st.markdown(f"<div style='padding-top:8px; color: #8b949e; white-space:nowrap;'><b>📝 第{chap_counter}.{sec_counter}.{subsec_counter}小节标题</b></div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<div style='padding-top:8px; color: #8b949e; white-space:nowrap;'><b>📝 第{sec_counter}.{subsec_counter}小节标题</b></div>", unsafe_allow_html=True)
+                with col_r:
+                    new_val = st.text_input("小节标题", value=blk['title'], key=f"blk_title_{blk['id']}", label_visibility="collapsed")
+                    if new_val != blk['title']: blk['title'] = new_val
+                new_c = st.text_area("内容源码", value=blk.get("content", ""), key=f"blk_content_{blk['id']}", placeholder="在此输入小节说明源码（可选）", label_visibility="collapsed")
+                if new_c != blk.get("content", ""): blk["content"] = new_c
             else:
                 name = os.path.basename(blk['path']).replace('.tex', '')
                 st.markdown(f"<h5 style='color: #c9d1d9; margin-top: 0;'>📄 {name}</h5>", unsafe_allow_html=True)
@@ -1796,10 +2557,18 @@ def render_typesetting_workspace():
                     
         with c_right:
             # 右侧渲染内容区
-            if blk["type"] == "section":
+            if blk["type"] == "chapter":
+                st.markdown(f"<h2 style='color: #d2a8ff; margin: 0;'>{blk['title']}</h2>", unsafe_allow_html=True)
+                if blk.get("content"):
+                    st.markdown(f"<div style='margin-top: 10px;'>{blk['content']}</div>", unsafe_allow_html=True)
+            elif blk["type"] == "section":
                 st.markdown(f"<h3 style='color: #58a6ff; margin: 0;'>{blk['title']}</h3>", unsafe_allow_html=True)
+                if blk.get("content"):
+                    st.markdown(f"<div style='margin-top: 10px;'>{blk['content']}</div>", unsafe_allow_html=True)
             elif blk["type"] == "subsection":
                 st.markdown(f"<h4 style='color: #8b949e; border-left: 4px solid #8b949e; padding-left: 10px; margin: 0;'>{blk['title']}</h4>", unsafe_allow_html=True)
+                if blk.get("content"):
+                    st.markdown(f"<div style='margin-top: 10px;'>{blk['content']}</div>", unsafe_allow_html=True)
             else:
                 if os.path.exists(blk["path"]):
                     with open(blk["path"], "r", encoding="utf-8") as f:
@@ -1820,17 +2589,24 @@ def render_typesetting_workspace():
 def page_tools():
     st.header("🛠️ 批量工具箱")
     
-    st.subheader("1. 全国卷名称标准化")
-    st.markdown("""
-    根据规则自动重命名全国卷文件：
-    - 2020-2022: **新高考卷**
-    - 2023-2025: **新课标卷**
-    *(跳过地方卷和甲/乙卷)*
-    """)
-    
-    if st.button("执行标准化检查与重命名"):
-        count = standardize_national_papers()
-        st.success(f"操作完成，共处理 {count} 个文件")
+    # === 批量工具：重建题库索引 ===
+    st.subheader("🗄️ 1. 数据库维护 (一键重建/同步题库索引)")
+    st.info("如果您的题库文件出现了手动删除、外部复制等变动，导致与 CSV 索引不一致，或者统计数据异常，可以点击下方按钮进行一键重建。该操作会保留现有题目的 ID，并自动追加新题或删除不存在的死链接。")
+    if st.button("🔄 一键重建/同步题库索引", type="secondary"):
+        with st.spinner("正在扫描全库并同步索引，请稍候..."):
+            try:
+                # 运行 init_csv_index.py 脚本
+                init_script = os.path.join(BASE_DIR, "utils", "init_csv_index.py")
+                subprocess.run(["python", init_script], check=True, capture_output=True, text=True)
+                clear_statistics_cache()
+                st.success("题库索引重建成功！")
+                st.toast("题库索引同步完成！", icon="✅")
+                time.sleep(1)
+                st.rerun()
+            except subprocess.CalledProcessError as e:
+                st.error(f"同步失败：\n{e.stderr}")
+            except Exception as e:
+                st.error(f"发生错误：{str(e)}")
 
     st.markdown("---")
     
@@ -1873,6 +2649,94 @@ def page_tools():
                     st.write(f"- {f}")
         else:
             st.info("未发现需要处理的文件。")
+
+    st.markdown("---")
+
+    st.subheader("4. 批量纠正选择题选项格式")
+    st.markdown("""
+    扫描题库中所有现存的 `.tex` 文件。如果发现形如 `A. xxx B. xxx C. xxx D. xxx` 的非标准选择题格式，
+    将自动尝试提取选项内容，并用规范的 `\\begin{choices}` ... `\\end{choices}` 指令进行替换。
+    """)
+    if st.button("执行全库选择题格式纠正"):
+        updated_files = batch_fix_choice_formats()
+        if updated_files:
+            st.success(f"操作完成，共修复了 {len(updated_files)} 个包含非规范选择题格式的文件。")
+            with st.expander("查看已修复的文件名单", expanded=True):
+                for f in updated_files:
+                    st.write(f"- {f}")
+        else:
+            st.info("未发现需要修复的选择题格式文件。")
+
+
+def batch_fix_choice_formats():
+    import re
+    updated_files = []
+    
+    for root, dirs, files in os.walk(CHAPTERS_DIR):
+        for file in files:
+            if not file.endswith(".tex"): continue
+            if file.startswith("content_"): continue
+            if " 相关图" in root or " 图" in file: continue
+            
+            file_path = os.path.join(root, file)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 寻找 A. B. C. D. 模式 (支持全半角和换行)
+                pattern = r'(?:A|Ａ)[\.．]\s*(.*?)\s*(?:B|Ｂ)[\.．]\s*(.*?)\s*(?:C|Ｃ)[\.．]\s*(.*?)\s*(?:D|Ｄ)[\.．]\s*(.*?)(?=\\end\{problem\}|\\begin\{solutions?\}|$)'
+                
+                def replace_choices(match):
+                    opt_a = match.group(1).strip()
+                    opt_b = match.group(2).strip()
+                    opt_c = match.group(3).strip()
+                    opt_d = match.group(4).strip()
+                    
+                    # 移除选项末尾可能多余的 \quad, \qquad 和 \\ 等
+                    def clean_opt(opt):
+                        opt = re.sub(r'\\quad\s*$', '', opt).strip()
+                        opt = re.sub(r'\\qquad\s*$', '', opt).strip()
+                        opt = re.sub(r'\\\\$', '', opt).strip() # 去除换行符 \\
+                        return opt
+                        
+                    opt_a = clean_opt(opt_a)
+                    opt_b = clean_opt(opt_b)
+                    opt_c = clean_opt(opt_c)
+                    opt_d = clean_opt(opt_d)
+                    
+                    return f"\n\\begin{{choices}}\n\\choice{{{{{opt_a}}}}}\n\\choice{{{{{opt_b}}}}}\n\\choice{{{{{opt_c}}}}}\n\\choice{{{{{opt_d}}}}}\n\\end{{choices}}\n"
+                
+                new_content, count = re.subn(pattern, replace_choices, content, flags=re.DOTALL)
+                
+                # 检查 \begin{choices} 前面是否有 (\hspace{1cm})
+                if r'\begin{choices}' in new_content:
+                    parts = new_content.split(r'\begin{choices}')
+                    for i in range(len(parts) - 1):
+                        prefix = parts[i]
+                        stripped_prefix = prefix.rstrip()
+                        
+                        # 检查是否已经有 (\hspace{1cm}) 或者类似的占位符 (支持全角半角括号和空格)
+                        has_hspace = re.search(r'[\(（]\s*\\hspace\{1cm\}\s*[\)）]$', stripped_prefix)
+                        
+                        if not has_hspace:
+                            # 检查是否有空的括号 () 或 （），有的话直接替换掉
+                            if stripped_prefix.endswith('()') or stripped_prefix.endswith('（）'):
+                                stripped_prefix = stripped_prefix[:-2] + r'(\hspace{1cm})'
+                            else:
+                                stripped_prefix += r' (\hspace{1cm})'
+                                
+                        parts[i] = stripped_prefix + '\n'
+                        
+                    new_content = r'\begin{choices}'.join(parts)
+                
+                if new_content != content:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    updated_files.append(file)
+            except Exception as e:
+                print(f"Error processing {file_path}: {e}")
+                
+    return updated_files
 
 def batch_extract_tikz_all():
     updated_files = []
@@ -2087,20 +2951,43 @@ def page_tag_edit():
         with st.form("tag_edit_search"):
              # Level 1
              c1a, c1b = st.columns([1, 2])
-             with c1a: t1 = st.selectbox("一级类型", ["题目文件名", "题目内容", "解答内容", "标签"], key="te_s_t1", label_visibility="collapsed")
-             with c1b: q1 = st.text_input("一级检索", placeholder="一级关键词", key="te_s_q1", label_visibility="collapsed")
+             search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
+             with c1a: 
+                 # 移除 form 的约束，让 selectbox 触发 rerun 以更新下一个输入框
+                 pass
              
-             # Level 2
-             c2a, c2b = st.columns([1, 2])
-             with c2a: t2 = st.selectbox("二级类型", ["题目文件名", "题目内容", "解答内容", "标签"], key="te_s_t2", label_visibility="collapsed")
-             with c2b: q2 = st.text_input("二级检索", placeholder="筛选词", key="te_s_q2", label_visibility="collapsed")
-             
-             # Level 3
-             c3a, c3b = st.columns([1, 2])
-             with c3a: t3 = st.selectbox("三级类型", ["题目文件名", "题目内容", "解答内容", "标签"], key="te_s_t3", label_visibility="collapsed")
-             with c3b: q3 = st.text_input("三级检索", placeholder="筛选词", key="te_s_q3", label_visibility="collapsed")
-             
-             submitted = st.form_submit_button("🔍 搜索", type="primary", use_container_width=True)
+        # 因为需要级联更新 UI（selectbox -> text_input/selectbox），不能将包含动态类型的输入框直接放进 form
+        # 我们改用普通的容器，最后加一个搜索按钮
+        c1a, c1b = st.columns([1, 2])
+        with c1a: 
+            t1 = st.selectbox("一级类型", search_opts, index=0, key="te_s_t1", label_visibility="collapsed")
+        with c1b: 
+            if t1 == "题目类型":
+                q1 = st.selectbox("一级检索", ["选择题", "填空题", "解答题"], key="te_s_q1_sel", label_visibility="collapsed")
+            else:
+                q1 = st.text_input("一级检索", placeholder="一级关键词", key="te_s_q1", label_visibility="collapsed")
+        
+        # Level 2
+        c2a, c2b = st.columns([1, 2])
+        with c2a: 
+            t2 = st.selectbox("二级类型", search_opts, index=0, key="te_s_t2", label_visibility="collapsed")
+        with c2b: 
+            if t2 == "题目类型":
+                q2 = st.selectbox("二级检索", ["选择题", "填空题", "解答题"], key="te_s_q2_sel", label_visibility="collapsed")
+            else:
+                q2 = st.text_input("二级检索", placeholder="筛选词", key="te_s_q2", label_visibility="collapsed")
+        
+        # Level 3
+        c3a, c3b = st.columns([1, 2])
+        with c3a: 
+            t3 = st.selectbox("三级类型", search_opts, index=0, key="te_s_t3", label_visibility="collapsed")
+        with c3b: 
+            if t3 == "题目类型":
+                q3 = st.selectbox("三级检索", ["选择题", "填空题", "解答题"], key="te_s_q3_sel", label_visibility="collapsed")
+            else:
+                q3 = st.text_input("三级检索", placeholder="筛选词", key="te_s_q3", label_visibility="collapsed")
+        
+        submitted = st.button("🔍 搜索", type="primary", use_container_width=True)
              
         if submitted:
             st.session_state["te_search_active"] = True
@@ -2199,7 +3086,8 @@ def page_tag_edit():
                         ensure_dir(target_dir)
                     new_path = os.path.join(target_dir, new_filename)
                     
-                    new_full_text = generate_latex_template(new_year, new_type, new_name, new_num, new_subject_str, body_content)
+                    # 构造 LaTeX 模板内容
+                    new_full_text = f"\\begin{{problem}}{{{new_year}}}{{{new_type}}}{{{new_name}}}{{{new_num}}}{{{new_subject_str}}}\n{body_content}\n\\end{{problem}}"
                     
                     try:
                         with open(new_path, "w", encoding="utf-8") as f:
@@ -2208,15 +3096,206 @@ def page_tag_edit():
                         if new_path != file_path:
                             os.remove(file_path)
                             
+                        # 同步更新到 CSV 索引
+                        update_csv_index_for_edit(file_path, new_path, new_full_text, new_year, new_type, new_name, new_num, new_subject_str)
+                            
                         st.success(f"更新成功！\n旧: {os.path.basename(file_path)}\n新: {new_filename}")
+                        clear_statistics_cache()
                         st.session_state["tag_edit_file"] = new_path
                         time.sleep(1)
                         st.rerun()
                     except Exception as e:
                         st.error(f"更新失败: {e}")
 
+def update_question_meta(fpath, key, value):
+    from utils.latex_ops import parse_meta_data, inject_meta_data
+    with open(fpath, "r", encoding="utf-8") as f:
+        fc = f.read()
+    fm, _ = parse_meta_data(fc)
+    fm[key] = value
+    new_fc = inject_meta_data(fc, fm)
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write(new_fc)
+    try:
+        from utils.csv_ops import update_csv_index_for_edit
+        # 从文件名解析基础信息
+        basename = os.path.basename(fpath).replace(".tex", "")
+        parts = basename.split("-")
+        if len(parts) >= 5:
+            new_year = parts[0]
+            new_ptype = parts[1]
+            new_pname = parts[2]
+            new_pnum = parts[3]
+            new_subj = parts[4]
+            update_csv_index_for_edit(fpath, fpath, new_fc, new_year, new_ptype, new_pname, new_pnum, new_subj)
+        else:
+            print("Update CSV failed: Invalid filename format.")
+    except Exception as e:
+        print("Update CSV failed:", e)
+
+def render_question_header(q_label, content, fpath, extra_html_label=""):
+    st.markdown(f"### {q_label} {extra_html_label}", unsafe_allow_html=True)
+    
+    from utils.latex_ops import parse_meta_data
+    meta, _ = parse_meta_data(content)
+    diff = meta.get("难度星级", "").strip()
+    tags = meta.get("标签", "").strip()
+    remark = meta.get("备注", "").strip()
+
+    try:
+        diff_val = float(diff)
+    except:
+        diff_val = 0.0
+
+    from utils.star_rating import st_star_rating
+    
+    pending_key = f"pending_diff_{fpath}"
+    version_key = f"star_key_version_{fpath}"
+    
+    # --- 注入 CSS 实现紧凑同行布局 ---
+    st.markdown("""
+    <style>
+    /* 限定作用域，避免污染全局布局 (如知识板块等) */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .star-col),
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .rem-lbl) {
+        align-items: center !important;
+        gap: 0px !important;
+        margin-bottom: 5px !important;
+    }
+    div[data-testid="column"]:has(.star-col) {
+        width: 220px !important;
+        min-width: 220px !important;
+        max-width: 220px !important;
+        flex: 0 0 auto !important;
+    }
+    div[data-testid="column"]:has(.tight-lbl) {
+        width: fit-content !important;
+        min-width: fit-content !important;
+        flex: 0 1 auto !important;
+        padding-right: 0px !important;
+        padding-left: 0px !important;
+    }
+    div[data-testid="column"]:has(.tight-btn) {
+        width: fit-content !important;
+        min-width: fit-content !important;
+        flex: 0 0 auto !important;
+        padding-left: 4px !important;
+    }
+    /* 淡灰色 + 按钮 */
+    div[data-testid="column"]:has(.tight-btn) div[data-testid="stPopover"] > button {
+        color: #666 !important;
+        background-color: #f5f6f8 !important;
+        border: 1px solid #ddd !important;
+        padding: 0px 8px !important;
+        min-height: 26px !important;
+        height: 26px !important;
+        line-height: 1 !important;
+        width: auto !important;
+    }
+    div[data-testid="column"]:has(.tight-btn) div[data-testid="stPopover"] > button:hover {
+        background-color: #e2e6ea !important;
+        border-color: #ccc !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        # === Row 1: 星级与标签 ===
+        c_star, c_tag_lbl, c_tag_btn, _ = st.columns([1, 1, 1, 1], vertical_alignment="center")
+        
+        with c_star:
+            st.markdown("<span class='star-col'></span>", unsafe_allow_html=True)
+            comp_key = f"star_rating_{fpath}_{st.session_state.get(version_key, 0)}"
+            new_diff = st_star_rating(label="难度星级：", value=diff_val, max_stars=6, key=comp_key)
+            
+            if new_diff is not None and new_diff != diff_val:
+                if diff_val == 0.0:
+                    update_question_meta(fpath, "难度星级", str(new_diff))
+                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+                    st.rerun()
+                else:
+                    st.session_state[pending_key] = new_diff
+
+        with c_tag_lbl:
+            if tags:
+                st.markdown(f"<span class='tight-lbl'></span>**标签:** **{tags}**", unsafe_allow_html=True)
+            else:
+                st.markdown("<span class='tight-lbl'></span>**标签:**", unsafe_allow_html=True)
+                
+        with c_tag_btn:
+            st.markdown("<span class='tight-btn'></span>", unsafe_allow_html=True)
+            tag_popover_key = f"tag_popover_{fpath}_{st.session_state.get(f'tag_version_{fpath}', 0)}"
+            with st.popover("➕", help="修改标签"):
+                new_tags_str = st.text_input("编辑标签（逗号“，”分隔）", value=tags, key=f"tag_input_{tag_popover_key}")
+                if not tags:
+                    if st.button("直接保存", key=f"tag_save_{tag_popover_key}", type="primary"):
+                        update_question_meta(fpath, "标签", new_tags_str)
+                        st.session_state[f'tag_version_{fpath}'] = st.session_state.get(f'tag_version_{fpath}', 0) + 1
+                        st.rerun()
+                else:
+                    tc1, tc2 = st.columns(2)
+                    with tc1:
+                        if st.button("确认", key=f"tag_ok_{tag_popover_key}", type="primary"):
+                            update_question_meta(fpath, "标签", new_tags_str)
+                            st.session_state[f'tag_version_{fpath}'] = st.session_state.get(f'tag_version_{fpath}', 0) + 1
+                            st.rerun()
+                    with tc2:
+                        if st.button("取消", key=f"tag_cancel_{tag_popover_key}", type="secondary"):
+                            st.session_state[f'tag_version_{fpath}'] = st.session_state.get(f'tag_version_{fpath}', 0) + 1
+                            st.rerun()
+
+        # 处理未保存的星级变更弹窗
+        if pending_key in st.session_state:
+            st.warning(f"确认修改为 {st.session_state[pending_key]} 星吗？")
+            bc1, bc2 = st.columns(2)
+            with bc1:
+                if st.button("✅ 确认", key=f"diff_ok_{fpath}", type="primary"):
+                    final_diff = st.session_state[pending_key]
+                    update_question_meta(fpath, "难度星级", str(final_diff))
+                    del st.session_state[pending_key]
+                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+                    st.rerun()
+            with bc2:
+                if st.button("❌ 取消", key=f"diff_cancel_{fpath}", type="secondary"):
+                    del st.session_state[pending_key]
+                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+                    st.rerun()
+
+        # === Row 2: 备注 ===
+        c_rem_lbl, c_rem_btn, _ = st.columns([1, 1, 1], vertical_alignment="center")
+        with c_rem_lbl:
+            if remark:
+                st.markdown(f"<span class='rem-lbl tight-lbl'></span><span style='margin-right: -18px;'>**备注:** <span style='background-color: #f0f2f6; padding: 2px 6px; border-radius: 4px; color: #555; font-size: 0.95em;'>{remark}</span></span>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span class='rem-lbl tight-lbl'></span><span style='margin-right: -18px;'>**备注:**</span>", unsafe_allow_html=True)
+                
+        with c_rem_btn:
+            st.markdown("<span class='tight-btn'></span>", unsafe_allow_html=True)
+            rem_popover_key = f"rem_popover_{fpath}_{st.session_state.get(f'rem_version_{fpath}', 0)}"
+            with st.popover("➕", help="修改备注"):
+                new_rem_str = st.text_input("编辑备注", value=remark, key=f"rem_input_{rem_popover_key}")
+                if not remark:
+                    if st.button("直接保存", key=f"rem_save_{rem_popover_key}", type="primary"):
+                        update_question_meta(fpath, "备注", new_rem_str)
+                        st.session_state[f'rem_version_{fpath}'] = st.session_state.get(f'rem_version_{fpath}', 0) + 1
+                        st.rerun()
+                else:
+                    rc1, rc2 = st.columns(2)
+                    with rc1:
+                        if st.button("确认", key=f"rem_ok_{rem_popover_key}", type="primary"):
+                            update_question_meta(fpath, "备注", new_rem_str)
+                            st.session_state[f'rem_version_{fpath}'] = st.session_state.get(f'rem_version_{fpath}', 0) + 1
+                            st.rerun()
+                    with rc2:
+                        if st.button("取消", key=f"rem_cancel_{rem_popover_key}", type="secondary"):
+                            st.session_state[f'rem_version_{fpath}'] = st.session_state.get(f'rem_version_{fpath}', 0) + 1
+                            st.rerun()
+        
 # ================= 辅助函数：搜索匹配 =================
 import datetime
+
+def clear_statistics_cache():
+    get_statistics.clear()
 
 @st.cache_data(ttl=10)
 def get_statistics():
@@ -2230,6 +3309,48 @@ def get_statistics():
         "daily_activity": {}
     }
     
+    today_str = datetime.date.today().isoformat()
+    
+    # 优先尝试从 CSV 索引表读取（性能提升 100 倍）
+    try:
+        from utils.csv_ops import read_csv_index
+        csv_data = read_csv_index()
+        if csv_data:
+            stats["total_questions"] = len(csv_data)
+            
+            for row in csv_data:
+                # 统计新增和修改
+                c_time = row.get("初次录入的时间", "")
+                m_time = row.get("最后修改时间", "")
+                
+                c_date = c_time.split(" ")[0] if c_time else ""
+                m_date = m_time.split(" ")[0] if m_time else ""
+                
+                if c_date == today_str:
+                    stats["today_new_questions"] += 1
+                elif m_date == today_str:
+                    stats["today_mod_questions"] += 1
+                    
+                # 记录每日活跃度 (热力图)
+                if c_date:
+                    stats["daily_activity"][c_date] = stats["daily_activity"].get(c_date, 0) + 1
+                if m_date and m_date != c_date:
+                    stats["daily_activity"][m_date] = stats["daily_activity"].get(m_date, 0) + 1
+                    
+                # 统计包含 TikZ 的题目
+                if row.get("包含TikZ绘图") == "是":
+                    stats["total_tikz"] += 1
+                    if c_date == today_str:
+                        stats["today_new_tikz"] += 1
+                    elif m_date == today_str:
+                        stats["today_mod_tikz"] += 1
+                        
+            return stats
+    except Exception as e:
+        # 如果 CSV 读取失败，回退到遍历文件夹的旧逻辑
+        pass
+
+    # ================= 降级：文件夹遍历统计 =================
     today_start = datetime.datetime.combine(datetime.date.today(), datetime.time.min).timestamp()
     
     if not os.path.exists(CHAPTERS_DIR):
@@ -2250,11 +3371,20 @@ def get_statistics():
                 ctime = stat_info.st_ctime
                 mtime = stat_info.st_mtime
                 
+                # 修改点：不再仅依赖文件的创建时间，而是统计每天所有题目的最后修改时间
+                # 作为活跃度的依据（或者是创建时间也可以，这里我们把最后修改时间也算进去）
                 c_date = datetime.datetime.fromtimestamp(ctime).date().isoformat()
+                m_date = datetime.datetime.fromtimestamp(mtime).date().isoformat()
                 
                 is_today_created = ctime >= today_start
                 is_today_modified = mtime >= today_start and not is_today_created
                 
+                # 新增逻辑：无论是新创建还是修改，都记录到热力图的活跃度中
+                if not is_tikz_dir and " 图" not in file:
+                    stats["daily_activity"][c_date] = stats["daily_activity"].get(c_date, 0) + 1
+                    if m_date != c_date:
+                        stats["daily_activity"][m_date] = stats["daily_activity"].get(m_date, 0) + 1
+                        
                 if is_tikz_dir or " 图" in file:
                     stats["total_tikz"] += 1
                     if is_today_created:
@@ -2267,8 +3397,6 @@ def get_statistics():
                         stats["today_new_questions"] += 1
                     elif is_today_modified:
                         stats["today_mod_questions"] += 1
-                        
-                    stats["daily_activity"][c_date] = stats["daily_activity"].get(c_date, 0) + 1
                     
             except Exception:
                 pass
@@ -2541,28 +3669,42 @@ def main():
         """, unsafe_allow_html=True)
 
         # 在左侧面板，将全局搜索框移至此处（四个导航按钮上方）
-        with st.form("global_search_form"):
-            st.markdown("##### 🔍 多级筛选搜索")
-            
-            c_s_1, c_s_2, c_s_3 = st.columns([0.25, 0.6, 0.15])
-            with c_s_1:
-                g_type_1 = st.selectbox("一级类型", ["题目文件名", "题目内容", "解答内容"], key="g_t1")
-            with c_s_2:
+        st.markdown("##### 🔍 多级筛选搜索")
+        
+        c_s_1, c_s_2, c_s_3 = st.columns([0.25, 0.6, 0.15])
+        search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
+        with c_s_1:
+            g_type_1 = st.selectbox("一级类型", search_opts, index=0, key="g_t1")
+        with c_s_2:
+            if g_type_1 == "题目类型":
+                # 移除 label_visibility="collapsed" 以便对齐，并显示标签
+                g_query_1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="g_q1_sel")
+            else:
                 g_query_1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="g_q1")
-            with c_s_3:
-                # 为了让搜索按钮和输入框对齐，添加一点空白
-                st.write("")
-                st.write("")
-                g_submit = st.form_submit_button("🔍 搜索", use_container_width=True)
-                
-            # 直接显示多级筛选，不使用 expander，也不使用分割线
-            c_adv_1, c_adv_2 = st.columns([1, 2])
-            with c_adv_1: g_type_2 = st.selectbox("二级类型", ["题目文件名", "题目内容", "解答内容"], key="g_t2")
-            with c_adv_2: g_query_2 = st.text_input("二级关键词", key="g_q2")
+        with c_s_3:
+            # 为了让搜索按钮和输入框对齐，重新加回空行
+            st.write("")
+            st.write("")
+            g_submit = st.button("🔍 搜索", use_container_width=True)
             
-            c_adv_3, c_adv_4 = st.columns([1, 2])
-            with c_adv_3: g_type_3 = st.selectbox("三级类型", ["题目文件名", "题目内容", "解答内容"], key="g_t3")
-            with c_adv_4: g_query_3 = st.text_input("三级关键词", key="g_q3")
+        # 直接显示多级筛选，不使用 expander，也不使用分割线
+        c_adv_1, c_adv_2 = st.columns([1, 2])
+        with c_adv_1: 
+            g_type_2 = st.selectbox("二级类型", search_opts, index=0, key="g_t2")
+        with c_adv_2: 
+            if g_type_2 == "题目类型":
+                g_query_2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="g_q2_sel")
+            else:
+                g_query_2 = st.text_input("二级关键词", key="g_q2")
+        
+        c_adv_3, c_adv_4 = st.columns([1, 2])
+        with c_adv_3: 
+            g_type_3 = st.selectbox("三级类型", search_opts, index=0, key="g_t3")
+        with c_adv_4: 
+            if g_type_3 == "题目类型":
+                g_query_3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="g_q3_sel")
+            else:
+                g_query_3 = st.text_input("三级关键词", key="g_q3")
             
         st.write("") # 增加一点间距
 

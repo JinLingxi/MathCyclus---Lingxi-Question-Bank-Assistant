@@ -1,6 +1,5 @@
 # API 密钥和环境变量 (绝对不能上传)
 .env
-.gitignore
 
 # TikZ 绘图的临时图片和 PDF 缓存 (会占用大量空间，不需要上传)
 .tikz_cache/
@@ -23,9 +22,6 @@ ocr_prompt.txt
 AutoTikz.md
 debug.log
 
-# 保留题库
-chapters/
-cover/
 
 # LaTeX 编译输出
 main.synctex.gz

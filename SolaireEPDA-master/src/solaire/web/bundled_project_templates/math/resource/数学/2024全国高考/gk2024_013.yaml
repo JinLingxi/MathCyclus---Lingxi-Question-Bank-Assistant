@@ -1,0 +1,6 @@
+id: gk2024_013
+type: fill
+content: 若曲线$y=\e^x+x$在点$(0,1)$处的切线也是曲线$y=\ln(x+1)+a$的切线，则$a=$\underline{\qquad\qquad}．
+answer: $\ln 2$
+analysis: 略
+metadata: {}

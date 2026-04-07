@@ -1,0 +1,15 @@
+{
+  "questionTypes": {
+    "choice": "choice · 选择",
+    "fill": "fill · 填空",
+    "judge": "judge · 判断",
+    "short_answer": "short_answer · 简答（要点给分）",
+    "reasoning": "reasoning · 推理（计算、证明等）",
+    "essay": "essay · 论述"
+  },
+  "groupInnerTypes": {
+    "choice": "choice · 选择",
+    "fill": "fill · 填空",
+    "judge": "judge · 判断"
+  }
+}

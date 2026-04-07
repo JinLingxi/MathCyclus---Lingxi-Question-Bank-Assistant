@@ -1,0 +1,49 @@
+{
+  "title": "Settings",
+  "intro": "Configure the assistant’s model service (combined with environment variables on the backend machine; project-saved values win).",
+  "switchProject": "Switch project",
+  "loading": "Loading…",
+  "needProject": "Open or create a project on this machine to save settings into it. Below is a read-only view of what is active (may come from environment variables).",
+  "modelBaseUrl": "Model service URL",
+  "modelBaseUrlHint": "Leave empty for the default hosted endpoint; enter a full URL for self-hosted or proxy setups.",
+  "mainModel": "Primary model name",
+  "fastModel": "Fast model name",
+  "fastModelHint": "May match the primary model for light steps.",
+  "accessKey": "Access token",
+  "accessKeyHint": "Active: {{masked}}{{override}}",
+  "notConfigured": "(not set)",
+  "overrideSuffix": "(includes project override)",
+  "accessKeyPlaceholder": "Only updates when you type a new value; leave blank to keep the current one.",
+  "safetyTitle": "Assistant safety",
+  "safetyHint": "Choose whether destructive actions need your confirmation.",
+  "safetyOption": {
+    "moderato": {
+      "label": "Moderato",
+      "desc": "Creates, edits, and deletes need your confirmation; read-only actions run immediately."
+    },
+    "allegro": {
+      "label": "Allegro",
+      "desc": "Creates run immediately; edits and deletes need confirmation."
+    },
+    "vivace": {
+      "label": "Vivace",
+      "desc": "Most actions run immediately; high-risk steps get a quick check, with confirmation only when something looks risky."
+    },
+    "prestissimo": {
+      "label": "Prestissimo",
+      "desc": "All actions run immediately with no confirmation prompts."
+    }
+  },
+  "saveSafety": "Save safety mode",
+  "footerNote": "Settings are stored in a private file under the project; do not commit secrets to public repos.",
+  "saveProject": "Save to project",
+  "clearProjectKey": "Clear project-stored token",
+  "savedProject": "Saved to the current project.",
+  "clearedKey": "Cleared the project-stored access token.",
+  "updatedSafety": "Assistant safety mode updated.",
+  "confirmClearKey": "Clear the access token stored in this project? After that, environment configuration applies if present.",
+  "pageSummary": "Assistant model service",
+  "uiLanguage": "Interface language",
+  "langZh": "简体中文",
+  "langEn": "English"
+}

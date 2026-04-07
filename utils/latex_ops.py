@@ -4,6 +4,42 @@ from .core_config import CHAPTERS_DIR, BASE_DIR
 from .file_ops import ensure_dir
 from .tikz_ops import get_tikz_image_b64
 
+# ================= Meta Data 处理 =================
+def parse_meta_data(content):
+    """
+    解析文件头部的 % === Begin Label Data === 注释块
+    返回 (meta_dict, clean_content)
+    """
+    meta = {}
+    # 支持旧版的 Meta Data 以及新版的 Label Data (匹配 End Label Data 或 End  Label Data)
+    pattern = r'%(?: === Meta Data ===| === Begin Label Data ===)\n(.*?)%(?: === End Meta ===| === End\s+Label Data ===)\n'
+    match = re.search(pattern, content, re.DOTALL)
+    if match:
+        lines = match.group(1).split('\n')
+        for line in lines:
+            if line.startswith('% '):
+                parts = line[2:].split(':', 1)
+                if len(parts) == 2:
+                    meta[parts[0].strip()] = parts[1].strip()
+    
+    # 剔除 Meta 块后的纯净内容
+    clean_content = re.sub(pattern, '', content, flags=re.DOTALL).lstrip()
+    return meta, clean_content
+
+def inject_meta_data(content, meta_dict):
+    """
+    将 meta_dict 转换为注释块并注入到内容头部
+    """
+    _, clean_content = parse_meta_data(content)
+    
+    meta_str = "% === Begin Label Data ===\n"
+    for k, v in meta_dict.items():
+        meta_str += f"% {k}: {v}\n"
+    meta_str += "% === End  Label Data ===\n\n"
+    
+    return meta_str + clean_content
+
+
 def get_editor_height(content):
     line_count = content.count('\n') + 2
     # 每行大约 26 像素，设置最小高度 150，最大高度 800
@@ -17,8 +53,9 @@ def get_editor_height(content):
 
 def latex_to_markdown(content):
     """简单的 LaTeX 转 Markdown 用于预览"""
-    # 提取 problem 环境参数
+    # 提取 problem / question 环境参数
     header = ""
+    # 尝试匹配 \begin{problem}{...}{...}{...}{...}{...}
     match = re.search(r'\\begin\{problem\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}', content)
     if match:
         year, ptype, name, num, subj = match.groups()
@@ -27,8 +64,17 @@ def latex_to_markdown(content):
         # 移除 begin 标签
         content = content[match.end():]
     
-    # 移除 end 标签
+    # 移除可能存在的 \begin{problem} / \end{problem} (不带参数)
+    content = re.sub(r'\\begin\{problem\}(\[.*?\])?', '', content)
     content = content.replace(r'\end{problem}', '')
+
+    # 移除可能存在的 \begin{question} / \end{question}
+    content = re.sub(r'\\begin\{question\}(\[.*?\])?', '', content)
+    content = content.replace(r'\end{question}', '')
+    
+    # 处理 answer 环境
+    content = re.sub(r'\\begin\{answer\}', '\n\n**【答案】**\n', content)
+    content = re.sub(r'\\end\{answer\}', '', content)
     
     # 处理 solution/solutions 环境
     content = re.sub(r'\\begin\{solutions?\}', '\n\n**【解答】**\n', content)
@@ -36,11 +82,17 @@ def latex_to_markdown(content):
     
     # 处理 choices 环境 (A. B. C. D. 样式)
     def replace_choices_env(match):
-        content_inner = match.group(1)
-        # 按 \choice 分割
-        parts = re.split(r'\\choice', content_inner)
+        # match.group(1) 可能是可选项 [2] 等，match.group(2) 才是内部内容
+        content_inner = match.group(2)
         
-        new_inner = parts[0] # 保留第一个 \choice 前的内容（通常是空的或换行）
+        # 兼容 \choice 和 \item 两种选项标记
+        # 将 \choice 统一替换为 \item 进行后续分割
+        content_inner = re.sub(r'\\choice', r'\\item', content_inner)
+        
+        # 按 \item 分割
+        parts = re.split(r'\\item', content_inner)
+        
+        new_inner = parts[0] # 保留第一个 \item 前的内容（通常是空的或换行）
         choice_idx = 0
         
         for p in parts[1:]:
@@ -60,7 +112,8 @@ def latex_to_markdown(content):
             
         return new_inner
 
-    content = re.sub(r'\\begin\{choices\}(.*?)\\end\{choices\}', replace_choices_env, content, flags=re.DOTALL)
+    # 兼容带有参数的 \begin{choices}[2] 等情况
+    content = re.sub(r'\\begin\{choices\}(\[.*?\])?(.*?)\\end\{choices\}', replace_choices_env, content, flags=re.DOTALL)
     
     # 移除残留的标签（以防万一）
     content = content.replace(r'\begin{choices}', '').replace(r'\end{choices}', '')
@@ -245,7 +298,7 @@ def update_file_tags(old_fpath, new_tags_list):
     return True
 
 def extract_and_replace_tikz(content, filename, save_dir):
-    """
+    r"""
     提取LaTeX内容中的TikZ代码块，保存为独立文件到“相关图”文件夹中。
     注意：修改后，主文件中不再替换为 \input{}，而是保留原始的 \begin{tikzpicture}...\end{tikzpicture} 代码，
     但仍会在后台生成对应的独立 .tex 副本，以便后续有其他需要。

@@ -1,0 +1,17 @@
+id: gk2024_018
+type: reasoning
+content: '已知函数$f(x)=\ln \dfrac{x}{2-x}+ax+b\left(x-1\right)^3$．
+
+
+  （1）若$b=0$，且 $f''(x)\geqslant 0$，求 $a$的最小值；
+
+
+  （2）证明：曲线$y=f(x)$是中心对称图形；
+
+
+  （3）若 $f(x)>-2$当且仅当 $1<x<2$，求 $b$的取值范围．
+
+  '
+answer: 略
+analysis: 略
+metadata: {}

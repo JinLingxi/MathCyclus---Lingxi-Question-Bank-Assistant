@@ -1,0 +1,11 @@
+id: gk2024_008
+type: choice
+content: 已知函数$f(x)$的定义域为 $\mathbb R$， $f(x)>f(x-1)+f(x-2)$，且当 $x<3$时，$f(x)=x$，则下列结论中一定正确的是
+options:
+  A: $f(10)>100$
+  B: $f(20)>1\,000$
+  C: $f(10)<1\,000$
+  D: $f(20)<10\,000$
+answer: B
+analysis: 略
+metadata: {}

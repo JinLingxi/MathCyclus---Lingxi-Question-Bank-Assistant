@@ -2,11 +2,14 @@
 \contentsline {section}{\numberline {1.1}2016}{1}{section.1.1}%
 \contentsline {section}{\numberline {1.2}2024}{1}{section.1.2}%
 \contentsline {section}{\numberline {1.3}2025}{1}{section.1.3}%
+\contentsline {section}{\numberline {1.4}2026}{2}{section.1.4}%
 \contentsline {chapter}{\numberline {第二章\hspace {.3em}}复数}{3}{chapter.2}%
 \contentsline {section}{\numberline {2.1}2024}{3}{section.2.1}%
 \contentsline {section}{\numberline {2.2}2025}{3}{section.2.2}%
+\contentsline {section}{\numberline {2.3}2026}{4}{section.2.3}%
 \contentsline {chapter}{\numberline {第三章\hspace {.3em}}不等式}{5}{chapter.3}%
 \contentsline {section}{\numberline {3.1}2025}{5}{section.3.1}%
+\contentsline {section}{\numberline {3.2}2026}{5}{section.3.2}%
 \contentsline {chapter}{\numberline {第四章\hspace {.3em}}函数}{6}{chapter.4}%
 \contentsline {section}{\numberline {4.1}2009}{6}{section.4.1}%
 \contentsline {section}{\numberline {4.2}2010}{6}{section.4.2}%
@@ -15,87 +18,94 @@
 \contentsline {section}{\numberline {4.5}2024}{7}{section.4.5}%
 \contentsline {section}{\numberline {4.6}2025}{8}{section.4.6}%
 \contentsline {section}{\numberline {4.7}2026}{9}{section.4.7}%
-\contentsline {chapter}{\numberline {第五章\hspace {.3em}}概率}{10}{chapter.5}%
-\contentsline {section}{\numberline {5.1}2013}{10}{section.5.1}%
-\contentsline {section}{\numberline {5.2}2019}{11}{section.5.2}%
-\contentsline {section}{\numberline {5.3}2023}{13}{section.5.3}%
-\contentsline {section}{\numberline {5.4}2024}{14}{section.5.4}%
-\contentsline {section}{\numberline {5.5}2025}{15}{section.5.5}%
-\contentsline {chapter}{\numberline {第六章\hspace {.3em}}统计}{18}{chapter.6}%
-\contentsline {section}{\numberline {6.1}2004}{18}{section.6.1}%
-\contentsline {section}{\numberline {6.2}2024}{18}{section.6.2}%
-\contentsline {section}{\numberline {6.3}2025}{18}{section.6.3}%
-\contentsline {chapter}{\numberline {第七章\hspace {.3em}}排列组合}{20}{chapter.7}%
-\contentsline {section}{\numberline {7.1}2019}{20}{section.7.1}%
-\contentsline {section}{\numberline {7.2}2024}{20}{section.7.2}%
-\contentsline {chapter}{\numberline {第八章\hspace {.3em}}圆锥曲线}{21}{chapter.8}%
-\contentsline {section}{\numberline {8.1}2003}{21}{section.8.1}%
-\contentsline {section}{\numberline {8.2}2021}{21}{section.8.2}%
-\contentsline {section}{\numberline {8.3}2024}{21}{section.8.3}%
-\contentsline {section}{\numberline {8.4}2025}{25}{section.8.4}%
-\contentsline {chapter}{\numberline {第九章\hspace {.3em}}解三角形}{27}{chapter.9}%
-\contentsline {section}{\numberline {9.1}2006}{27}{section.9.1}%
-\contentsline {section}{\numberline {9.2}2010}{27}{section.9.2}%
-\contentsline {section}{\numberline {9.3}2021}{27}{section.9.3}%
-\contentsline {section}{\numberline {9.4}2024}{28}{section.9.4}%
-\contentsline {section}{\numberline {9.5}2025}{28}{section.9.5}%
-\contentsline {chapter}{\numberline {第十章\hspace {.3em}}三角函数}{29}{chapter.10}%
-\contentsline {section}{\numberline {10.1}2004}{29}{section.10.1}%
-\contentsline {section}{\numberline {10.2}2005}{29}{section.10.2}%
-\contentsline {section}{\numberline {10.3}2011}{29}{section.10.3}%
-\contentsline {section}{\numberline {10.4}2016}{30}{section.10.4}%
-\contentsline {section}{\numberline {10.5}2024}{30}{section.10.5}%
-\contentsline {section}{\numberline {10.6}2025}{31}{section.10.6}%
-\contentsline {chapter}{\numberline {第十一章\hspace {.3em}}立体几何}{32}{chapter.11}%
-\contentsline {section}{\numberline {11.1}2024}{32}{section.11.1}%
-\contentsline {section}{\numberline {11.2}2025}{33}{section.11.2}%
-\contentsline {chapter}{\numberline {第十二章\hspace {.3em}}向量}{34}{chapter.12}%
-\contentsline {section}{\numberline {12.1}2010}{34}{section.12.1}%
-\contentsline {section}{\numberline {12.2}2013}{34}{section.12.2}%
-\contentsline {section}{\numberline {12.3}2024}{34}{section.12.3}%
-\contentsline {section}{\numberline {12.4}2025}{35}{section.12.4}%
-\contentsline {chapter}{\numberline {第十三章\hspace {.3em}}数列}{36}{chapter.13}%
-\contentsline {section}{\numberline {13.1}2006}{36}{section.13.1}%
-\contentsline {section}{\numberline {13.2}2009}{37}{section.13.2}%
-\contentsline {section}{\numberline {13.3}2010}{39}{section.13.3}%
-\contentsline {section}{\numberline {13.4}2011}{41}{section.13.4}%
-\contentsline {section}{\numberline {13.5}2012}{42}{section.13.5}%
-\contentsline {section}{\numberline {13.6}2015}{49}{section.13.6}%
-\contentsline {section}{\numberline {13.7}2016}{50}{section.13.7}%
-\contentsline {section}{\numberline {13.8}2017}{52}{section.13.8}%
-\contentsline {section}{\numberline {13.9}2018}{52}{section.13.9}%
-\contentsline {section}{\numberline {13.10}2019}{54}{section.13.10}%
-\contentsline {section}{\numberline {13.11}2020}{56}{section.13.11}%
-\contentsline {section}{\numberline {13.12}2021}{57}{section.13.12}%
-\contentsline {section}{\numberline {13.13}2022}{62}{section.13.13}%
-\contentsline {section}{\numberline {13.14}2023}{65}{section.13.14}%
-\contentsline {section}{\numberline {13.15}2024}{70}{section.13.15}%
-\contentsline {section}{\numberline {13.16}2025}{74}{section.13.16}%
-\contentsline {section}{\numberline {13.17}2026}{76}{section.13.17}%
-\contentsline {chapter}{\numberline {第十四章\hspace {.3em}}导数}{78}{chapter.14}%
-\contentsline {section}{\numberline {14.1}2007}{78}{section.14.1}%
-\contentsline {section}{\numberline {14.2}2010}{78}{section.14.2}%
-\contentsline {section}{\numberline {14.3}2011}{80}{section.14.3}%
-\contentsline {section}{\numberline {14.4}2012}{80}{section.14.4}%
-\contentsline {section}{\numberline {14.5}2013}{81}{section.14.5}%
-\contentsline {section}{\numberline {14.6}2014}{82}{section.14.6}%
-\contentsline {section}{\numberline {14.7}2015}{82}{section.14.7}%
-\contentsline {section}{\numberline {14.8}2016}{83}{section.14.8}%
-\contentsline {section}{\numberline {14.9}2017}{84}{section.14.9}%
-\contentsline {section}{\numberline {14.10}2018}{84}{section.14.10}%
-\contentsline {section}{\numberline {14.11}2019}{85}{section.14.11}%
-\contentsline {section}{\numberline {14.12}2020}{85}{section.14.12}%
-\contentsline {section}{\numberline {14.13}2021}{86}{section.14.13}%
-\contentsline {section}{\numberline {14.14}2022}{87}{section.14.14}%
-\contentsline {section}{\numberline {14.15}2023}{88}{section.14.15}%
-\contentsline {section}{\numberline {14.16}2024}{88}{section.14.16}%
-\contentsline {section}{\numberline {14.17}2025}{89}{section.14.17}%
-\contentsline {section}{\numberline {14.18}2026}{92}{section.14.18}%
-\contentsline {chapter}{\numberline {第十五章\hspace {.3em}}线性规划}{94}{chapter.15}%
-\contentsline {section}{\numberline {15.1}2024}{94}{section.15.1}%
-\contentsline {chapter}{\numberline {第十六章\hspace {.3em}}数论}{95}{chapter.16}%
-\contentsline {section}{\numberline {16.1}2007}{95}{section.16.1}%
-\contentsline {chapter}{\numberline {第十七章\hspace {.3em}}命题与逻辑}{96}{chapter.17}%
-\contentsline {section}{\numberline {17.1}2014}{96}{section.17.1}%
-\contentsline {section}{\numberline {17.2}2024}{96}{section.17.2}%
+\contentsline {chapter}{\numberline {第五章\hspace {.3em}}概率}{11}{chapter.5}%
+\contentsline {section}{\numberline {5.1}2013}{11}{section.5.1}%
+\contentsline {section}{\numberline {5.2}2019}{12}{section.5.2}%
+\contentsline {section}{\numberline {5.3}2023}{14}{section.5.3}%
+\contentsline {section}{\numberline {5.4}2024}{15}{section.5.4}%
+\contentsline {section}{\numberline {5.5}2025}{16}{section.5.5}%
+\contentsline {section}{\numberline {5.6}2026}{18}{section.5.6}%
+\contentsline {chapter}{\numberline {第六章\hspace {.3em}}统计}{20}{chapter.6}%
+\contentsline {section}{\numberline {6.1}2004}{20}{section.6.1}%
+\contentsline {section}{\numberline {6.2}2024}{20}{section.6.2}%
+\contentsline {section}{\numberline {6.3}2025}{20}{section.6.3}%
+\contentsline {section}{\numberline {6.4}2026}{21}{section.6.4}%
+\contentsline {chapter}{\numberline {第七章\hspace {.3em}}排列组合}{22}{chapter.7}%
+\contentsline {section}{\numberline {7.1}2019}{22}{section.7.1}%
+\contentsline {section}{\numberline {7.2}2024}{22}{section.7.2}%
+\contentsline {chapter}{\numberline {第八章\hspace {.3em}}圆锥曲线}{23}{chapter.8}%
+\contentsline {section}{\numberline {8.1}2003}{23}{section.8.1}%
+\contentsline {section}{\numberline {8.2}2021}{23}{section.8.2}%
+\contentsline {section}{\numberline {8.3}2024}{23}{section.8.3}%
+\contentsline {section}{\numberline {8.4}2025}{27}{section.8.4}%
+\contentsline {section}{\numberline {8.5}2026}{28}{section.8.5}%
+\contentsline {chapter}{\numberline {第九章\hspace {.3em}}解三角形}{30}{chapter.9}%
+\contentsline {section}{\numberline {9.1}2006}{30}{section.9.1}%
+\contentsline {section}{\numberline {9.2}2010}{30}{section.9.2}%
+\contentsline {section}{\numberline {9.3}2021}{30}{section.9.3}%
+\contentsline {section}{\numberline {9.4}2024}{31}{section.9.4}%
+\contentsline {section}{\numberline {9.5}2025}{31}{section.9.5}%
+\contentsline {section}{\numberline {9.6}2026}{32}{section.9.6}%
+\contentsline {chapter}{\numberline {第十章\hspace {.3em}}三角函数}{34}{chapter.10}%
+\contentsline {section}{\numberline {10.1}2004}{34}{section.10.1}%
+\contentsline {section}{\numberline {10.2}2005}{34}{section.10.2}%
+\contentsline {section}{\numberline {10.3}2011}{34}{section.10.3}%
+\contentsline {section}{\numberline {10.4}2016}{35}{section.10.4}%
+\contentsline {section}{\numberline {10.5}2024}{35}{section.10.5}%
+\contentsline {section}{\numberline {10.6}2025}{36}{section.10.6}%
+\contentsline {section}{\numberline {10.7}2026}{36}{section.10.7}%
+\contentsline {chapter}{\numberline {第十一章\hspace {.3em}}立体几何}{38}{chapter.11}%
+\contentsline {section}{\numberline {11.1}2024}{38}{section.11.1}%
+\contentsline {section}{\numberline {11.2}2025}{39}{section.11.2}%
+\contentsline {section}{\numberline {11.3}2026}{40}{section.11.3}%
+\contentsline {chapter}{\numberline {第十二章\hspace {.3em}}向量}{41}{chapter.12}%
+\contentsline {section}{\numberline {12.1}2010}{41}{section.12.1}%
+\contentsline {section}{\numberline {12.2}2013}{41}{section.12.2}%
+\contentsline {section}{\numberline {12.3}2024}{41}{section.12.3}%
+\contentsline {section}{\numberline {12.4}2025}{42}{section.12.4}%
+\contentsline {section}{\numberline {12.5}2026}{43}{section.12.5}%
+\contentsline {chapter}{\numberline {第十三章\hspace {.3em}}数列}{44}{chapter.13}%
+\contentsline {section}{\numberline {13.1}2006}{44}{section.13.1}%
+\contentsline {section}{\numberline {13.2}2009}{45}{section.13.2}%
+\contentsline {section}{\numberline {13.3}2010}{47}{section.13.3}%
+\contentsline {section}{\numberline {13.4}2011}{50}{section.13.4}%
+\contentsline {section}{\numberline {13.5}2012}{50}{section.13.5}%
+\contentsline {section}{\numberline {13.6}2015}{57}{section.13.6}%
+\contentsline {section}{\numberline {13.7}2016}{58}{section.13.7}%
+\contentsline {section}{\numberline {13.8}2017}{60}{section.13.8}%
+\contentsline {section}{\numberline {13.9}2018}{60}{section.13.9}%
+\contentsline {section}{\numberline {13.10}2019}{62}{section.13.10}%
+\contentsline {section}{\numberline {13.11}2020}{64}{section.13.11}%
+\contentsline {section}{\numberline {13.12}2021}{65}{section.13.12}%
+\contentsline {section}{\numberline {13.13}2022}{70}{section.13.13}%
+\contentsline {section}{\numberline {13.14}2023}{73}{section.13.14}%
+\contentsline {section}{\numberline {13.15}2024}{78}{section.13.15}%
+\contentsline {section}{\numberline {13.16}2025}{82}{section.13.16}%
+\contentsline {section}{\numberline {13.17}2026}{84}{section.13.17}%
+\contentsline {chapter}{\numberline {第十四章\hspace {.3em}}导数}{86}{chapter.14}%
+\contentsline {section}{\numberline {14.1}2007}{86}{section.14.1}%
+\contentsline {section}{\numberline {14.2}2010}{86}{section.14.2}%
+\contentsline {section}{\numberline {14.3}2011}{88}{section.14.3}%
+\contentsline {section}{\numberline {14.4}2012}{88}{section.14.4}%
+\contentsline {section}{\numberline {14.5}2013}{89}{section.14.5}%
+\contentsline {section}{\numberline {14.6}2014}{90}{section.14.6}%
+\contentsline {section}{\numberline {14.7}2015}{90}{section.14.7}%
+\contentsline {section}{\numberline {14.8}2016}{91}{section.14.8}%
+\contentsline {section}{\numberline {14.9}2017}{92}{section.14.9}%
+\contentsline {section}{\numberline {14.10}2018}{92}{section.14.10}%
+\contentsline {section}{\numberline {14.11}2019}{93}{section.14.11}%
+\contentsline {section}{\numberline {14.12}2020}{93}{section.14.12}%
+\contentsline {section}{\numberline {14.13}2021}{94}{section.14.13}%
+\contentsline {section}{\numberline {14.14}2022}{95}{section.14.14}%
+\contentsline {section}{\numberline {14.15}2023}{96}{section.14.15}%
+\contentsline {section}{\numberline {14.16}2024}{96}{section.14.16}%
+\contentsline {section}{\numberline {14.17}2025}{97}{section.14.17}%
+\contentsline {section}{\numberline {14.18}2026}{100}{section.14.18}%
+\contentsline {chapter}{\numberline {第十五章\hspace {.3em}}线性规划}{102}{chapter.15}%
+\contentsline {section}{\numberline {15.1}2024}{102}{section.15.1}%
+\contentsline {chapter}{\numberline {第十六章\hspace {.3em}}数论}{103}{chapter.16}%
+\contentsline {section}{\numberline {16.1}2007}{103}{section.16.1}%
+\contentsline {chapter}{\numberline {第十七章\hspace {.3em}}命题与逻辑}{104}{chapter.17}%
+\contentsline {section}{\numberline {17.1}2014}{104}{section.17.1}%
+\contentsline {section}{\numberline {17.2}2024}{104}{section.17.2}%
 \contentsfinish 

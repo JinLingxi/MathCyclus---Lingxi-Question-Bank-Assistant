@@ -1,0 +1,82 @@
+% === Begin Label Data ===
+% ID: 69
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2024}{G}{新课标II卷}{19}{圆锥曲线}
+已知双曲线 $C: x^2-y^2=m(m>0)$，点 $P_1(5,4)$ 在 $C$ 上. $k$ 为常数，$0<k<1$. 按照如下方法依次构造点 $P_n(n=2,3,\cdots)$：过 $P_{n-1}$ 作斜率为 $k$ 的直线与 $C$ 的左支交于点 $Q_{n-1}$，令 $P_n$ 为 $Q_{n-1}$ 关于 $y$ 轴的对称点. 记 $P_n$ 的坐标为 $(x_n, y_n)$.
+
+（1）若 $k=\dfrac{1}{2}$，求 $x_2, y_2$;
+
+（2）证明：数列 $\{x_n-y_n\}$ 是公比为 $\dfrac{1+k}{1-k}$ 的等比数列;
+
+（3）记 $S_n$ 为 $\triangle P_n P_{n+1} P_{n+2}$ 的面积，证明：对任意正整数 $n$，$S_n=S_{n+1}$.
+\end{problem}
+
+\begin{solutions}
+\begin{figure}[htbp]
+    \centering
+    % ⚠️ 找不到原文件内容
+
+    \caption{双曲线点列构造示意图}
+    %\label{fig:hyperbola_seq}
+\end{figure}
+
+(1) 由已知有 $m=5^2-4^2=9$，故 $C$ 的方程为 $x^2-y^2=9$.
+
+当 $k=\dfrac{1}{2}$ 时，过 $P_1(5,4)$ 且斜率为 $\dfrac{1}{2}$ 的直线为 $y=\dfrac{1}{2}x+\dfrac{3}{2}$，
+
+与 $C: x^2-y^2=9$ 联立得到 $x^2-\left(\dfrac{x+3}{2}\right)^2=9 \Leftrightarrow 3(x+3)(x-5)=0$，解得 $x=-3$ 或 $x=5$.
+
+所以该直线与 $C$ 的不同于 $P_1$ 的交点为 $Q_1(-3,0)$，该点正好在 $C$ 的左支上。
+
+故 $P_2(3,0)$，从而 $x_2=3, y_2=0$.
+
+(2) 由于过 $P_n(x_n, y_n)$ 且斜率为 $k$ 的直线方程为 $y=k(x-x_n)+y_n$，与 $C$ 联立得到
+$x^2-[k(x-x_n)+y_n]^2=9$，展开得到 $(1-k^2)x^2-2k(y_n-kx_n)x-(y_n-kx_n)^2-9=0$.
+
+由于 $P_n(x_n, y_n)$ 已经是只直线 $y=k(x-x_n)+y_n$ 与 $C: x^2-y^2=9$ 的公共点，故此方程必有一根 $x=x_n$. 从而根据韦达定理，有另一根 $x_Q = \dfrac{2k(y_n-kx_n)}{1-k^2}-x_n = \dfrac{2ky_n-x_n-k^2x_n}{1-k^2}$.
+
+相应的 $y=k(x-x_n)+y_n = \dfrac{y_n+k^2y_n-2kx_n}{1-k^2}$.
+
+所以该直线与 $C$ 的不同于 $P_n$ 的交点为 $Q_n\left(\dfrac{2ky_n-x_n-k^2x_n}{1-k^2}, \dfrac{y_n+k^2y_n-2kx_n}{1-k^2}\right)$.
+
+而 $Q_n$ 横坐标也可通过两根乘积的韦达定理进行表示：$x_{Q_n} = \dfrac{-(y_n-kx_n)^2-9}{(1-k^2)x_n} < 0$，故 $Q_n$ 一定在 $C$ 的左支上。故 $P_{n+1}\left(\dfrac{x_n+k^2x_n-2ky_n}{1-k^2}, \dfrac{y_n+k^2y_n-2kx_n}{1-k^2}\right)$.
+
+因此 $x_{n+1} = \dfrac{x_n+k^2x_n-2ky_n}{1-k^2}, y_{n+1} = \dfrac{y_n+k^2y_n-2kx_n}{1-k^2}$.
+所以
+\[
+x_{n+1}-y_{n+1} = \frac{x_n+k^2x_n-2ky_n}{1-k^2} - \frac{y_n+k^2y_n-2kx_n}{1-k^2} = \frac{x_n+k^2x_n+2kx_n}{1-k^2} - \frac{y_n+k^2y_n+2ky_n}{1-k^2} 
+\]
+\[
+= \frac{x_n(1+k)^2}{1-k^2} - \frac{y_n(1+k)^2}{1-k^2} = \frac{(1+k)^2}{1-k^2}(x_n-y_n) = \frac{1+k}{1-k}(x_n-y_n).
+\]
+又因为 $x_1^2-y_1^2=9$，因此 $x_1-y_1 \neq 0$，故数列$\{x_n-y_n\}$是公比为$\dfrac{1+k}{1-k}$的等比数列。
+
+(3) 由 $0<k<1$，因此记 $t=\dfrac{1+k}{1-k}>1$，且 $x_1-y_1=1$，有 $x_n-y_n=t^{n-1}(x_1-y_1)=
+t^{n-1}$.
+
+因为 $(x_n-y_n)(x_n+y_n)=x_n^2-y_n^2=9$，所以 $x_n+y_n=9t^{1-n}$，且 $x_1+y_1=9$.
+
+两式作差得 $2y_n=9t^{1-n}-t^{n-1}$.
+
+要证 $S_n=S_{n+1}$，即证 $S_{\Delta P_n P_{n+1} P_{n+2}} = S_{\Delta P_{n+1} P_{n+2} P_{n+3}}$，可以证明 $P_{n+1}P_{n+2} \parallel P_n P_{n+3}$.
+
+由(2)知 $y_n \neq y_{n+1}$.
+
+则 $\dfrac{x_{n+2}-x_{n+1}}{y_{n+2}-y_{n+1}} = \dfrac{(y_{n+2}+t^{n+1})-(y_{n+1}+t^n)}{y_{n+2}-y_{n+1}} = 1 - \dfrac{t^{n+1}-t^n}{\frac{1}{2}(9t^{-1-n}-t^{n+1}) - \frac{1}{2}(9t^{-n}-t^n)}$
+
+\[
+= 1 - \frac{2t^n(t-1)}{(9t^{-1-n}+t^n)(t-1)} = 1 - \frac{2}{9t^{-1-2n}+1}.
+\]
+\[
+\frac{x_{n+3}-x_n}{y_{n+3}-y_n} = \frac{(y_{n+3}+t^{n+2})-(y_n+t^{n-1})}{y_{n+3}-y_n} = 1 - \frac{t^{n+2}-t^{n-1}}{\frac{1}{2}(9t^{-2-n}-t^{n+2}) - \frac{1}{2}(9t^{1-n}-t^{n-1})}
+\]
+\[
+= 1 - \frac{2t^{n-1}(t^3-1)}{(9t^{-2-n}+t^{n-1})(t^3-1)} = 1 - \frac{2}{9t^{-1-2n}+1}.
+\]
+因此直线 $P_{n+1}P_{n+2}$ 与直线 $P_n P_{n+3}$ 平行，所以 $S_n=S_{n+1}$，证毕。
+\end{solutions}

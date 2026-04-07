@@ -7,6 +7,7 @@ load_dotenv()
 # ================= 配置与常量 =================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHAPTERS_DIR = os.path.join(BASE_DIR, "chapters")
+CSV_INDEX_PATH = os.path.join(BASE_DIR, "utils", "题库索引表.csv")
 
 # AI 配置
 AI_API_KEY = os.getenv("AI_API_KEY")

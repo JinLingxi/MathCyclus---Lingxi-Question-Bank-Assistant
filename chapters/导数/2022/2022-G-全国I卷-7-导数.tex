@@ -1,0 +1,42 @@
+% === Begin Label Data ===
+% ID: 199
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2022}{G}{全国I卷}{7}{导数}
+设 $a=0.1e^{0.1}, b=\frac{1}{9}, c=-\ln 0.9$，则 (\hspace{1cm}) .
+\begin{choices}
+\choice{{$a<b<c$}}
+\choice{{$c<b<a$}}
+\choice{{$c<a<b$}}
+\choice{{$a<c<b$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+C
+\end{answer}
+
+\begin{solutions}
+令 $x=0.1$，则 $a=xe^x, b=\frac{1}{9}, c=-\ln(1-x)$.
+首先比较 $a$与$b$：
+$\because e^x < \frac{1}{1-x}$ (当 $x \in (0,1)$ 时)，
+$\therefore e^{0.1} < \frac{1}{1-0.1} = \frac{10}{9}$，
+$\therefore a = 0.1e^{0.1} < 0.1 \times \frac{10}{9} = \frac{1}{9} = b$，即 $a < b$.
+
+再比较 $a$与$c$：
+构造函数 $f(x) = xe^x + \ln(1-x) \quad (0 < x < 1)$，
+$f'(x) = (1+x)e^x - \frac{1}{1-x} = \frac{(1-x^2)e^x - 1}{1-x}$.
+令 $g(x) = (1-x^2)e^x - 1$，则 $g'(x) = -2xe^x + (1-x^2)e^x = (1-2x-x^2)e^x$.
+当 $x \in (0, 0.1)$ 时，$1-2x-x^2 > 0$，故 $g(x)$ 单调递增.
+又 $g(0) = 0$，$\therefore$ 当 $x \in (0, 0.1]$ 时，$g(x) > 0$，即 $f'(x) > 0$.
+$\therefore f(x)$ 在 $(0, 0.1]$ 上单调递增.
+$\therefore f(0.1) > f(0) = 0$，即 $0.1e^{0.1} + \ln(1-0.1) > 0$.
+$\therefore a > -\ln 0.9 = c$.
+
+综上所述，$c < a < b$.
+故选 C.
+\end{solutions}

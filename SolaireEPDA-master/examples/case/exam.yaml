@@ -1,0 +1,37 @@
+exam_id: case_math_practice_001
+template_ref: case_math_sample_v1
+metadata:
+  title: "高中数学综合练习（合成样卷）"
+  school: "案例题库"
+question_libraries:
+  - path: bank
+    namespace: main
+template_path: template.yaml
+selected_items:
+  - section_id: "一、选择题"
+    question_ids:
+      - main/math_001
+      - main/math_002
+      - main/math_003
+      - main/math_004
+      - main/math_005
+      - main/math_006
+      - main/math_007
+      - main/math_008
+      - main/math_009
+      - main/math_010
+      - main/math_011
+      - main/math_012
+  - section_id: "二、填空题"
+    question_ids:
+      - main/math_013
+      - main/math_014
+      - main/math_015
+      - main/math_016
+  - section_id: "三、计算与证明题"
+    question_ids:
+      - main/math_017
+      - main/math_018
+      - main/math_019
+      - main/math_020
+      - main/math_021

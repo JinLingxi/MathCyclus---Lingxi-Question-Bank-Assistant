@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400.00" height="300.00" viewBox="0 0 400.00 300.00">
+<line x1="298.19" y1="228.95" x2="60.17" y2="136.31" stroke="#222" stroke-width="1.20" fill="none"/>
+<line x1="60.17" y1="136.31" x2="151.42" y2="267.79" stroke="#222" stroke-width="1.20" fill="none"/>
+<line x1="151.42" y1="267.79" x2="298.19" y2="228.95" stroke="#222" stroke-width="1.20" fill="none"/>
+<line x1="151.42" y1="267.79" x2="179.18" y2="182.63" stroke="#444" stroke-width="1.20" stroke-dasharray="6,4" fill="none"/>
+<text x="165.30" y="225.21" font-size="12.0" font-family="sans-serif" fill="#111" text-anchor="middle" dominant-baseline="middle">中线</text>
+<circle cx="298.19" cy="228.95" r="3" fill="#111"/>
+<text x="298.19" y="214.95" font-size="12.0" font-family="sans-serif" fill="#111">A</text>
+<circle cx="60.17" cy="136.31" r="3" fill="#111"/>
+<text x="46.17" y="150.31" font-size="12.0" font-family="sans-serif" fill="#111">B</text>
+<circle cx="151.42" cy="267.79" r="3" fill="#111"/>
+<text x="165.42" y="281.79" font-size="12.0" font-family="sans-serif" fill="#111">C</text>
+<circle cx="179.18" cy="182.63" r="2.5" fill="#c00"/>
+<text x="187.18" y="174.63" font-size="12.0" font-family="sans-serif" fill="#111">M</text>
+</svg>

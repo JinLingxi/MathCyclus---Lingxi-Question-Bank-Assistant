@@ -1,0 +1,14 @@
+exam_id: _list
+template_ref: _dummy
+question_libraries:
+- path: ../resource/数学/2024全国高考
+  namespace: 数学/2024全国高考
+- path: ../resource/数学/main
+  namespace: 数学/main
+- path: ../resource/数学/期中考试2024
+  namespace: 数学/期中考试2024
+- path: ../resource/数学/高考真题
+  namespace: 数学/高考真题
+- path: ../resource/默认/默认
+  namespace: 默认/默认
+selected_items: []

@@ -1,0 +1,11 @@
+﻿id: math_001
+type: choice
+content: 已知复数 $z=1+i$，则 $|z|$ 等于
+options:
+  A: $1$
+  B: $\sqrt{2}$
+  C: $2$
+  D: $\sqrt{3}$
+answer: B
+analysis: $|1+i|=\sqrt{1^2+1^2}=\sqrt{2}$。
+metadata: {}

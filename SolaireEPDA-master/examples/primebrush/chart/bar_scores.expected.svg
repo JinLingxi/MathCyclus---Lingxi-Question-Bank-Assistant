@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420.00" height="280.00" viewBox="0 0 420.00 280.00">
+<line x1="52.00" y1="228.00" x2="400.00" y2="228.00" stroke="#ccc" stroke-width="0.5"/>
+<line x1="52.00" y1="178.00" x2="400.00" y2="178.00" stroke="#ccc" stroke-width="0.5"/>
+<line x1="52.00" y1="128.00" x2="400.00" y2="128.00" stroke="#ccc" stroke-width="0.5"/>
+<line x1="52.00" y1="78.00" x2="400.00" y2="78.00" stroke="#ccc" stroke-width="0.5"/>
+<line x1="52.00" y1="28.00" x2="400.00" y2="28.00" stroke="#ccc" stroke-width="0.5"/>
+<line x1="52.00" y1="228.00" x2="52.00" y2="28.00" stroke="#222" stroke-width="1.00"/>
+<line x1="52.00" y1="228.00" x2="400.00" y2="228.00" stroke="#222" stroke-width="1.00"/>
+<rect x="75.20" y="58.00" width="69.60" height="170.00" fill="#333" stroke="#111" stroke-width="0.5"/>
+<line x1="110.00" y1="58.00" x2="110.00" y2="48.00" stroke="#111" stroke-width="1.2"/>
+<line x1="106.00" y1="48.00" x2="114.00" y2="48.00" stroke="#111" stroke-width="1.2"/>
+<text x="110.00" y="54.00" font-size="10.2" font-family="sans-serif" text-anchor="middle" fill="#111">85</text>
+<text x="110.00" y="244.00" font-size="10.2" font-family="sans-serif" text-anchor="middle" fill="#111">一班</text>
+<rect x="191.20" y="44.00" width="69.60" height="184.00" fill="#666" stroke="#111" stroke-width="0.5"/>
+<line x1="226.00" y1="44.00" x2="226.00" y2="38.00" stroke="#111" stroke-width="1.2"/>
+<line x1="222.00" y1="38.00" x2="230.00" y2="38.00" stroke="#111" stroke-width="1.2"/>
+<text x="226.00" y="40.00" font-size="10.2" font-family="sans-serif" text-anchor="middle" fill="#111">92</text>
+<text x="226.00" y="244.00" font-size="10.2" font-family="sans-serif" text-anchor="middle" fill="#111">二班</text>
+<rect x="307.20" y="72.00" width="69.60" height="156.00" fill="#999" stroke="#111" stroke-width="0.5"/>
+<line x1="342.00" y1="72.00" x2="342.00" y2="56.00" stroke="#111" stroke-width="1.2"/>
+<line x1="338.00" y1="56.00" x2="346.00" y2="56.00" stroke="#111" stroke-width="1.2"/>
+<text x="342.00" y="68.00" font-size="10.2" font-family="sans-serif" text-anchor="middle" fill="#111">78</text>
+<text x="342.00" y="244.00" font-size="10.2" font-family="sans-serif" text-anchor="middle" fill="#111">三班</text>
+<text x="210.00" y="270.00" font-size="12.0" font-family="sans-serif" text-anchor="middle" fill="#111">班级</text>
+<text x="14" y="128.00" font-size="12.0" font-family="sans-serif" text-anchor="middle" fill="#111" transform="rotate(-90 14 128.00)">平均分</text>
+</svg>

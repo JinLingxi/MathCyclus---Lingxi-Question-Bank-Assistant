@@ -1,0 +1,15 @@
+id: gk2024_016
+type: reasoning
+content: '已知$A(0,3)$和 $P\left(3,\dfrac{3}{2}\right)$为椭圆$\dfrac{x^2}{a^2}+\dfrac{y^2}{b^2}=1$
+  $(a>b>0)$上两点．
+
+
+  （1）求$C$的离心率；
+
+
+  （2）若过$P$的直线 $l$交 $C$于另一点$B$，且 $\triangle ABP$的面积为 $9$，求 $l$的方程．
+
+  '
+answer: 略
+analysis: 略
+metadata: {}

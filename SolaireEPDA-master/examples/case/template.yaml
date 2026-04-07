@@ -1,0 +1,16 @@
+template_id: case_math_sample_v1
+layout: single_column
+latex_base: exam-zh-base.tex.j2
+sections:
+  - section_id: "一、选择题"
+    type: choice
+    required_count: 12
+    score_per_item: 5
+  - section_id: "二、填空题"
+    type: fill
+    required_count: 4
+    score_per_item: 5
+  - section_id: "三、计算与证明题"
+    type: reasoning
+    required_count: 5
+    score_per_item: 10

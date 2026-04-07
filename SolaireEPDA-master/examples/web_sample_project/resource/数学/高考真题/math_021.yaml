@@ -1,0 +1,8 @@
+id: math_021
+type: reasoning
+content: 求定积分 $\int_0^1 2x\,dx$。
+answer: '$\\displaystyle\\int_0^1 2x\\,dx = \\bigl[x^2\\bigr]_0^1 = 1$。
+
+  '
+analysis: 基本积分公式。
+metadata: {}

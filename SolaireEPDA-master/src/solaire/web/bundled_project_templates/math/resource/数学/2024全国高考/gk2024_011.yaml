@@ -1,0 +1,12 @@
+id: gk2024_011
+type: choice
+content: 已知曲线$C$的一部分可看作某种丝带造型（原卷配图略）．已知$C$过坐标原点$O$，且$C$上的点满足横坐标大于$-2$，到点$F(2,0)$的距离与到定直线$x=a$
+  $(a < 0)$的距离之积为$4$，则
+options:
+  A: $a=-2$
+  B: 点$\left(2\sqrt 2,0\right)$在$C$上
+  C: $C$在第一象限的点的纵坐标的最大值为$1$
+  D: 当点$(x_0,y_0)$在$C$上时， $y_0\leqslant \dfrac{4}{x_0+2}$
+answer: ABD
+analysis: 略
+metadata: {}

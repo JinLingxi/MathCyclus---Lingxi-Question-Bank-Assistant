@@ -1,0 +1,10 @@
+id: math_019
+type: reasoning
+content: 求函数 $f(x)=x^3-3x$ 的极值。
+answer: '$f''(x)=3x^2-3$，令 $f''(x)=0$ 得 $x=\\pm 1$。
+
+  $f(1)=-2$ 为极小值，$f(-1)=2$ 为极大值。
+
+  '
+analysis: 利用导数判定极值。
+metadata: {}

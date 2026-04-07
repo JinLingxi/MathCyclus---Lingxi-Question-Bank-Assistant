@@ -1,0 +1,7 @@
+id: gk2024_012
+type: fill
+content: 设双曲线$C:\dfrac{x^2}{a^2}-\dfrac{y^2}{b^2}=1$ $(a>0,b>0)$的左、右焦点分别为$F_1$，$F_2$，过$F_2$作平行于$y$轴的直线交
+  $C$于 $A$、$B$两点，若$\left|F_1A\right|=13$，$\left|AB\right|=10$，则$C$的离心率为\underline{\qquad\qquad}．
+answer: $\dfrac{3}{2}$
+analysis: 略
+metadata: {}

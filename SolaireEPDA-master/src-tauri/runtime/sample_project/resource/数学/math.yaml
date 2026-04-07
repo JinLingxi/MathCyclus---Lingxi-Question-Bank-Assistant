@@ -1,0 +1,31 @@
+﻿# Web UI 示例题库（单库 namespace: main）
+# 与 templates/template.yaml 中 demo_math_v1 配套：2 道选择题 + 1 道填空题
+
+questions:
+  - id: choice_demo_01
+    type: choice
+    content: "若 $x^2=4$，则 $x$ 等于"
+    options:
+      A: "$2$"
+      B: "$-2$"
+      C: "$\\pm 2$"
+      D: "$0$"
+    answer: "C"
+    analysis: "开平方得 $x=\\pm 2$。"
+
+  - id: choice_demo_02
+    type: choice
+    content: "下列哪个是无理数？"
+    options:
+      A: "$\\sqrt{4}$"
+      B: "$\\pi$"
+      C: "$\\frac{1}{2}$"
+      D: "$0$"
+    answer: "B"
+    analysis: "$\\pi$ 为无理数；$\\sqrt{4}=2$ 为有理数。"
+
+  - id: fill_demo_01
+    type: fill
+    content: "计算：$1+1=$ \\underline{\\hspace{2cm}}"
+    answer: "2"
+    analysis: "基础加法。"

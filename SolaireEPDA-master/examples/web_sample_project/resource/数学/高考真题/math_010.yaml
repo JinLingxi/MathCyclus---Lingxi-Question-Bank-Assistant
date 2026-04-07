@@ -1,0 +1,11 @@
+﻿id: math_010
+type: choice
+content: 若 $a>0$，则 $\log_a 1=$
+options:
+  A: $0$
+  B: $1$
+  C: $a$
+  D: $-1$
+answer: A
+analysis: $a^0=1$。
+metadata: {}

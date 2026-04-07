@@ -1,0 +1,20 @@
+primebrush:
+  type: chart
+  seed: 42
+  canvas: { width: 420, height: 280, unit: px }
+  style:
+    font_family: sans-serif
+
+  kind: bar
+  theme: academic
+  data:
+    - { label: "一班", value: 85, error: 5 }
+    - { label: "二班", value: 92, error: 3 }
+    - { label: "三班", value: 78, error: 8 }
+  options:
+    x_label: "班级"
+    y_label: "平均分"
+    bar_width: 0.6
+    show_value: true
+    show_error: true
+    y_range: [0, 100]

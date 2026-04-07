@@ -1,0 +1,11 @@
+﻿id: math_008
+type: choice
+content: 若随机变量 $X$ 服从二项分布 $B(2,\frac12)$，则 $P(X=0)=$
+options:
+  A: $\frac14$
+  B: $\frac12$
+  C: $\frac34$
+  D: $\frac18$
+answer: A
+analysis: $P(X=0)=(1/2)^2=1/4$。
+metadata: {}

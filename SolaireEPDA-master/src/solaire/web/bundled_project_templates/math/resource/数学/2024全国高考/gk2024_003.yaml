@@ -1,0 +1,12 @@
+id: gk2024_003
+type: choice
+content: 已知向量$\boldsymbol a=(0,1)$，$\boldsymbol b=(2,x)$，若 $\boldsymbol b\perp (\boldsymbol
+  b-4\boldsymbol a)$，则 $x=$
+options:
+  A: $-2$
+  B: $-1$
+  C: $1$
+  D: $2$
+answer: D
+analysis: 略
+metadata: {}

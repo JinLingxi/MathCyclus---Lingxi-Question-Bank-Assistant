@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solaire-education"
+version = "0.1.0"
+description = "Solaire Education — 教育技术仓库（ExamCompiler 等基础设施）"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5",
+    "PyYAML>=6.0",
+    "Jinja2>=3.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "numpy>=1.26",
+    "openpyxl>=3.1",
+    "openai>=1.30",
+    "tiktoken>=0.7",
+    "pdfplumber>=0.10",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+primebrush-plot = ["matplotlib>=3.8"]
+primebrush-pdf = ["cairosvg>=2.7"]
+ocr = ["pytesseract>=0.3"]
+chemistry = ["rdkit"]
+dev = ["pytest>=7", "httpx>=0.27"]
+
+[project.scripts]
+solaire-exam = "solaire.exam_compiler.cli:main"
+solaire-web = "solaire.web.__main__:main"
+solaire-desktop = "solaire.desktop_entry:main"
+primebrush = "solaire.primebrush.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"solaire.exam_compiler" = ["templates/latex/*.j2", "templates/latex/*.metadata_ui.yaml"]
+"solaire.agent_layer" = ["skills/**/*"]
+"solaire.web" = [
+  "bundled_project_templates/**/*",
+  "bundled_project_templates/math/.solaire/**/*",
+]

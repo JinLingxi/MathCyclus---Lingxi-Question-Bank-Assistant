@@ -1,0 +1,6 @@
+id: math_014
+type: fill
+content: 函数 $f(x)=x^2$ 在 $x=3$ 处的导数为 $\underline{\qquad}$
+answer: $6$
+analysis: $f'(x)=2x$，代入得 $6$。
+metadata: {}

@@ -1,0 +1,11 @@
+﻿id: math_012
+type: choice
+content: 若等比数列 $a_n$ 满足 $a_1=2,q=2$，则 $a_4=$
+options:
+  A: $8$
+  B: $12$
+  C: $16$
+  D: $32$
+answer: C
+analysis: $a_4=a_1q^3=2\times8=16$。
+metadata: {}

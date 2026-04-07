@@ -1,0 +1,26 @@
+template_id: gaokao2024_math
+layout: single_column
+# 使用本目录下的 exam-zh-base.tex.j2（与仓库内置基架一致，可在此项目中自行改）
+latex_base: exam-zh-base.tex.j2
+sections:
+  - section_id: 一、选择题
+    type: choice
+    required_count: 8
+    score_per_item: 5
+    describe: 本题共8小题，每小题5分，共40分。在每小题给出的四个选项中，只有一项是符合题目要求的。
+  - section_id: 二、选择题
+    type: choice
+    required_count: 3
+    score_per_item: 6
+    describe: 本题共3小题，每小题6分，共18分。在每小题给出的选项中，有多项符合题目要求。全部选对的得6分，部分选对的得部分分，有选错的得0分。
+  - section_id: 三、填空题
+    type: fill
+    required_count: 3
+    score_per_item: 5
+    describe: 本题共3小题，每小题5分，共15分。
+  - section_id: 四、解答题
+    type: reasoning
+    required_count: 5
+    score_per_item: 15
+    describe: 本题共5小题，共77分。解答应写出文字说明、证明过程或演算步骤。
+metadata_defaults: {}

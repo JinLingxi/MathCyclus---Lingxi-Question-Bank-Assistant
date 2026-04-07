@@ -1,0 +1,159 @@
+\documentclass[UTF8,a4paper]{ctexart}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{enumitem}
+[% if metadata.get('show_page_number_footer') %]
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+[% endif %]
+[% if metadata.get('line_stretch') %]
+\usepackage{setspace}
+[% endif %]
+[% if metadata.get('include_common_math_macros') %]
+\DeclareMathOperator{\arccot}{arccot}
+\newcommand{\dlim}{\displaystyle\lim}
+\newcommand{\dint}{\displaystyle\int}
+\newcommand{\e}{\mathrm{e}}
+\renewcommand{\i}{\mathrm{i}}
+[% endif %]
+[% if metadata.get('show_binding_line') %]
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\usepackage{eso-pic}
+[% endif %]
+[% if metadata.get('margins_mm') %]
+\geometry{left=[[ metadata.margins_mm.left ]]mm, right=[[ metadata.margins_mm.right ]]mm, top=[[ metadata.margins_mm.top ]]mm, bottom=[[ metadata.margins_mm.bottom ]]mm}
+[% else %]
+\geometry{margin=[[ metadata.get('margin_cm', 2) ]]cm}
+[% endif %]
+[[ graphicspath_command ]]
+[% if metadata.get('show_page_number_footer') %]
+\pagestyle{fancy}
+\fancyhead{}
+\fancyfoot{}
+\fancyfoot[C]{\normalsize [% if metadata.get('page_footer_center') %][[ metadata.page_footer_center|safe ]][% else %]数学试题第\thepage 页（共 \pageref{LastPage} 页）[% endif %]}
+\renewcommand{\headrulewidth}{0pt}
+[% else %]
+\pagestyle{plain}
+[% endif %]
+\begin{document}
+[% if metadata.get('show_binding_line') %]
+\AddToShipoutPicture*{%
+\begin{tikzpicture}[remember picture,overlay]
+\draw[dashed,line width=0.4pt] ($(current page.north west)+(1.2cm,0)$) -- ($(current page.south west)+(1.2cm,0)$);
+\end{tikzpicture}}
+[% endif %]
+[% if metadata.get('line_stretch') %]
+\setstretch{[[ metadata.line_stretch ]]}
+[% endif %]
+[% if metadata.get('body_font_size_pt') %]
+\fontsize{[[ metadata.body_font_size_pt ]]}{[[ (metadata.body_font_size_pt * 1.2)|round(2) ]]}\selectfont
+[% endif %]
+[% if metadata.get('show_name_column') %]
+\begin{flushright}
+\begin{minipage}[t]{0.42\textwidth}
+\small\raggedleft
+姓名：\underline{\hspace{4.5em}}\quad 学号：\underline{\hspace{4.5em}}\quad 班级：\underline{\hspace{3.5em}}
+\end{minipage}
+\end{flushright}
+\vspace{-0.3em}
+[% endif %]
+[% if metadata.get('title_block_style', 'default') == 'exam2024' %]
+[% set _exam2024_school = (metadata.get('school') or '')|trim %]
+\begin{center}
+[% if _exam2024_school %]
+{\fontsize{17pt}{20.4pt}\selectfont [[ _exam2024_school|latex_escape ]]}\par\vspace{9pt}
+[% endif %]
+{\textbf{\fontsize{22pt}{26.4pt}\selectfont [[ metadata.get('title', '')|latex_escape ]]}}
+\end{center}
+[% else %]
+\begin{center}
+{\LARGE [[ metadata.get('title', '')|latex_escape ]]\par}
+\medskip
+{\large [[ metadata.get('school', '')|latex_escape ]]}
+\end{center}
+[% endif %]
+\vspace{1em}
+[% if metadata.get('preamble_notices') %]
+[[ metadata.preamble_notices|safe ]]
+\par\vspace{6pt}
+[% endif %]
+[% for sec in sections %]
+[% if metadata.get('section_heading_style', 'section_star') == 'hang_bold' %]
+\noindent\textbf{[[ sec.section_id|latex_escape ]][% if sec.describe %]：[[ sec.describe|latex_escape ]][% endif %]}\hangindent=2em
+\par\medskip
+[% else %]
+\section*{[[ sec.section_id|latex_escape ]]}
+[% if sec.describe %]
+\noindent [[ sec.describe|latex_escape ]]
+\par\medskip
+[% endif %]
+[% endif %]
+[% if sec.type == 'text' %]
+[% else %]
+[% set sec_i = loop.index0 %]
+[% if sec.questions and sec.questions[0].show_group_material %]
+\par\vspace{0.3em}\noindent\begingroup\small\textbf{【材料】}\endgroup\par
+\noindent [[ sec.questions[0].group_material|safe ]]
+\par\vspace{0.35em}
+[% endif %]
+\begin{enumerate}[series=s[[ sec_i ]], leftmargin=2em, itemsep=0.8em]
+[% for q in sec.questions %]
+[% if loop.index0 > 0 and q.show_group_material %]
+\end{enumerate}
+\par\vspace{0.3em}\noindent\begingroup\small\textbf{【材料】}\endgroup\par
+\noindent [[ q.group_material|safe ]]
+\par\vspace{0.35em}
+\begin{enumerate}[resume=s[[ sec_i ]], leftmargin=2em, itemsep=0.8em]
+[% endif %]
+\item
+[[ q.content|safe ]]
+[% if q.options and (q.type == 'choice' or q.type == 'judge') %]
+[% if q.choice_layout == 'inline_one_line' %]
+\noindent[%- for letter, opt in q.choice_option_items %]\textbf{[[ letter ]].}\,[[ opt|safe ]][% if not loop.last %]\quad[% endif %][%- endfor %]
+\par\smallskip
+[% elif q.choice_layout == 'grid_two_rows' %]
+[% set pairs = q.choice_option_items %]
+[% if pairs|length == 2 %]
+\begin{tabular}{@{}p{0.47\linewidth}@{\hspace{0.06\linewidth}}p{0.47\linewidth}@{}}
+\textbf{[[ pairs[0][0] ]].}\,[[ pairs[0][1]|safe ]] & \textbf{[[ pairs[1][0] ]].}\,[[ pairs[1][1]|safe ]] \\
+\end{tabular}
+\par\smallskip
+[% elif pairs|length == 3 %]
+\begin{tabular}{@{}p{0.47\linewidth}@{\hspace{0.06\linewidth}}p{0.47\linewidth}@{}}
+\textbf{[[ pairs[0][0] ]].}\,[[ pairs[0][1]|safe ]] & \textbf{[[ pairs[1][0] ]].}\,[[ pairs[1][1]|safe ]] \\
+\multicolumn{2}{@{}p{\linewidth}@{}}{\textbf{[[ pairs[2][0] ]].}\,[[ pairs[2][1]|safe ]]} \\
+\end{tabular}
+\par\smallskip
+[% elif pairs|length == 4 %]
+\begin{tabular}{@{}p{0.47\linewidth}@{\hspace{0.06\linewidth}}p{0.47\linewidth}@{}}
+\textbf{[[ pairs[0][0] ]].}\,[[ pairs[0][1]|safe ]] & \textbf{[[ pairs[1][0] ]].}\,[[ pairs[1][1]|safe ]] \\
+\textbf{[[ pairs[2][0] ]].}\,[[ pairs[2][1]|safe ]] & \textbf{[[ pairs[3][0] ]].}\,[[ pairs[3][1]|safe ]] \\
+\end{tabular}
+\par\smallskip
+[% else %]
+\begin{enumerate}[label=\Alph*.,itemsep=0.2em,parsep=0pt]
+[% for letter, opt in q.choice_option_items %]
+\item [[ opt|safe ]]
+[% endfor %]
+\end{enumerate}
+[% endif %]
+[% else %]
+\begin{enumerate}[label=\Alph*.,itemsep=0.2em,parsep=0pt]
+[% for letter, opt in q.choice_option_items %]
+\item [[ opt|safe ]]
+[% endfor %]
+\end{enumerate}
+[% endif %]
+[% endif %]
+[% if show_answers %]
+\par\noindent\textbf{【答案】}[[ q.answer|safe ]]
+\par\noindent\textbf{【解析】}[[ q.analysis|safe ]]
+[% endif %]
+[% endfor %]
+\end{enumerate}
+\vspace{1em}
+[% endif %]
+[% endfor %]
+\end{document}

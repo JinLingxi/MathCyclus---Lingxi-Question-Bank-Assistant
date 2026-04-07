@@ -1,0 +1,38 @@
+id: qz2024_reason_001
+type: reasoning
+content: '已知函数 $f(x) = \ln x - ax + \dfrac{1}{x}$，其中 $a \in \mathbb{R}$。
+
+
+  (1) 若 $f(x)$ 在 $x = 1$ 处取得极值，求 $a$ 的值；
+
+
+  (2) 讨论 $f(x)$ 的单调性。'
+answer: '(1) $a = 0$；
+
+
+  (2) 当 $a \leqslant 0$ 时，$f(x)$ 在 $(0, +\infty)$ 上单调递增；
+
+  当 $0 < a < 1$ 时，$f(x)$ 在 $(0, \dfrac{1-\sqrt{1-a^2}}{a})$ 和 $(\dfrac{1+\sqrt{1-a^2}}{a},
+  +\infty)$ 上单调递增，在 $(\dfrac{1-\sqrt{1-a^2}}{a}, \dfrac{1+\sqrt{1-a^2}}{a})$ 上单调递减；
+
+  当 $a \geqslant 1$ 时，$f(x)$ 在 $(0, +\infty)$ 上单调递减。'
+analysis: "**解析：**\n\n(1) 函数定义域为 $(0, +\\infty)$。\n\n求导：$f'(x) = \\dfrac{1}{x} - a\
+  \ - \\dfrac{1}{x^2} = \\dfrac{x - ax^2 - 1}{x^2} = \\dfrac{-ax^2 + x - 1}{x^2}$\n\
+  \n由 $f(x)$ 在 $x = 1$ 处取得极值，得 $f'(1) = 0$：\n$$f'(1) = 1 - a - 1 = -a = 0$$\n所以 $a\
+  \ = 0$。\n\n验证：当 $a = 0$ 时，$f'(x) = \\dfrac{x-1}{x^2}$，在 $x = 1$ 两侧变号，确为极值点。\n\n\
+  (2) 令 $f'(x) = 0$，即 $-ax^2 + x - 1 = 0$，或 $ax^2 - x + 1 = 0$。\n\n**情形一：** $a = 0$\
+  \ 时，$f'(x) = \\dfrac{x-1}{x^2}$。\n- 当 $x > 1$ 时，$f'(x) > 0$，$f(x)$ 单调递增；\n- 当 $0\
+  \ < x < 1$ 时，$f'(x) < 0$，$f(x)$ 单调递减。\n\n**情形二：** $a \\neq 0$ 时，判别式 $\\Delta = 1\
+  \ - 4a$。\n\n- 若 $a \\geqslant \\dfrac{1}{4}$，则 $\\Delta \\leqslant 0$。\n  - 当 $a\
+  \ > 0$ 时，$ax^2 - x + 1 > 0$，故 $f'(x) < 0$，$f(x)$ 在 $(0, +\\infty)$ 单调递减。\n  - 当\
+  \ $a < 0$ 时，$ax^2 - x + 1$ 开口向下，恒负，故 $f'(x) > 0$，$f(x)$ 单调递增。\n\n- 若 $0 < a < \\\
+  dfrac{1}{4}$，则 $\\Delta > 0$，有两根：\n  $$x_{1,2} = \\dfrac{1 \\pm \\sqrt{1-4a}}{2a}$$\n\
+  \  分析符号变化可得单调区间（详见答案）。\n\n综上可得结论。"
+metadata:
+  difficulty: hard
+  knowledge_points:
+  - 导数
+  - 极值
+  - 单调性
+  - 分类讨论
+  estimated_time: 15

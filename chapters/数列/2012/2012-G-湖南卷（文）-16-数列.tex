@@ -1,0 +1,31 @@
+% === Begin Label Data ===
+% ID: 195
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{湖南卷（文）}{16}{数列}
+对于 $n \in \mathbf{N}^*$, 将 $n$ 表示为 $n=a_k \times 2^k + a_{k-1} \times 2^{k-1} + \cdots + a_1 \times 2^1 + a_0 \times 2^0$, 当 $i=k$ 时 $a_i=1$; 当 $0 \le i \le k-1$ 时 $a_i$ 为 0 或 1. 定义 $b_n$ 如下：在 $n$ 的上述表示中, 当 $a_0, a_1, a_2, \cdots, a_k$ 中等于 1 的个数为奇数时, $b_n=1$; 否则 $b_n=0$.
+
+(1) $b_2+b_4+b_6+b_8=$ \underline{\hspace{4em}};
+
+(2) 记 $c_m$ 为数列 $\{b_n\}$ 中第 $m$ 个为 0 的项与第 $m+1$ 个为 0 的项之间的项数, 则 $c_m$ 的最大值是 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+3; 2
+\end{answer}
+
+\begin{solutions}
+(1) 由于 $2=1 \times 2^1 + 0 \times 2^0$, $4=1 \times 2^2 + 0 \times 2^1 + 0 \times 2^0$, $6=1 \times 2^2 + 1 \times 2^1 + 1 \times 2^0$,
+
+$b_2=b_4=b_8=1$, $b_6=0$, $b_2+b_4+b_6+b_8=3$.
+
+(2) 设 $n$ 为偶数, 则 $n$ 可表示为 $n=a_k \times 2^k + a_{k-1} \times 2^{k-1} + \cdots + a_1 \times 2^1 + 0 \times 2^0$.
+
+又 $n+1=a_k \times 2^k + a_{k-1} \times 2^{k-1} + \cdots + a_1 \times 2^1 + 1 \times 2^0$, 
+
+此时 $b_n \ne b_{n+1}$, 即恒有 $b_n b_{n+1}=0$. 这表明 $\max c_m \le 2$. 由于 $b_6=0$, $b_7=b_8=1$, $b_9=0$, 所以 $\max c_m=2$.
+\end{solutions}

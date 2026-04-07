@@ -1,0 +1,13 @@
+{
+  "job_id": "5596ee2068534ee080d5c59c0128e567",
+  "kind": "builtin",
+  "builtin_id": "builtin:exam_stats_v1",
+  "exam_id": "2025期末考试",
+  "batch_id": "6f245e7693ea4619b28ced1849ebec3f",
+  "status": "succeeded",
+  "error": null,
+  "output_ref": "outputs/5596ee2068534ee080d5c59c0128e567.json",
+  "updated_at": "2026-03-31T16:26:33.498974+00:00",
+  "created_at": "2026-03-31T16:26:33.389952+00:00",
+  "duration_ms": 107
+}

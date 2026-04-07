@@ -1,0 +1,86 @@
+% === Begin Label Data ===
+% ID: 164
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2025}{M}{港梦杯}{18}{导数}
+记函数 $f_a(x)=\sin x+\sin ax(a>0)$，当 $a\in \mathbf{Q}$ 时，$f_a(x)$ 最大值为 $M_a$；当 $a\notin \mathbf{Q}$ 时，记 $M_a=2$.
+
+(1) 求 $M_3$;
+
+(2) 讨论 $f_{\pi}(x)$ 在 $(0, \dfrac{16\pi}{\pi+1})$ 的极值点个数;
+
+(3) 证明：$M_a \geqslant M_3$.
+\end{problem}
+
+\begin{solutions}
+(1) $f_3(x)=\sin x+\sin 3x=4\sin x-4\sin^3 x$. 令 $t=\sin x\in [-1,1]$，$g(t)=4t-4t^3$，则
+$$
+\begin{array}{|c|c|c|c|c|c|}
+\hline
+t & [-1,-\sqrt{3}/3) & -\sqrt{3}/3 & (-\sqrt{3}/3,\sqrt{3}/3) & \sqrt{3}/3 & (\sqrt{3}/3,1] \\
+\hline
+g'(t) & - & 0 & + & 0 & - \\
+\hline
+g(t) & \searrow & \text{极小值} & \nearrow & \text{极大值} & \searrow \\
+\hline
+\end{array}
+$$
+因此 $M_3=g(t)_{\max}=\max\{g(-1), g(\sqrt{3}/3)\}=8\sqrt{3}/9$.
+
+(2) 记 $A=(\pi+1)/2$，$B=(\pi-1)/2$，则
+$$
+f_{\pi}(x)=\sin x+\sin \pi x=2\sin Ax \cos Bx,
+$$
+因此 $f_{\pi}(x)$ 在 $[0, 16\pi/(\pi+1)]$ 有
+$$
+0, \frac{2\pi}{\pi+1}, \frac{5\pi}{\pi+1}, \cdots, \frac{16\pi}{\pi+1}, \quad \frac{\pi}{\pi-1}, \frac{3\pi}{\pi-1}, \frac{5\pi}{\pi-1}, \frac{7\pi}{\pi-1}
+$$
+共 13 个零点. 若相邻两个零点之间没有极值点，那么 $y=f(x)$ 在该区间单调，至多只有一个零点，矛盾. 下面证明相邻两个零点之间至多只有一个极值点. 在相邻零点间总有 $f_{\pi}(x)\neq 0$，因此可设
+$$
+h(x)=f'_{\pi}(x)/f_{\pi}(x)=A\cot Ax - B\tan Bx.
+$$
+根据正切函数的单调性，$y=h(x)$ 在 $f(x)$ 相邻零点之间严格递减，至多只有一个零点.
+
+综上所述，$f_{\pi}(x)$ 在 $(0, 16\pi/(\pi+1))$ 恰有 12 个极值点.
+
+(3) 证明一. 记 $\theta=\arcsin \sqrt{3}/3$，则 $f_3(\theta)=M_3$. 由 $f_a(x/a)=f_{1/a}(x)$ 知 $M_a=M_{1/a}$，故不妨设 $a \geqslant 1$. 由正弦函数的单调性，$\sin x \geqslant \sin \theta$ 对 $x\in [\theta, \pi-\theta]$ 恒成立. 因此只需证明存在 $x_0\in [\theta, \pi-\theta]$，使得 $\sin ax_0 = \sin 3\theta$. 此时
+$$
+f_a(x_0)=\sin x_0+\sin ax_0 \geqslant \sin \theta+\sin 3\theta=M_3.
+$$
+记区间 $I=[a\theta, a(\pi-\theta)]$，显然只需考虑其长度 $|I|=a(\pi-2\theta)<2\pi$ 的情形.
+\begin{itemize}
+\item 当 $1\leqslant a \leqslant 3$ 时，$a\theta \leqslant 3\theta \leqslant \pi-\theta \leqslant a(\pi-\theta)$，故取 $ax_0=3\theta \in I$ 满足条件;
+\item 当 $a>3$ 时，$a\theta \leqslant 3(\pi-\theta) < a(\pi-\theta)$，故取 $ax_0=3(\pi-\theta) \in I$ 满足条件.
+\end{itemize}
+综上所述，$M_a=\sup f_a(x) \geqslant M_3$ 总成立，得证.
+
+证明二. 显然只需要考虑 $a\in \mathbf{Q}$ 的情形. 设 $a=p/q$，其中 $p,q$ 为互素的正整数. 注意
+$$
+f_{p/q}(x)=\sin(q\cdot \frac{x}{q})+\sin(p\cdot \frac{x}{q}),
+$$
+因此只需考虑 $f(x)=\sin px+\sin qx$ 的最大值在 $p,q$ 变化时的最小值即可. 和差化积：
+$$
+f(x)=2\sin \frac{(p+q)x}{2}\cos \frac{(p-q)x}{2}.
+$$
+令 $x_k=(4k+1)\pi/(p+q)$，$\theta_k=x_k(p-q)/2$，则
+$$
+f(x_k)=2\sin(2k+\frac{1}{2})\pi \cos \frac{x_k(p-q)}{2}=2\cos \theta_k.
+$$
+考虑到 $\gcd(p,q)=1$，且
+$$
+\theta_{k+1}-\theta_k=\frac{2\pi(p-q)}{p+q},
+$$
+因此
+$$
+\max_{x\in \mathbb{R}} f(x) \geqslant \max_{k \geqslant 0} f(x_k) \geqslant \begin{cases} 2\cos \dfrac{\pi}{2(p+q)}, & p+q \text{ 奇}, \\ 2\cos \dfrac{\pi}{p+q}, & p+q \text{ 偶}. \end{cases}
+$$
+注意到当 $m \geqslant 5$ 时，$2\cos(\pi/m) > 8\sqrt{3}/9$，因此只需验证 $p+q$ 为 2 或 4 的情况，显然成立.
+\end{solutions}
+
+\begin{remark}
+实际上，当 $a \notin \mathbf{Q}$ 时，$f_a(x)$ 的最大值不存在，此时 $M_a=2$ 为 $f_a(x)$ 的上确界.
+\end{remark}

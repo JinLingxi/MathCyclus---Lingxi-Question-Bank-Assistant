@@ -1,0 +1,19 @@
+{
+  "cancel": "取消",
+  "open": "打开",
+  "create": "创建",
+  "all": "全部",
+  "loading": "加载中…",
+  "processing": "处理中…",
+  "close": "关闭",
+  "save": "保存",
+  "delete": "删除",
+  "confirm": "确定",
+  "yes": "是",
+  "no": "否",
+  "searchingSuffix": " · 已搜索",
+  "collapseHint": "点击收起",
+  "filter": "筛选",
+  "networkError": "网络错误：{{detail}}",
+  "noResponseStream": "无响应流"
+}

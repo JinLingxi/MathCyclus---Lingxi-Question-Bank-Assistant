@@ -1,0 +1,11 @@
+﻿id: math_004
+type: choice
+content: 若 $\sin x=\frac{1}{2}$，且 $x\in(0,\pi)$，则 $x=$
+options:
+  A: $\frac{\pi}{6}$
+  B: $\frac{\pi}{3}$
+  C: $\frac{\pi}{2}$
+  D: $\frac{2\pi}{3}$
+answer: A
+analysis: 在 $(0,\pi)$ 内满足 $\sin x=1/2$ 的解为 $x=\pi/6$ 或 $5\pi/6$，选项中只有 $\pi/6$。
+metadata: {}

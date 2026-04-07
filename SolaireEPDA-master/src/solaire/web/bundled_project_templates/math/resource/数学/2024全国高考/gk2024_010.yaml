@@ -1,0 +1,11 @@
+id: gk2024_010
+type: choice
+content: 设函数$f(x)=\left(x-1\right)^2\left(x-4\right)$，则
+options:
+  A: $x=3$是$f(x)$的极小值点
+  B: 当$0<x<1$时，$f(x)<f\left(x^2\right)$
+  C: 当$1<x<2$时，$-4<f(2x-1)<0$
+  D: 当$-1<x<0$时，$f(2-x)>f(x)$
+answer: BCD
+analysis: 略
+metadata: {}

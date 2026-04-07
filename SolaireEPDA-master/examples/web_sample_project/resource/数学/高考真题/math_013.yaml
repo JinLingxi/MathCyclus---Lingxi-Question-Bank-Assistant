@@ -1,0 +1,6 @@
+id: math_013
+type: fill
+content: 计算：$\sum_{k=1}^{5} k = \underline{\qquad}$
+answer: $15$
+analysis: $1+2+3+4+5=15$。
+metadata: {}

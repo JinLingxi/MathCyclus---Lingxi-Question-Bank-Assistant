@@ -1,0 +1,434 @@
+{
+  "batch_id": "6f245e7693ea4619b28ced1849ebec3f",
+  "exam_id": "2025期末考试",
+  "student_count": 2,
+  "question_count": 19,
+  "imported_at": "2026-04-03T13:05:42.034924+00:00",
+  "warnings": [],
+  "question_order": [
+    "数学/2024全国高考/gk2024_001",
+    "数学/2024全国高考/gk2024_002",
+    "数学/2024全国高考/gk2024_003",
+    "数学/2024全国高考/gk2024_004",
+    "数学/2024全国高考/gk2024_005",
+    "数学/2024全国高考/gk2024_006",
+    "数学/2024全国高考/gk2024_007",
+    "数学/2024全国高考/gk2024_008",
+    "数学/2024全国高考/gk2024_009",
+    "数学/2024全国高考/gk2024_010",
+    "数学/2024全国高考/gk2024_011",
+    "数学/2024全国高考/gk2024_012",
+    "数学/2024全国高考/gk2024_013",
+    "数学/2024全国高考/gk2024_014",
+    "数学/2024全国高考/gk2024_015",
+    "数学/2024全国高考/gk2024_016",
+    "数学/2024全国高考/gk2024_017",
+    "数学/2024全国高考/gk2024_018",
+    "数学/2024全国高考/gk2024_019"
+  ],
+  "student_mastery_rows": [
+    {
+      "name": "张三",
+      "student_id": "20240102",
+      "ratios": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.8333,
+        0.0,
+        0.8333,
+        1.0,
+        1.0,
+        0.0,
+        0.8,
+        0.5333,
+        0.0667,
+        0.1333,
+        0.8
+      ]
+    },
+    {
+      "name": "李四",
+      "student_id": "20240805",
+      "ratios": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.0,
+        0.8333,
+        0.8333,
+        1.0,
+        1.0,
+        0.0,
+        0.4,
+        0.1333,
+        0.2667,
+        0.5333,
+        0.4667
+      ]
+    }
+  ],
+  "question_stats": [
+    {
+      "question_id": "数学/2024全国高考/gk2024_001",
+      "header": "1.1",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_002",
+      "header": "1.2",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_003",
+      "header": "1.3",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_004",
+      "header": "1.4",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_005",
+      "header": "1.5",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_006",
+      "header": "1.6",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_007",
+      "header": "1.7",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_008",
+      "header": "1.8",
+      "section_id": "一、选择题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_009",
+      "header": "2.1",
+      "section_id": "二、选择题",
+      "score_per_item": 6.0,
+      "answered_count": 2,
+      "error_rate": 0.5,
+      "avg_score_ratio": 0.4166666666666667,
+      "avg_raw_score": 2.5,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_010",
+      "header": "2.2",
+      "section_id": "二、选择题",
+      "score_per_item": 6.0,
+      "answered_count": 2,
+      "error_rate": 0.5,
+      "avg_score_ratio": 0.4166666666666667,
+      "avg_raw_score": 2.5,
+      "first_csv_raw": 0.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_011",
+      "header": "2.3",
+      "section_id": "二、选择题",
+      "score_per_item": 6.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 0.8333333333333334,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_012",
+      "header": "3.1",
+      "section_id": "三、填空题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_013",
+      "header": "3.2",
+      "section_id": "三、填空题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 0.0,
+      "avg_score_ratio": 1.0,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 5.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_014",
+      "header": "3.3",
+      "section_id": "三、填空题",
+      "score_per_item": 5.0,
+      "answered_count": 2,
+      "error_rate": 1.0,
+      "avg_score_ratio": 0.0,
+      "avg_raw_score": 0.0,
+      "first_csv_raw": 0.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_015",
+      "header": "4.1",
+      "section_id": "四、解答题",
+      "score_per_item": 15.0,
+      "answered_count": 2,
+      "error_rate": 0.5,
+      "avg_score_ratio": 0.6000000000000001,
+      "avg_raw_score": 9.0,
+      "first_csv_raw": 12.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_016",
+      "header": "4.2",
+      "section_id": "四、解答题",
+      "score_per_item": 15.0,
+      "answered_count": 2,
+      "error_rate": 0.5,
+      "avg_score_ratio": 0.3333333333333333,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 8.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_017",
+      "header": "4.3",
+      "section_id": "四、解答题",
+      "score_per_item": 15.0,
+      "answered_count": 2,
+      "error_rate": 1.0,
+      "avg_score_ratio": 0.16666666666666666,
+      "avg_raw_score": 2.5,
+      "first_csv_raw": 1.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_018",
+      "header": "4.4",
+      "section_id": "四、解答题",
+      "score_per_item": 15.0,
+      "answered_count": 2,
+      "error_rate": 0.5,
+      "avg_score_ratio": 0.3333333333333333,
+      "avg_raw_score": 5.0,
+      "first_csv_raw": 2.0
+    },
+    {
+      "question_id": "数学/2024全国高考/gk2024_019",
+      "header": "4.5",
+      "section_id": "四、解答题",
+      "score_per_item": 15.0,
+      "answered_count": 2,
+      "error_rate": 0.5,
+      "avg_score_ratio": 0.6333333333333333,
+      "avg_raw_score": 9.5,
+      "first_csv_raw": 12.0
+    }
+  ],
+  "node_stats": [
+    {
+      "node_id": "math/kg/logic/理科高考/几何/圆锥曲线",
+      "bound_question_count": 3,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_016",
+        "数学/2024全国高考/gk2024_011",
+        "数学/2024全国高考/gk2024_012"
+      ],
+      "mastery_fuzzy": 0.3333,
+      "error_rate": 0.6667
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/函数与分析/函数概念",
+      "bound_question_count": 3,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_011",
+        "数学/2024全国高考/gk2024_006",
+        "数学/2024全国高考/gk2024_008"
+      ],
+      "mastery_fuzzy": 0.8333,
+      "error_rate": 0.1667
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/语言与逻辑/集合",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_001"
+      ],
+      "mastery_fuzzy": 1.0,
+      "error_rate": 0.0
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/三角向量/平面向量",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_003"
+      ],
+      "mastery_fuzzy": 1.0,
+      "error_rate": 0.0
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/三角向量/恒等变换",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_004"
+      ],
+      "mastery_fuzzy": 1.0,
+      "error_rate": 0.0
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/三角向量/弧度与定义",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_007"
+      ],
+      "mastery_fuzzy": 1.0,
+      "error_rate": 0.0
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/三角向量/解三角形",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_015"
+      ],
+      "mastery_fuzzy": 0.6,
+      "error_rate": 0.4
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/函数与分析/导数",
+      "bound_question_count": 3,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_010",
+        "数学/2024全国高考/gk2024_013",
+        "数学/2024全国高考/gk2024_018"
+      ],
+      "mastery_fuzzy": 0.3333,
+      "error_rate": 0.6667
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/几何/立体初步",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_005"
+      ],
+      "mastery_fuzzy": 1.0,
+      "error_rate": 0.0
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/几何/空间向量",
+      "bound_question_count": 1,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_017"
+      ],
+      "mastery_fuzzy": 0.1667,
+      "error_rate": 0.8333
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/概率统计/随机事件",
+      "bound_question_count": 2,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_009",
+        "数学/2024全国高考/gk2024_014"
+      ],
+      "mastery_fuzzy": 0.0,
+      "error_rate": 1.0
+    },
+    {
+      "node_id": "math/kg/logic/理科高考/领域/离散与推理",
+      "bound_question_count": 2,
+      "bound_questions": [
+        "数学/2024全国高考/gk2024_002",
+        "数学/2024全国高考/gk2024_019"
+      ],
+      "mastery_fuzzy": 0.6333,
+      "error_rate": 0.3667
+    }
+  ],
+  "student_stats": [
+    {
+      "name": "张三",
+      "student_id": "20240102",
+      "raw_total": 95.0,
+      "score_ratio": 0.6419,
+      "fuzzy_score": 0.7368,
+      "rank": 1,
+      "class_rank": 1,
+      "total_in_class": 2
+    },
+    {
+      "name": "李四",
+      "student_id": "20240805",
+      "raw_total": 87.0,
+      "score_ratio": 0.5878,
+      "fuzzy_score": 0.7088,
+      "rank": 2,
+      "class_rank": 2,
+      "total_in_class": 2
+    }
+  ],
+  "class_avg_ratio": 0.6149,
+  "class_avg_fuzzy": 0.7228
+}

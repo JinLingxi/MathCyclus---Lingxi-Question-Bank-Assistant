@@ -1,0 +1,11 @@
+﻿id: math_003
+type: choice
+content: 等差数列 $a_n$ 满足 $a_1=2, d=3$，则 $a_5=$
+options:
+  A: $11$
+  B: $14$
+  C: $12$
+  D: $10$
+answer: B
+analysis: $a_5=a_1+4d=2+12=14$。
+metadata: {}

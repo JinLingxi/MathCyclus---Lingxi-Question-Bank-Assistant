@@ -1,0 +1,12 @@
+{
+  "pageSummaryWithTitle": "Manual: {{title}}",
+  "pageSummaryDefault": "Guide and advanced docs",
+  "title": "Manual",
+  "subtitle": "Pick an article on the left; read on the right.",
+  "loading": "Loading…",
+  "empty": "No entries",
+  "sectionIntro": "Introduction",
+  "sectionGuide": "Guide",
+  "sectionAdvanced": "Advanced",
+  "loadingBody": "Loading article…"
+}

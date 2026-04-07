@@ -1,0 +1,49 @@
+{
+  "title": "设置",
+  "intro": "配置智能助手连接的模型服务（与运行后端所在机器上的环境变量叠加；项目内保存优先生效）。",
+  "switchProject": "切换项目",
+  "loading": "加载中…",
+  "needProject": "请先在本机打开或创建一个项目，才能把参数保存到该项目目录。下方为当前生效的只读预览（可能来自环境变量）。",
+  "modelBaseUrl": "模型服务地址",
+  "modelBaseUrlHint": "留空表示使用默认官方地址；自托管或中转服务时填写完整地址。",
+  "mainModel": "主模型名称",
+  "fastModel": "快速模型名称",
+  "fastModelHint": "用于轻量步骤时可与主模型相同。",
+  "accessKey": "访问密钥",
+  "accessKeyHint": "当前生效：{{masked}}{{override}}",
+  "notConfigured": "（未配置）",
+  "overrideSuffix": "（含项目内保存）",
+  "accessKeyPlaceholder": "仅在新填时更新；留空则保留原值",
+  "safetyTitle": "助手安全策略",
+  "safetyHint": "控制助手执行新增、编辑、删除时是否需要你确认。",
+  "safetyOption": {
+    "moderato": {
+      "label": "稳健（Moderato）",
+      "desc": "新增、编辑、删除都需要确认；查看类操作直接执行。"
+    },
+    "allegro": {
+      "label": "轻快（Allegro）",
+      "desc": "新增直接执行；编辑与删除需要确认。"
+    },
+    "vivace": {
+      "label": "极速（Vivace）",
+      "desc": "大多数操作直接执行；高危操作会先快速复核，疑似风险时再确认。"
+    },
+    "prestissimo": {
+      "label": "全开（Prestissimo）",
+      "desc": "所有操作都直接执行，不再进行确认。"
+    }
+  },
+  "saveSafety": "保存安全策略",
+  "footerNote": "保存位置为当前项目下的私有配置文件，请勿将含敏感信息的文件提交到公开仓库。",
+  "saveProject": "保存到当前项目",
+  "clearProjectKey": "清除项目内保存的密钥",
+  "savedProject": "已保存到当前项目。",
+  "clearedKey": "已清除项目内保存的访问密钥。",
+  "updatedSafety": "已更新助手安全策略。",
+  "confirmClearKey": "确定清除保存在项目内的访问密钥？清除后将改用运行环境中的配置（若已设置）。",
+  "pageSummary": "智能助手模型服务参数",
+  "uiLanguage": "界面语言",
+  "langZh": "简体中文",
+  "langEn": "English"
+}

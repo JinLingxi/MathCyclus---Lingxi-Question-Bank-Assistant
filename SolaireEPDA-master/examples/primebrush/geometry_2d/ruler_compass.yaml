@@ -1,0 +1,75 @@
+# 尺规作图原语示例：垂足、平行/垂直、两线交点、线圆交、两圆交、对称点、半径=定长
+primebrush:
+  type: geometry_2d
+  seed: 7
+  canvas: { width: 520, height: 400, unit: px }
+  style:
+    stroke_width: 1.0
+    font_family: sans-serif
+
+  constructions:
+    - op: triangle
+      id: T1
+      nodes: [A, B, C]
+      attr: { type: random, min_angle: 36 }
+
+    # AB、BC 中点，两中线交于重心 G
+    - op: in_line
+      id: M
+      source: [A, B]
+      params: 0.5
+    - op: in_line
+      id: N
+      source: [B, C]
+      params: 0.5
+
+    - op: intersection_lines
+      id: G
+      line1: [A, N]
+      line2: [C, M]
+
+    - op: foot
+      id: H
+      point: C
+      line: [A, B]
+
+    - op: reflection
+      id: Cp
+      point: C
+      line: [A, B]
+
+    - op: perpendicular
+      through: B
+      to: [A, C]
+      style: dashed
+      label: { text: "垂线", pos: 0.4 }
+
+    - op: parallel
+      through: B
+      to: [A, C]
+      style: dashed
+      label: { text: "平行线", pos: 0.6 }
+
+    - op: circle
+      id: g1
+      center: B
+      radius_from: [A, C]
+      style: solid
+
+    - op: intersection_line_circle
+      id: Q
+      line: [A, B]
+      center: B
+      radius_from: [A, C]
+      which: 0
+
+    - op: circle
+      id: g2
+      center: A
+      through: B
+      style: solid
+
+    - op: intersection_circles
+      ids: [X, Y]
+      circle1: { center: B, radius_from: [A, C] }
+      circle2: { center: A, through: B }

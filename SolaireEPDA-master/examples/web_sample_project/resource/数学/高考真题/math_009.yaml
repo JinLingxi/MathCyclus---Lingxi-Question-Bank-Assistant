@@ -1,0 +1,11 @@
+﻿id: math_009
+type: choice
+content: 函数 $f(x)=\ln x$ 的定义域为
+options:
+  A: $(-\infty,\infty)$
+  B: $[0,\infty)$
+  C: $(0,\infty)$
+  D: $(-\infty,0)$
+answer: C
+analysis: 对数函数要求 $x>0$。
+metadata: {}

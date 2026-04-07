@@ -1,0 +1,13 @@
+[package]
+name = "primebrush-pyo3"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PyO3 bindings for PrimeBrush (optional; Python falls back when not built)"
+
+[lib]
+name = "primebrush_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }

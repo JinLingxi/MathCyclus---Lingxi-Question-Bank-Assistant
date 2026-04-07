@@ -1,0 +1,22 @@
+{
+  "job_id": "fa392c695dad497fb36347c7b13e9967",
+  "kind": "script",
+  "script_id": "a1adf4c4088c40829c2b1169229930bf",
+  "exam_id": "2025期末考试",
+  "batch_id": "6f245e7693ea4619b28ced1849ebec3f",
+  "status": "succeeded",
+  "error": null,
+  "error_code": null,
+  "output_ref": "outputs/fa392c695dad497fb36347c7b13e9967.json",
+  "limits_applied": {
+    "timeout_seconds": 6,
+    "max_output_bytes": 20000,
+    "max_cpu_seconds": 6,
+    "max_memory_mb": 256
+  },
+  "truncated": false,
+  "killed_reason": null,
+  "updated_at": "2026-04-03T12:28:24.205866+00:00",
+  "created_at": "2026-04-03T12:28:24.080432+00:00",
+  "duration_ms": 107
+}

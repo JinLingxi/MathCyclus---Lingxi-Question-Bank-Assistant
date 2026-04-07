@@ -1,0 +1,19 @@
+exam_id: demo_001
+template_ref: demo_math_v1
+metadata:
+  title: "2025 模拟演示卷（含 % 元数据转义测试）"
+  school: "示范中学"
+question_libraries:
+  - path: bank_a
+    namespace: bank_a
+  - path: bank_b
+    namespace: bank_b
+template_path: template.yaml
+selected_items:
+  - section_id: section_choice
+    question_ids:
+      - bank_a/math_001
+      - bank_b/math_001
+  - section_id: section_fill
+    question_ids:
+      - bank_a/fill_001

@@ -1,0 +1,75 @@
+{
+  "bankEditor": {
+    "storage": "存储位置：{{kind}} · {{path}}",
+    "close": "关闭",
+    "save": "保存",
+    "tabForm": "字段编辑",
+    "tabYaml": "文件原文",
+    "groupHint": "题组保存在单个文件中，保存后写回原文件。编号 {{id}} 仅用于右侧预览占位。",
+    "groupRootId": "题组根编号",
+    "unified": "小题模式（混编或同型）",
+    "mixedOpt": "混编",
+    "sharedLatex": "共用材料",
+    "insertMath": "插入公式",
+    "insertDiagram": "流程图",
+    "insertImageTitle": "插入图片",
+    "image": "图片",
+    "addSub": "添加小题",
+    "removeLastSub": "删除最后一个小题",
+    "subItem": "小题 {{n}}",
+    "contentLatex": "题干正文",
+    "fieldContent": "题干正文",
+    "fieldAnswer": "答案",
+    "fieldAnalysis": "解析",
+    "fieldType": "题型",
+    "fieldId": "题号",
+    "tagsCustomFields": "标签与附加信息",
+    "keyPh": "名称",
+    "valuePh": "内容",
+    "addField": "添加一行",
+    "saveHintGroup": "在「字段编辑」中保存会更新题组内容；在本页保存将写回整个文件（与题库目录中的文件一致）。",
+    "saveHintSingle": "保存后题目内容会写回对应文件。"
+  },
+  "mermaidModal": {
+    "title": "Mermaid / 流程图",
+    "previewFail": "预览无法渲染（仍可插入源码，导出 PDF 需本机安装 mmdr）",
+    "newNodeLabel": "新节点",
+    "promptNodeText": "节点文字",
+    "notSimpleFlow": "当前文本不是可解析的简单 flowchart TD/LR；仍可在画布上拖拽添加节点与连线，或只编辑左侧源码。",
+    "intro": "左侧为源码；右侧为实时预览。下方画布可<strong>拖拽节点</strong>、<strong>从节点边缘拖线到另一节点</strong>连线、<strong>双击节点</strong>改文字、选中后按 <kbd class=\"rounded bg-slate-100 px-1\">Delete</kbd> 删除。插入后为 fenced 流程图块（导出 PDF 需本机 mmdr）。",
+    "source": "源码",
+    "syncToSource": "从画布同步到源码",
+    "livePreview": "实时预览（mermaid.js）",
+    "canvasTitle": "画布（拖拽构建）",
+    "direction": "方向",
+    "td": "上下 TD",
+    "lr": "左右 LR",
+    "addNode": "添加节点",
+    "cancel": "取消",
+    "insert": "插入到题目"
+  },
+  "contentPb": {
+    "renderErr": "内容渲染失败",
+    "mermaidErr": "流程图无法渲染（请检查语法）"
+  },
+  "mathOverlay": {
+    "title": "插入公式",
+    "hint": "在下方编辑，确认后将作为行内公式（$...$）插入到光标处。",
+    "cancel": "取消",
+    "insert": "插入"
+  },
+  "choiceFields": {
+    "optionsLatex": "选项",
+    "insertMath": "插入公式",
+    "insertDiagram": "流程图",
+    "image": "图片",
+    "remove": "删除",
+    "addKey": "+ 添加选项（如 E、F）",
+    "jsonAdvanced": "结构化编辑（高级）",
+    "jsonHint": "可粘贴整段结构化文本；若格式无效，不会覆盖上方表单。"
+  },
+  "helpMermaid": {
+    "edit": "编辑",
+    "exportSvg": "导出 SVG"
+  }
+}

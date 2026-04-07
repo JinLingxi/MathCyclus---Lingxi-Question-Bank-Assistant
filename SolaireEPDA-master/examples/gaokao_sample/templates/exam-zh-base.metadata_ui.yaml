@@ -1,0 +1,20 @@
+# 与 exam-zh-base.tex.j2 同目录配套；与内置包中同名文件可择一维护或对齐。
+version: 1
+fields:
+  - key: title_block_style
+    label: 标题块样式
+    kind: select
+    hint: 选「exam2024」时建议填写「卷首抬头」；留空则仅显示学科名一行。
+    options:
+      - value: default
+        label: default · 大标题 + 副标题分行
+      - value: exam2024
+        label: exam2024 · 高考卷首（校名行 + 粗体学科名）
+    omit_values:
+      - default
+  - key: school
+    label: 卷首抬头
+    kind: textarea
+    rows: 2
+    placeholder: 例如：2024年普通高等学校招生全国统一考试
+    hint: 写入 metadata_defaults.school；试卷 metadata 同键可覆盖此处。

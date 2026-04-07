@@ -1,0 +1,10 @@
+id: _placeholder
+type: choice
+content: |
+  占位题；请删除或替换为真实题目文件。
+options:
+  A: "占位"
+  B: "占位"
+answer: A
+analysis: ""
+metadata: {}

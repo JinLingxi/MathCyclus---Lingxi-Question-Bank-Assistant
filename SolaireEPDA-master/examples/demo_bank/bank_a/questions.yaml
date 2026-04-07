@@ -1,0 +1,16 @@
+questions:
+  - id: math_001
+    type: choice
+    content: "若 $x^2=4$，则 $x$ 等于"
+    options:
+      A: "$2$"
+      B: "$-2$"
+      C: "$\\pm 2$"
+      D: "$0$"
+    answer: "C"
+    analysis: "开平方得 $x=\\pm 2$。"
+  - id: fill_001
+    type: fill
+    content: "计算：$1+1=$ \\underline{\\hspace{2cm}}"
+    answer: "2"
+    analysis: "基础加法。"

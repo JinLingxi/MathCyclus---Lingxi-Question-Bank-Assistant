@@ -1,0 +1,11 @@
+id: gk2024_004
+type: choice
+content: 已知$\cos(\alpha+\beta)=m$，$\tan\alpha\tan\beta=2$，则 $\cos(\alpha-\beta)=$
+options:
+  A: $-3m$
+  B: $-\dfrac{m}{3}$
+  C: $\dfrac{m}{3}$
+  D: $3m$
+answer: D
+analysis: 略
+metadata: {}

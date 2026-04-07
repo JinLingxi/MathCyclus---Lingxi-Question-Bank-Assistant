@@ -1,0 +1,21 @@
+\begin{tikzpicture}[>=stealth, scale=1.5]
+    % Draw axes
+    \draw[->] (-1.5,0) -- (1.5,0) node[right] {$x$};
+    \draw[->] (0,-1.5) -- (0,1.5) node[above] {$y$};
+    
+    % Draw unit circle
+    \draw[green!60!black, thick] (0,0) circle (1);
+    
+    % Draw radius lines for T=4
+    \draw[blue, thick] (0,0) -- (90:1) node[above right, black] {$A$};
+    \draw[blue, thick] (0,0) -- (180:1) node[above left, black] {$B$};
+    \draw[blue, thick] (0,0) -- (270:1) node[below right, black] {$C$};
+    \draw[blue, thick] (0,0) -- (0:1) node[above right, black] {$D$};
+    
+    % Draw dots
+    \foreach \angle in {0, 90, 180, 270}
+        \fill[red] (\angle:1) circle (1.5pt);
+        
+    % Label O
+    \node[below left] at (0,0) {$O$};
+\end{tikzpicture}

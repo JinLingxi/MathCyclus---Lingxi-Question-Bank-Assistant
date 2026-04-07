@@ -1,0 +1,12 @@
+id: gk2024_006
+type: choice
+content: 已知函数$f(x)=\begin{cases}-x^2-2ax-a, &x<0, \\e^x+\ln(x+1), &x\geqslant 0\end{cases}$在$\mathbb
+  R$上单调递增，则 $a$ 的取值范围是
+options:
+  A: $(-\infty,0]$
+  B: $[-1,0]$
+  C: $[-1,1]$
+  D: $[0,+\infty)$
+answer: B
+analysis: 略
+metadata: {}

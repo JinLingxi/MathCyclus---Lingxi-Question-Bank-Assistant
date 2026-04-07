@@ -1,0 +1,72 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SolEdu",
+  "version": "0.1.0",
+  "identifier": "education.solaire.desktop",
+  "build": {
+    "frontendDist": "../web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-desktop.ps1",
+    "beforeBuildCommand": "npm run build --prefix web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "SolEdu",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "shadow": false,
+        "transparent": true,
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
+      },
+      {
+        "label": "splash",
+        "title": "SolEdu",
+        "width": 480,
+        "height": 297,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "shadow": true,
+        "transparent": false,
+        "center": true,
+        "visible": true,
+        "alwaysOnTop": true,
+        "url": "splash.html",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "resources": [
+      "runtime/python/**/*",
+      "runtime/sample_project/**/*"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "language": "zh-CN"
+      }
+    }
+  }
+}

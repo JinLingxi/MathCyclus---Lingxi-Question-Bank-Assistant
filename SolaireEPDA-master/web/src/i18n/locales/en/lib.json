@@ -1,0 +1,15 @@
+{
+  "questionTypes": {
+    "choice": "choice · multiple choice",
+    "fill": "fill · fill-in",
+    "judge": "judge · true/false",
+    "short_answer": "short_answer · short answer",
+    "reasoning": "reasoning · reasoning / calculation",
+    "essay": "essay · essay"
+  },
+  "groupInnerTypes": {
+    "choice": "choice · multiple choice",
+    "fill": "fill · fill-in",
+    "judge": "judge · true/false"
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "pages": [
+    {
+      "id": "tutorial-index",
+      "title": "使用教程总览",
+      "path": "tutorial/README.md",
+      "audience": "user",
+      "section": "intro"
+    },
+    {
+      "id": "exam-concepts",
+      "title": "组卷系统如何运作",
+      "path": "introduction/exam-system-concepts.md",
+      "audience": "user",
+      "section": "intro"
+    },
+    {
+      "id": "legal-and-contact",
+      "title": "版权声明与联系作者",
+      "path": "introduction/legal-and-contact.md",
+      "audience": "user",
+      "section": "intro"
+    },
+    {
+      "id": "primebrush",
+      "title": "PrimeBrush 教育绘图",
+      "path": "user/primebrush.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "teaching-assistant",
+      "title": "智能助手侧栏",
+      "path": "user/teaching-assistant.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "mermaid",
+      "title": "Mermaid 流程图",
+      "path": "user/mermaid.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "bank-exchange",
+      "title": "题库交换包",
+      "path": "user/bank-exchange.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "latex-math",
+      "title": "公式编辑器与常用公式",
+      "path": "user/latex-math-in-content.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "knowledge-graph",
+      "title": "知识图谱页",
+      "path": "user/knowledge-graph.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "custom-analysis-script",
+      "title": "自定义分析脚本教程",
+      "path": "tutorial/custom-analysis-script.md",
+      "audience": "user",
+      "section": "guide"
+    },
+    {
+      "id": "developer-index",
+      "title": "开发者文档总览",
+      "path": "developer/README.md",
+      "audience": "dev",
+      "section": "advanced"
+    },
+    {
+      "id": "developer-workspace",
+      "title": "开发约定与工程结构",
+      "path": "developer/dev-workspace.md",
+      "audience": "dev",
+      "section": "advanced"
+    },
+    {
+      "id": "developer-custom-analysis-runtime",
+      "title": "自定义分析脚本运行机制",
+      "path": "developer/custom-analysis-runtime.md",
+      "audience": "dev",
+      "section": "advanced"
+    },
+    {
+      "id": "desktop-distribution-dev",
+      "title": "Windows 桌面分发（开发视角）",
+      "path": "developer/desktop-distribution.md",
+      "audience": "dev",
+      "section": "advanced"
+    },
+    {
+      "id": "yaml-project-files",
+      "title": "YAML 与项目文件",
+      "path": "advanced/yaml-and-project-files.md",
+      "audience": "dev",
+      "section": "advanced"
+    },
+    {
+      "id": "http-api-overview",
+      "title": "HTTP 接口总览",
+      "path": "advanced/http-api-overview.md",
+      "audience": "dev",
+      "section": "advanced"
+    },
+    {
+      "id": "graph-api",
+      "title": "图谱 HTTP 接口（供 AI / 编排脚本使用）",
+      "path": "advanced/graph-http-api.md",
+      "audience": "ai",
+      "section": "advanced"
+    }
+  ]
+}

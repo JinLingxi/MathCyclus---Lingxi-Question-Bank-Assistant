@@ -1,0 +1,42 @@
+% === Begin Label Data ===
+% ID: 272
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{深圳中学2026届高三二轮二阶测试}{15}{解三角形}
+如图，在 $\triangle ABC$ 中，$D$ 是边 $BC$ 上一点，$AB=AD$，记 $\angle CAD=\alpha$，$\angle ABC=\beta$，$\alpha,\beta\in\left(0,\dfrac{\pi}{2}\right)$，满足 $\sin\alpha+\cos2\beta=0$.
+
+\begin{tikzpicture}[scale=1.2]
+    % 1. 定义坐标
+    \coordinate (B) at (0,0);
+    \coordinate (D) at (3,0);
+    \coordinate (C) at (6,0);
+    % 使 AB = AD，利用对称性 A 在 B 和 D 的中垂线上
+    \coordinate (A) at (1.5, 2.5);
+
+    % 2. 绘制三角形的边
+    \draw[thick] (A) -- (B) -- (C) -- cycle;
+    \draw[thick] (A) -- (D);
+
+    % 3. 标注顶点
+    \node[above] at (A) {A};
+    \node[below left] at (B) {B};
+    \node[below right] at (C) {C};
+    \node[below] at (D) {D};
+
+    % 4. 绘制角度与标注
+    % 绘制角 \beta
+    \pic [draw, angle radius=0.5cm, "$\beta$", angle eccentricity=1.4] {angle = C--B--A};
+    % 绘制角 \alpha
+    \pic [draw, angle radius=0.6cm, "$\alpha$", angle eccentricity=1.3] {angle = D--A--C};
+\end{tikzpicture}
+
+
+（1）求 $\angle BAC$ 的值；
+
+（2）若 $AC=\sqrt{5}DC$，求 $\beta$ 的值.
+
+\end{problem}

@@ -1,0 +1,6 @@
+id: math_016
+type: fill
+content: 若 $a,b$ 为实数，$(a+b)^2-a^2-b^2=$ $\underline{\qquad}$
+answer: $2ab$
+analysis: 展开即可。
+metadata: {}

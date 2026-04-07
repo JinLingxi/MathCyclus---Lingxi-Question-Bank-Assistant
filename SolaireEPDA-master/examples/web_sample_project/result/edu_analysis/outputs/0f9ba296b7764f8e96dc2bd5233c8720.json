@@ -1,0 +1,761 @@
+{
+  "summary": {
+    "title": "内置考试统计分析",
+    "status": "succeeded",
+    "student_count": 2,
+    "question_count": 19,
+    "class_avg_ratio": 0.6149,
+    "class_avg_fuzzy": 0.7228
+  },
+  "tables": [
+    {
+      "id": "question_stats",
+      "title": "题目统计",
+      "rows": [
+        {
+          "question_id": "数学/2024全国高考/gk2024_001",
+          "header": "1.1",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_002",
+          "header": "1.2",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_003",
+          "header": "1.3",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_004",
+          "header": "1.4",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_005",
+          "header": "1.5",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_006",
+          "header": "1.6",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_007",
+          "header": "1.7",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_008",
+          "header": "1.8",
+          "section_id": "一、选择题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_009",
+          "header": "2.1",
+          "section_id": "二、选择题",
+          "score_per_item": 6.0,
+          "answered_count": 2,
+          "error_rate": 0.5,
+          "avg_score_ratio": 0.4166666666666667,
+          "avg_raw_score": 2.5,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_010",
+          "header": "2.2",
+          "section_id": "二、选择题",
+          "score_per_item": 6.0,
+          "answered_count": 2,
+          "error_rate": 0.5,
+          "avg_score_ratio": 0.4166666666666667,
+          "avg_raw_score": 2.5,
+          "first_csv_raw": 0.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_011",
+          "header": "2.3",
+          "section_id": "二、选择题",
+          "score_per_item": 6.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 0.8333333333333334,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_012",
+          "header": "3.1",
+          "section_id": "三、填空题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_013",
+          "header": "3.2",
+          "section_id": "三、填空题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 0.0,
+          "avg_score_ratio": 1.0,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 5.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_014",
+          "header": "3.3",
+          "section_id": "三、填空题",
+          "score_per_item": 5.0,
+          "answered_count": 2,
+          "error_rate": 1.0,
+          "avg_score_ratio": 0.0,
+          "avg_raw_score": 0.0,
+          "first_csv_raw": 0.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_015",
+          "header": "4.1",
+          "section_id": "四、解答题",
+          "score_per_item": 15.0,
+          "answered_count": 2,
+          "error_rate": 0.5,
+          "avg_score_ratio": 0.6000000000000001,
+          "avg_raw_score": 9.0,
+          "first_csv_raw": 12.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_016",
+          "header": "4.2",
+          "section_id": "四、解答题",
+          "score_per_item": 15.0,
+          "answered_count": 2,
+          "error_rate": 0.5,
+          "avg_score_ratio": 0.3333333333333333,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 8.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_017",
+          "header": "4.3",
+          "section_id": "四、解答题",
+          "score_per_item": 15.0,
+          "answered_count": 2,
+          "error_rate": 1.0,
+          "avg_score_ratio": 0.16666666666666666,
+          "avg_raw_score": 2.5,
+          "first_csv_raw": 1.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_018",
+          "header": "4.4",
+          "section_id": "四、解答题",
+          "score_per_item": 15.0,
+          "answered_count": 2,
+          "error_rate": 0.5,
+          "avg_score_ratio": 0.3333333333333333,
+          "avg_raw_score": 5.0,
+          "first_csv_raw": 2.0
+        },
+        {
+          "question_id": "数学/2024全国高考/gk2024_019",
+          "header": "4.5",
+          "section_id": "四、解答题",
+          "score_per_item": 15.0,
+          "answered_count": 2,
+          "error_rate": 0.5,
+          "avg_score_ratio": 0.6333333333333333,
+          "avg_raw_score": 9.5,
+          "first_csv_raw": 12.0
+        }
+      ]
+    },
+    {
+      "id": "student_stats",
+      "title": "学生统计",
+      "rows": [
+        {
+          "name": "张三",
+          "student_id": "20240102",
+          "raw_total": 95.0,
+          "score_ratio": 0.6419,
+          "fuzzy_score": 0.7368,
+          "rank": 1,
+          "class_rank": 1,
+          "total_in_class": 2
+        },
+        {
+          "name": "李四",
+          "student_id": "20240805",
+          "raw_total": 87.0,
+          "score_ratio": 0.5878,
+          "fuzzy_score": 0.7088,
+          "rank": 2,
+          "class_rank": 2,
+          "total_in_class": 2
+        }
+      ]
+    },
+    {
+      "id": "node_stats",
+      "title": "知识点统计",
+      "rows": [
+        {
+          "node_id": "math/kg/logic/理科高考/几何/圆锥曲线",
+          "bound_question_count": 1,
+          "bound_questions": [
+            "数学/2024全国高考/gk2024_016"
+          ],
+          "mastery_fuzzy": 0.3333,
+          "error_rate": 0.6667
+        },
+        {
+          "node_id": "math/kg/logic/理科高考/函数与分析/函数概念",
+          "bound_question_count": 1,
+          "bound_questions": [
+            "数学/2024全国高考/gk2024_011"
+          ],
+          "mastery_fuzzy": 0.8333,
+          "error_rate": 0.1667
+        }
+      ]
+    }
+  ],
+  "chart_specs": [
+    {
+      "id": "question_error_rate_top20",
+      "type": "bar",
+      "title": "题目错误率（前20）",
+      "series_id": "question_error_rate_series",
+      "x": "label",
+      "y": "value"
+    }
+  ],
+  "series": [
+    {
+      "id": "question_error_rate_series",
+      "points": [
+        {
+          "label": "1.1",
+          "value": 0.0
+        },
+        {
+          "label": "1.2",
+          "value": 0.0
+        },
+        {
+          "label": "1.3",
+          "value": 0.0
+        },
+        {
+          "label": "1.4",
+          "value": 0.0
+        },
+        {
+          "label": "1.5",
+          "value": 0.0
+        },
+        {
+          "label": "1.6",
+          "value": 0.0
+        },
+        {
+          "label": "1.7",
+          "value": 0.0
+        },
+        {
+          "label": "1.8",
+          "value": 0.0
+        },
+        {
+          "label": "2.1",
+          "value": 0.5
+        },
+        {
+          "label": "2.2",
+          "value": 0.5
+        },
+        {
+          "label": "2.3",
+          "value": 0.0
+        },
+        {
+          "label": "3.1",
+          "value": 0.0
+        },
+        {
+          "label": "3.2",
+          "value": 0.0
+        },
+        {
+          "label": "3.3",
+          "value": 1.0
+        },
+        {
+          "label": "4.1",
+          "value": 0.5
+        },
+        {
+          "label": "4.2",
+          "value": 0.5
+        },
+        {
+          "label": "4.3",
+          "value": 1.0
+        },
+        {
+          "label": "4.4",
+          "value": 0.5
+        },
+        {
+          "label": "4.5",
+          "value": 0.5
+        }
+      ]
+    }
+  ],
+  "logs": [],
+  "warnings": [
+    "第1.1题（数学/2024全国高考/gk2024_001）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.2题（数学/2024全国高考/gk2024_002）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.3题（数学/2024全国高考/gk2024_003）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.4题（数学/2024全国高考/gk2024_004）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.5题（数学/2024全国高考/gk2024_005）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.6题（数学/2024全国高考/gk2024_006）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.7题（数学/2024全国高考/gk2024_007）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第1.8题（数学/2024全国高考/gk2024_008）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第2.1题（数学/2024全国高考/gk2024_009）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第2.2题（数学/2024全国高考/gk2024_010）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第3.1题（数学/2024全国高考/gk2024_012）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第3.2题（数学/2024全国高考/gk2024_013）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第3.3题（数学/2024全国高考/gk2024_014）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第4.1题（数学/2024全国高考/gk2024_015）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第4.3题（数学/2024全国高考/gk2024_017）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第4.4题（数学/2024全国高考/gk2024_018）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计",
+    "第4.5题（数学/2024全国高考/gk2024_019）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+  ],
+  "context": {
+    "exam_id": "2025期末考试",
+    "batch_id": "6f245e7693ea4619b28ced1849ebec3f",
+    "source": "builtin:exam_stats_v1"
+  },
+  "raw": {
+    "batch_id": "6f245e7693ea4619b28ced1849ebec3f",
+    "exam_id": "2025期末考试",
+    "student_count": 2,
+    "question_count": 19,
+    "imported_at": "2026-03-31T16:12:00.718838+00:00",
+    "warnings": [
+      {
+        "question_id": "数学/2024全国高考/gk2024_001",
+        "header": "1.1",
+        "section_id": "一、选择题",
+        "message": "第1.1题（数学/2024全国高考/gk2024_001）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_002",
+        "header": "1.2",
+        "section_id": "一、选择题",
+        "message": "第1.2题（数学/2024全国高考/gk2024_002）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_003",
+        "header": "1.3",
+        "section_id": "一、选择题",
+        "message": "第1.3题（数学/2024全国高考/gk2024_003）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_004",
+        "header": "1.4",
+        "section_id": "一、选择题",
+        "message": "第1.4题（数学/2024全国高考/gk2024_004）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_005",
+        "header": "1.5",
+        "section_id": "一、选择题",
+        "message": "第1.5题（数学/2024全国高考/gk2024_005）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_006",
+        "header": "1.6",
+        "section_id": "一、选择题",
+        "message": "第1.6题（数学/2024全国高考/gk2024_006）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_007",
+        "header": "1.7",
+        "section_id": "一、选择题",
+        "message": "第1.7题（数学/2024全国高考/gk2024_007）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_008",
+        "header": "1.8",
+        "section_id": "一、选择题",
+        "message": "第1.8题（数学/2024全国高考/gk2024_008）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_009",
+        "header": "2.1",
+        "section_id": "二、选择题",
+        "message": "第2.1题（数学/2024全国高考/gk2024_009）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_010",
+        "header": "2.2",
+        "section_id": "二、选择题",
+        "message": "第2.2题（数学/2024全国高考/gk2024_010）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_012",
+        "header": "3.1",
+        "section_id": "三、填空题",
+        "message": "第3.1题（数学/2024全国高考/gk2024_012）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_013",
+        "header": "3.2",
+        "section_id": "三、填空题",
+        "message": "第3.2题（数学/2024全国高考/gk2024_013）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_014",
+        "header": "3.3",
+        "section_id": "三、填空题",
+        "message": "第3.3题（数学/2024全国高考/gk2024_014）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_015",
+        "header": "4.1",
+        "section_id": "四、解答题",
+        "message": "第4.1题（数学/2024全国高考/gk2024_015）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_017",
+        "header": "4.3",
+        "section_id": "四、解答题",
+        "message": "第4.3题（数学/2024全国高考/gk2024_017）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_018",
+        "header": "4.4",
+        "section_id": "四、解答题",
+        "message": "第4.4题（数学/2024全国高考/gk2024_018）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_019",
+        "header": "4.5",
+        "section_id": "四、解答题",
+        "message": "第4.5题（数学/2024全国高考/gk2024_019）未绑定知识点节点，请在知识图谱页面绑定后再查看节点统计"
+      }
+    ],
+    "question_stats": [
+      {
+        "question_id": "数学/2024全国高考/gk2024_001",
+        "header": "1.1",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_002",
+        "header": "1.2",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_003",
+        "header": "1.3",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_004",
+        "header": "1.4",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_005",
+        "header": "1.5",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_006",
+        "header": "1.6",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_007",
+        "header": "1.7",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_008",
+        "header": "1.8",
+        "section_id": "一、选择题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_009",
+        "header": "2.1",
+        "section_id": "二、选择题",
+        "score_per_item": 6.0,
+        "answered_count": 2,
+        "error_rate": 0.5,
+        "avg_score_ratio": 0.4166666666666667,
+        "avg_raw_score": 2.5,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_010",
+        "header": "2.2",
+        "section_id": "二、选择题",
+        "score_per_item": 6.0,
+        "answered_count": 2,
+        "error_rate": 0.5,
+        "avg_score_ratio": 0.4166666666666667,
+        "avg_raw_score": 2.5,
+        "first_csv_raw": 0.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_011",
+        "header": "2.3",
+        "section_id": "二、选择题",
+        "score_per_item": 6.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 0.8333333333333334,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_012",
+        "header": "3.1",
+        "section_id": "三、填空题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_013",
+        "header": "3.2",
+        "section_id": "三、填空题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 0.0,
+        "avg_score_ratio": 1.0,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 5.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_014",
+        "header": "3.3",
+        "section_id": "三、填空题",
+        "score_per_item": 5.0,
+        "answered_count": 2,
+        "error_rate": 1.0,
+        "avg_score_ratio": 0.0,
+        "avg_raw_score": 0.0,
+        "first_csv_raw": 0.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_015",
+        "header": "4.1",
+        "section_id": "四、解答题",
+        "score_per_item": 15.0,
+        "answered_count": 2,
+        "error_rate": 0.5,
+        "avg_score_ratio": 0.6000000000000001,
+        "avg_raw_score": 9.0,
+        "first_csv_raw": 12.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_016",
+        "header": "4.2",
+        "section_id": "四、解答题",
+        "score_per_item": 15.0,
+        "answered_count": 2,
+        "error_rate": 0.5,
+        "avg_score_ratio": 0.3333333333333333,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 8.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_017",
+        "header": "4.3",
+        "section_id": "四、解答题",
+        "score_per_item": 15.0,
+        "answered_count": 2,
+        "error_rate": 1.0,
+        "avg_score_ratio": 0.16666666666666666,
+        "avg_raw_score": 2.5,
+        "first_csv_raw": 1.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_018",
+        "header": "4.4",
+        "section_id": "四、解答题",
+        "score_per_item": 15.0,
+        "answered_count": 2,
+        "error_rate": 0.5,
+        "avg_score_ratio": 0.3333333333333333,
+        "avg_raw_score": 5.0,
+        "first_csv_raw": 2.0
+      },
+      {
+        "question_id": "数学/2024全国高考/gk2024_019",
+        "header": "4.5",
+        "section_id": "四、解答题",
+        "score_per_item": 15.0,
+        "answered_count": 2,
+        "error_rate": 0.5,
+        "avg_score_ratio": 0.6333333333333333,
+        "avg_raw_score": 9.5,
+        "first_csv_raw": 12.0
+      }
+    ],
+    "node_stats": [
+      {
+        "node_id": "math/kg/logic/理科高考/几何/圆锥曲线",
+        "bound_question_count": 1,
+        "bound_questions": [
+          "数学/2024全国高考/gk2024_016"
+        ],
+        "mastery_fuzzy": 0.3333,
+        "error_rate": 0.6667
+      },
+      {
+        "node_id": "math/kg/logic/理科高考/函数与分析/函数概念",
+        "bound_question_count": 1,
+        "bound_questions": [
+          "数学/2024全国高考/gk2024_011"
+        ],
+        "mastery_fuzzy": 0.8333,
+        "error_rate": 0.1667
+      }
+    ],
+    "student_stats": [
+      {
+        "name": "张三",
+        "student_id": "20240102",
+        "raw_total": 95.0,
+        "score_ratio": 0.6419,
+        "fuzzy_score": 0.7368,
+        "rank": 1,
+        "class_rank": 1,
+        "total_in_class": 2
+      },
+      {
+        "name": "李四",
+        "student_id": "20240805",
+        "raw_total": 87.0,
+        "score_ratio": 0.5878,
+        "fuzzy_score": 0.7088,
+        "rank": 2,
+        "class_rank": 2,
+        "total_in_class": 2
+      }
+    ],
+    "class_avg_ratio": 0.6149,
+    "class_avg_fuzzy": 0.7228
+  }
+}

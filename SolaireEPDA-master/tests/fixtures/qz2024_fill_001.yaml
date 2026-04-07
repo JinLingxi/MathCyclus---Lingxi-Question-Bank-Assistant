@@ -1,0 +1,12 @@
+id: qz2024_fill_001
+type: fill
+content: 已知函数 $f(x) = x^3 - 3x^2 + 2$，则 $f(x)$ 在区间 $[0,3]$ 上的最大值为________。
+  。
+answer: '2'
+analysis: "**解析：**\n首先求导数：$f'(x) = 3x^2 - 6x = 3x(x-2)$\n\n令 $f'(x) = 0$，得 $x = 0$\
+  \ 或 $x = 2$。\n\n计算函数在临界点和端点的值：\n- $f(0) = 0^3 - 3 \\times 0^2 + 2 = 2$\n- $f(2)\
+  \ = 8 - 12 + 2 = -2$  \n- $f(3) = 27 - 27 + 2 = 2$\n\n比较得：最大值为 $2$。"
+metadata:
+  difficulty: medium
+  knowledge_points: 导数,极值,最值
+  estimated_time: '5'

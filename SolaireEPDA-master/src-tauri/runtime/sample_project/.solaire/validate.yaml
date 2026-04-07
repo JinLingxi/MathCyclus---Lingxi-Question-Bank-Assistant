@@ -1,0 +1,51 @@
+exam_id: validate
+template_ref: gaokao2024_math
+metadata: {}
+question_libraries:
+- path: ../resource/数学/2024全国高考
+  namespace: 数学/2024全国高考
+- path: ../resource/数学/main
+  namespace: 数学/main
+- path: ../resource/数学/期中考试2024
+  namespace: 数学/期中考试2024
+- path: ../resource/数学/高考真题
+  namespace: 数学/高考真题
+- path: ../resource/默认/默认
+  namespace: 默认/默认
+template_path: ../templates/gaokao2024.yaml
+selected_items:
+- section_id: 一、选择题
+  question_ids:
+  - 数学/2024全国高考/gk2024_001
+  - 数学/2024全国高考/gk2024_002
+  - 数学/2024全国高考/gk2024_003
+  - 数学/2024全国高考/gk2024_004
+  - 数学/2024全国高考/gk2024_005
+  - 数学/2024全国高考/gk2024_006
+  - 数学/2024全国高考/gk2024_007
+  - 数学/2024全国高考/gk2024_008
+  score_per_item: null
+  score_overrides: null
+- section_id: 二、选择题
+  question_ids:
+  - 数学/2024全国高考/gk2024_009
+  - 数学/2024全国高考/gk2024_010
+  - 数学/2024全国高考/gk2024_011
+  score_per_item: null
+  score_overrides: null
+- section_id: 三、填空题
+  question_ids:
+  - 数学/2024全国高考/gk2024_012
+  - 数学/2024全国高考/gk2024_013
+  - 数学/2024全国高考/gk2024_014
+  score_per_item: null
+  score_overrides: null
+- section_id: 四、解答题
+  question_ids:
+  - 数学/2024全国高考/gk2024_015
+  - 数学/2024全国高考/gk2024_016
+  - 数学/2024全国高考/gk2024_017
+  - 数学/2024全国高考/gk2024_018
+  - 数学/2024全国高考/gk2024_019
+  score_per_item: null
+  score_overrides: null

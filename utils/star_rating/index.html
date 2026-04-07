@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: "Source Sans Pro", sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      background-color: transparent;
+      height: 35px;
+    }
+    .container {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #31333F;
+    }
+    .stars-container {
+      display: inline-flex;
+      font-size: 20px;
+      cursor: pointer;
+      user-select: none;
+      line-height: 1;
+    }
+    .star-wrapper {
+      display: inline-block;
+      position: relative;
+      width: 1em;
+      height: 1em;
+      transition: transform 0.1s;
+    }
+    .star-wrapper:hover {
+      transform: scale(1.15);
+    }
+    .star-wrapper::before {
+      content: '⭐';
+      position: absolute;
+      left: 0;
+      top: 0;
+      filter: grayscale(100%) opacity(0.3);
+    }
+    .star-wrapper.active::before {
+      filter: none;
+    }
+    .star-wrapper.half-active::after {
+      content: '⭐';
+      position: absolute;
+      left: 0;
+      top: 0;
+      clip-path: inset(0 50% 0 0);
+      -webkit-clip-path: inset(0 50% 0 0);
+      filter: none;
+    }
+    /* Invisible halves for hover/click detection */
+    .left-half, .right-half {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      width: 50%;
+      z-index: 10;
+    }
+    .left-half { left: 0; }
+    .right-half { right: 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="label" class="label">难度星级：</div>
+    <div id="stars-container" class="stars-container">
+      <!-- Stars will be injected here -->
+    </div>
+  </div>
+
+  <script>
+    let currentValue = 0;
+    let maxStars = 6;
+    let renderedOnce = false;
+
+    function sendMessageToStreamlitClient(type, data) {
+        const outData = Object.assign({
+            isStreamlitMessage: true,
+            type: type,
+        }, data);
+        window.parent.postMessage(outData, "*");
+    }
+
+    const Streamlit = {
+        setComponentReady: function() {
+            sendMessageToStreamlitClient("streamlit:componentReady", {apiVersion: 1});
+        },
+        setFrameHeight: function(height) {
+            sendMessageToStreamlitClient("streamlit:setFrameHeight", {height: height || 35});
+        },
+        setComponentValue: function(value) {
+            sendMessageToStreamlitClient("streamlit:setComponentValue", {value: value});
+        }
+    };
+
+    function renderStars() {
+      const container = document.getElementById("stars-container");
+      container.innerHTML = '';
+      
+      for (let i = 1; i <= maxStars; i++) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "star-wrapper";
+        
+        if (currentValue >= i) {
+          wrapper.classList.add("active");
+        } else if (currentValue === i - 0.5) {
+          wrapper.classList.add("half-active");
+        }
+        
+        const leftHalf = document.createElement("div");
+        leftHalf.className = "left-half";
+        leftHalf.onmouseover = () => updateHover(i - 0.5);
+        leftHalf.onmouseout = () => updateHover(null);
+        leftHalf.onclick = () => setValue(i - 0.5);
+        
+        const rightHalf = document.createElement("div");
+        rightHalf.className = "right-half";
+        rightHalf.onmouseover = () => updateHover(i);
+        rightHalf.onmouseout = () => updateHover(null);
+        rightHalf.onclick = () => setValue(i);
+        
+        wrapper.appendChild(leftHalf);
+        wrapper.appendChild(rightHalf);
+        container.appendChild(wrapper);
+      }
+    }
+    
+    function updateHover(hoverValue) {
+      const val = hoverValue !== null ? hoverValue : currentValue;
+      const wrappers = document.querySelectorAll(".star-wrapper");
+      
+      wrappers.forEach((wrapper, index) => {
+        const i = index + 1;
+        wrapper.className = "star-wrapper";
+        if (val >= i) {
+          wrapper.classList.add("active");
+        } else if (val === i - 0.5) {
+          wrapper.classList.add("half-active");
+        }
+      });
+    }
+    
+    function setValue(val) {
+      currentValue = val;
+      renderStars();
+      Streamlit.setComponentValue(val);
+    }
+
+    window.addEventListener("message", function(event) {
+        if (event.data.type === "streamlit:render") {
+            const data = event.data.args;
+            if (data.label !== undefined) {
+                const labelEl = document.getElementById("label");
+                labelEl.innerText = data.label;
+                if (data.label === "") {
+                    labelEl.style.display = "none";
+                } else {
+                    labelEl.style.display = "block";
+                }
+            }
+            if (data.max_stars) {
+                maxStars = data.max_stars;
+            }
+            if (data.value !== undefined && data.value !== null) {
+                if (!renderedOnce) {
+                    currentValue = data.value;
+                    renderedOnce = true;
+                }
+            }
+            renderStars();
+            Streamlit.setFrameHeight(35);
+        }
+    });
+
+    Streamlit.setComponentReady();
+    Streamlit.setFrameHeight(35);
+  </script>
+</body>
+</html>

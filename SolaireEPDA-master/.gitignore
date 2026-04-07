@@ -1,0 +1,53 @@
+# PDF 输出（不纳入版本库）
+*.pdf
+
+# Node (Web UI)
+node_modules/
+
+# Python
+.cache/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*$py.class
+*.egg-info/
+src/solaire_education.egg-info/
+.eggs/
+dist/
+build/
+nuitka_build/
+.venv/
+venv/
+.conda-solaire/
+
+# LaTeX / latexmk 中间文件
+*.aux
+*.log
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.toc
+*.xdv
+.vscode
+
+# 项目内智能助手模型参数（可能含敏感信息）
+**/llm_overrides.json
+examples/web_sample_project/.solaire
+*.docx
+
+# Rust
+primebrush-rs/target/
+src-tauri/target/
+src-tauri/binaries/*.exe
+# 嵌入式 Python 除 README/.gitignore 外的生成文件（见 src-tauri/runtime/python/.gitignore）
+
+nuitka_build/
+
+# 仅本地保留、不推送到公开仓库（产品/架构/状态快照与 Cursor 内部计划）
+/PRD.md
+/ARCHITECTURE.md
+/docs/STATUS.md
+/docs/PROJECT_MAP.md
+/.cursor/
+/.claude/

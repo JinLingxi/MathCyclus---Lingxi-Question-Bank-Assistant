@@ -1,0 +1,46 @@
+template_id: gaokao2024_math
+layout: single_column
+latex_base: GeneralMath.tex.j2
+sections:
+  - section_id: 一、选择题
+    type: choice
+    required_count: 8
+    score_per_item: 5
+    describe: 本题共8小题，每小题5分，共40分。在每小题给出的四个选项中，只有一项是符合题目要求的。
+  - section_id: 二、选择题
+    type: choice
+    required_count: 3
+    score_per_item: 6
+    describe: 本题共3小题，每小题6分，共18分。在每小题给出的选项中，有多项符合题目要求。全部选对的得6分，部分选对的得部分分，有选错的得0分。
+  - section_id: 三、填空题
+    type: fill
+    required_count: 3
+    score_per_item: 5
+    describe: 本题共3小题，每小题5分，共15分。
+  - section_id: 四、解答题
+    type: reasoning
+    required_count: 5
+    score_per_item: 15
+    describe: 本题共5小题，共77分。解答应写出文字说明、证明过程或演算步骤。
+metadata_defaults:
+  body_font_size_pt: 11
+  show_binding_line: true
+  line_stretch: 1.5
+  show_page_number_footer: true
+  title_block_style: exam2024
+  section_heading_style: hang_bold
+  include_common_math_macros: true
+  margins_mm:
+    left: 31.7
+    right: 31.7
+    top: 30.4
+    bottom: 30.4
+  preamble_notices: |
+    \noindent\textbf{注意事项：}\par\smallskip
+    1. 答卷前，考生务必将自己的姓名、准考证号填写在答题卡上。\par
+    2. 回答选择题时，选出每小题答案后，用铅笔把答题卡上对应题目的答案标号涂黑。如需改动，用橡皮擦干净后，再选涂其他答案标号。回答非选择题时，将答案写在答题卡上。写在本试卷上无效。\par
+    3. 考试结束后，将本试卷和答题卡一并交回。
+  show_student_sidebar: true
+  sidebar_show_class: true
+  binding_line_position_cm: 1.2
+  show_name_column: false

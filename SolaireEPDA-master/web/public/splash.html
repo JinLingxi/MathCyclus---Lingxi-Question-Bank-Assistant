@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SolEdu</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        background: linear-gradient(165deg, #1e293b 0%, #0f172a 45%, #020617 100%);
+        color: #e2e8f0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.25rem;
+        padding: 1.5rem 2rem;
+      }
+      .logo {
+        width: 96px;
+        height: 96px;
+        object-fit: contain;
+        filter: drop-shadow(0 4px 24px rgba(15, 23, 42, 0.65));
+      }
+      .name {
+        font-size: 1.125rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-align: center;
+        line-height: 1.35;
+        color: #f1f5f9;
+      }
+      .sub {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <img class="logo" src="/splash-logo.png" width="96" height="96" alt="" />
+      <div>
+        <div class="name">SolEdu Community Edition</div>
+        <div class="sub">正在启动</div>
+      </div>
+    </div>
+  </body>
+</html>

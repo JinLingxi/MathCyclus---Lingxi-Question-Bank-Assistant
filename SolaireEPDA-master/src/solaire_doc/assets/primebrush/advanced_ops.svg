@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520.00" height="380.00" viewBox="0 0 520.00 380.00">
+<line x1="191.46" y1="43.20" x2="70.53" y2="354.44" stroke="#222" stroke-width="1.10" fill="none"/>
+<line x1="70.53" y1="354.44" x2="462.66" y2="261.10" stroke="#222" stroke-width="1.10" fill="none"/>
+<line x1="462.66" y1="261.10" x2="191.46" y2="43.20" stroke="#222" stroke-width="1.10" fill="none"/>
+<line x1="851.39" y1="478.73" x2="-589.40" y2="-81.09" stroke="#2d6a4f" stroke-width="1.10" stroke-dasharray="6,4" fill="none"/>
+<text x="347.11" y="282.79" font-size="11.4" font-family="sans-serif" fill="#1b4332" text-anchor="middle" dominant-baseline="middle">中垂线</text>
+<line x1="-512.06" y1="862.27" x2="653.13" y2="-153.40" stroke="#2d6a4f" stroke-width="1.10" stroke-dasharray="6,4" fill="none"/>
+<text x="128.79" y="303.65" font-size="11.4" font-family="sans-serif" fill="#1b4332" text-anchor="middle" dominant-baseline="middle">角平分线</text>
+<circle cx="327.06" cy="152.15" r="326.69" stroke="#1d3557" stroke-width="1.10" fill="none"/>
+<ellipse cx="191.46" cy="43.20" rx="55.00" ry="32.00" stroke="#6a4c93" stroke-width="1.10" fill="none" transform="rotate(18.00 191.46 43.20)"/>
+<circle cx="191.46" cy="43.20" r="3" fill="#111"/>
+<text x="191.46" y="29.20" font-size="12.0" font-family="sans-serif" fill="#111">A</text>
+<circle cx="70.53" cy="354.44" r="3" fill="#111"/>
+<text x="56.53" y="368.44" font-size="12.0" font-family="sans-serif" fill="#111">B</text>
+<circle cx="462.66" cy="261.10" r="3" fill="#111"/>
+<text x="476.66" y="275.10" font-size="12.0" font-family="sans-serif" fill="#111">C</text>
+<circle cx="327.06" cy="152.15" r="2.5" fill="#c00"/>
+</svg>

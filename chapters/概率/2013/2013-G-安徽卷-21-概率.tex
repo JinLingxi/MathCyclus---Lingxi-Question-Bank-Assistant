@@ -1,0 +1,47 @@
+% === Begin Label Data ===
+% ID: 194
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2013}{G}{安徽卷}{21}{概率}
+某高校数学系计划在周六和周日各举行一次主题不同的心理测试活动, 分别由李老师和张老师负责. 已知该系共有 $n$ 位学生, 每次活动均需该系 $k$ 位学生参加 ($n$ 和 $k$ 都是固定的正整数). 假设李老师和张老师分别将各自活动通知的信息独立、随机地发给该系 $k$ 位学生, 且所发信息都能收到. 记该系收到李老师或张老师所发活动通知信息的学生人数为 $X$.
+
+(1) 求该系学生甲收到李老师或张老师所发活动通知信息的概率;
+
+(2) 求使 $P(X=m)$ 取得最大值的整数 $m$.
+\end{problem}
+
+
+\begin{solutions}
+(1) 因为事件 $A$: “学生甲收到李老师所发信息”与事件 $B$: “学生甲收到张老师所发信息”是相互独立的事件, 所以 $\overline{A}$ 与 $\overline{B}$ 相互独立. 由于 $P(A)=P(B)=\dfrac{\mathrm{C}_{n-1}^{k-1}}{\mathrm{C}_n^k}=\dfrac{k}{n}$, 故 $P(\overline{A})=P(\overline{B})=1-\dfrac{k}{n}$, 因此学生甲收到活动通知信息的概率
+
+$P=1-(1-\dfrac{k}{n})^2=\dfrac{2kn-k^2}{n^2}$.
+
+(2) 当 $k=n$ 时, $m$ 只能取 $n$, 有 $P(X=m)=P(X=n)=1$.
+
+当 $k<n$ 时, 整数 $m$ 满足 $k \le m \le t$, 其中 $t$ 是 $2k$ 和 $n$ 中的较小者. 由于“李老师和张老师各自独立、随机地发活动通知信息给 $k$ 位同学”所包含的基本事件总数为 $(\mathrm{C}_n^k)^2$. 当 $X=m$ 时, 同时收到李老师和张老师转发信息的学生人数恰为 $2k-m$, 仅收到李老师或仅收到张老师转发信息的学生人数均为 $m-k$. 由乘法计数原理知: 事件 $\{X=m\}$ 所含基本事件数为 $\mathrm{C}_n^k \mathrm{C}_k^{2k-m} \mathrm{C}_{n-k}^{m-k} = \mathrm{C}_n^k \mathrm{C}_k^{m-k} \mathrm{C}_{n-k}^{m-k}$.
+此时
+
+$P(X=m) = \dfrac{\mathrm{C}_n^k \mathrm{C}_k^{2k-m} \mathrm{C}_{n-k}^{m-k}}{(\mathrm{C}_n^k)^2} = \dfrac{\mathrm{C}_k^{m-k} \mathrm{C}_{n-k}^{m-k}}{\mathrm{C}_n^k}$.
+
+当 $k \le m < t$ 时, $P(X=m) \le P(X=m+1) \Leftrightarrow \mathrm{C}_k^{m-k} \mathrm{C}_{n-k}^{m-k} \le \mathrm{C}_k^{m+1-k} \mathrm{C}_{n-k}^{m+1-k}$
+
+$\Leftrightarrow (m-k+1)^2 \le (n-m)(2k-m) \Leftrightarrow m \le 2k - \dfrac{(k+1)^2}{n+2}$.
+
+假如 $k \le 2k - \dfrac{(k+1)^2}{n+2} < t$ 成立, 则当 $(k+1)^2$ 能被 $n+2$ 整除时,
+
+$k \le 2k - \dfrac{(k+1)^2}{n+2} < 2k+1 - \dfrac{(k+1)^2}{n+2} \le t$.
+
+故 $P(X=m)$ 在 $m = 2k - \dfrac{(k+1)^2}{n+2}$ 和 $m = 2k+1 - \dfrac{(k+1)^2}{n+2}$ 处达最大值; 当 $(k+1)^2$ 不能被 $n+2$ 整除时, $P(X=m)$ 在 $m = 2k - \left[\dfrac{(k+1)^2}{n+2}\right]$ 处达最大值. (注: $[x]$ 表示不超过 $x$ 的最大整数)
+
+下面证明 $k \le 2k - \dfrac{(k+1)^2}{n+2} < t$.
+
+因为 $1 \le k < n$, 所以 $2k - \dfrac{(k+1)^2}{n+2} - k = \dfrac{kn-k^2-1}{n+2} \ge \dfrac{k(k+1)-k^2-1}{n+2} = \dfrac{k-1}{n+2} \ge 0$.
+
+而 $2k - \dfrac{(k+1)^2}{n^2} - n = - \dfrac{(n-k+1)^2}{n+2} < 0$, 故 $2k - \dfrac{(k+1)^2}{n+2} < n$. 显然 $2k - \dfrac{(k+1)^2}{n+2} < 2k$.
+
+因此 $k \le 2k - \dfrac{(k+1)^2}{n+2} < t$.
+\end{solutions}

@@ -1,0 +1,38 @@
+template_id: 高考数学
+layout: single_column
+latex_base: exam-zh-base.tex.j2
+sections:
+  - section_id: 一. 选择题
+    type: choice
+    required_count: 2
+    score_per_item: 5
+    describe: 共12题，每题5分
+  - section_id: 二.填空题
+    type: fill
+    required_count: 1
+    score_per_item: 5
+    describe: 共4题，每题5分
+  - section_id: 三. 计算题
+    type: reasoning
+    required_count: 1
+    score_per_item: 12
+    describe: 共5题，每题12分
+# 与 exam.yaml 的 metadata 同形；组卷时试卷 metadata 覆盖此处。亦可旁置 defaults.yaml 作为更底层默认。
+metadata_defaults:
+  body_font_size_pt: 14
+  show_binding_line: true
+  # 以下参考 examples/gaokao.tex（可选）
+  # margins_mm: { left: 31.7, right: 31.7, top: 30.4, bottom: 30.4 }
+  # line_stretch: 1.5
+  # show_page_number_footer: true
+  # page_footer_center: "数学试题第\\thepage 页（共 \\pageref{LastPage} 页）"
+  # title_block_style: exam2024
+  # section_heading_style: hang_bold
+  # include_common_math_macros: true
+  # preamble_notices: "\\noindent\\textbf{注意事项：}\\par\\smallskip\n1. 答卷前……\\par\n2. 回答选择题时……\\par"
+  mermaid_pdf:
+    landscape_width: 0.2\linewidth
+    portrait_width: 0.2\linewidth
+    portrait_max_height: 0.2\textheight
+  primebrush_pdf:
+    latex_width: 0.9\linewidth

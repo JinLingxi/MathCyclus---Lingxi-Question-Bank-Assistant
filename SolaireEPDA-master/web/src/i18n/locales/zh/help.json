@@ -1,0 +1,12 @@
+{
+  "pageSummaryWithTitle": "使用手册：{{title}}",
+  "pageSummaryDefault": "使用说明与高级文档",
+  "title": "手册",
+  "subtitle": "左侧选篇，右侧阅读；无需离开应用。",
+  "loading": "加载中…",
+  "empty": "暂无条目",
+  "sectionIntro": "介绍",
+  "sectionGuide": "使用说明",
+  "sectionAdvanced": "高级使用说明",
+  "loadingBody": "正在加载正文…"
+}

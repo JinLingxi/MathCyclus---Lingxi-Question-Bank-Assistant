@@ -1,0 +1,90 @@
+% === Begin Label Data ===
+% ID: 197
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{上海卷（理）}{23}{数列}
+对于数集 $X=\{-1, x_1, x_2, \cdots, x_n\}$, 其中 $0 < x_1 < x_2 < \cdots < x_n, n \ge 2$. 定义向量集 $Y = \{ \vec{a} | \vec{a}=(s, t), s \in X, t \in X \}$. 若对任意 $\vec{a}_1 \in Y$, 存在 $\vec{a}_2 \in Y$, 使得 $\vec{a}_1 \cdot \vec{a}_2 = 0$, 则称 $X$ 具有性质 \textbf{P}. 例如 $\{-1, 1, 2\}$ 具有性质 \textbf{P}.
+
+(1) 若 $x > 2$, 且 $\{-1, 1, 2, x\}$ 具有性质 \textbf{P}, 求 $x$ 的值;
+
+(2) 若 $X$ 具有性质 \textbf{P}, 求证： $1 \in X$, 且当 $x_n > 1$ 时, $x_1 = 1$;
+
+(3) 若 $X$ 具有性质 \textbf{P}, 且 $x_1 = 1$、$x_2 = q$ ($q$ 为常数), 求有穷数列 $x_1, x_2, \cdots, x_n$ 的通项公式.
+\end{problem}
+
+
+\begin{solutions}
+(1) 选取 $\vec{a}_1 = (x, 2)$, $Y$ 中与 $\vec{a}_1$ 垂直的元素必有形式 $(-1, b)$. \hfill $\cdots\cdots 2$ 分
+
+所以 $x=2b$, 从而 $x=4$. \hfill $\cdots\cdots 4$ 分
+
+(2) 证明：取 $\vec{a}_1 = (x_1, x_1) \in Y$. 设 $\vec{a}_2 = (s, t) \in Y$ 满足 $\vec{a}_1 \cdot \vec{a}_2 = 0$.
+
+由 $(s+t)x_1 = 0$ 得 $s+t=0$, 所以 $s, t$ 异号.
+
+因为 $-1$ 是 $X$ 中唯一的负数, 则 $s, t$ 之中一为 $-1$, 另一为 1, 故 $1 \in X$. \hfill $\cdots\cdots 7$ 分
+
+假设 $x_k=1$, 其中 $1 < k < n$, 则 $0 < x_1 < 1 < x_n$.
+
+选取 $\vec{a}_1 = (x_1, x_n) \in Y$, 并设 $\vec{a}_2 = (s, t) \in Y$ 满足 $\vec{a}_1 \cdot \vec{a}_2 = 0$, 即 $sx_1+tx_n=0$,
+
+则 $s, t$ 异号, 从而 $s, t$ 之中恰有一个为 $-1$.
+
+若 $s=-1$, 则 $x_1 = tx_n > t \ge x_1$, 矛盾. 若 $t=-1$, 则 $x_n = sx_1 < s \le x_n$, 矛盾. 所以 $x_1=1$. \hfill $\cdots\cdots 10$ 分
+
+(3) 解法一：设 $\vec{a}_1 = (s_1, t_1)$, $\vec{a}_2 = (s_2, t_2)$, 则 $\vec{a}_1 \cdot \vec{a}_2 = 0$ 等价于 $\dfrac{s_1}{t_1} = - \dfrac{t_2}{s_2}$.
+
+记 $B = \left\{ \dfrac{s}{t} \middle| s \in X, t \in X, |s| > |t| \right\}$, 则数集 $X$ 具有性质 \textbf{P} 当且仅当数集 $B$ 关于原点对称. \hfill $\cdots\cdots 14$ 分
+
+注意到 $-1$ 是 $X$ 中的唯一负数, $B \cap (-\infty, 0) = \{-x_2, -x_3, \cdots, -x_n\}$ 具有 $n-1$ 个数, 所以 $B \cap (0, +\infty)$ 也只有 $n-1$ 个数.
+
+由于 $\dfrac{x_n}{x_{n-1}} < \dfrac{x_n}{x_{n-2}} < \cdots < \dfrac{x_n}{x_2} < \dfrac{x_n}{x_1}$, 已有 $n-1$ 个数, 对以下三角数阵
+
+\begin{align*}
+&\dfrac{x_n}{x_{n-1}}  <  \dfrac{x_n}{x_{n-2}}  < \cdots <  \dfrac{x_n}{x_2}  <  \dfrac{x_n}{x_1} \\
+& \dfrac{x_{n-1}}{x_{n-2}}  < \cdots <  \dfrac{x_{n-1}}{x_2}  <  \dfrac{x_{n-1}}{x_1} \\
+& \cdots \\
+& \dfrac{x_2}{x_1}  
+\end{align*}
+
+
+注意到 $\dfrac{x_n}{x_1} > \dfrac{x_{n-1}}{x_1} > \cdots > \dfrac{x_2}{x_1}$, 则 $\dfrac{x_n}{x_{n-1}} = \dfrac{x_{n-1}}{x_{n-2}} = \cdots = \dfrac{x_2}{x_1}$, 从而数列的通项为 $x_k = x_1 \left(\dfrac{x_2}{x_1}\right)^{k-1} = q^{k-1}, k=1, 2, \cdots, n$. \hfill $\cdots\cdots 18$ 分
+
+解法二：猜测 $x_i = q^{i-1}, i=1, 2, \cdots, n$. \hfill $\cdots\cdots 12$ 分
+
+记 $A_k = \{-1, 1, x_2, \cdots, x_k\}, k=2, 3, \cdots, n$.
+
+先证明：若 $A_{k+1}$ 具有性质 \textbf{P}, 则 $A_k$ 也具有性质 \textbf{P}.
+
+任取 $\vec{a}_1 = (s, t), s, t \in A_k$, 当 $s, t$ 中出现 $-1$ 时, 显然有 $\vec{a}_2$ 满足 $\vec{a}_1 \cdot \vec{a}_2 = 0$.
+
+当 $s \ne -1$ 且 $t \ne -1$ 时, 则 $s, t \ge 1$.
+
+因为 $A_{k+1}$ 具有性质 \textbf{P}, 所以有 $\vec{a}_2 = (s_1, t_1), s_1, t_1 \in A_{k+1}$, 使得 $\vec{a}_1 \cdot \vec{a}_2 = 0$, 从而 $s_1$ 和 $t_1$ 中有一个是 $-1$, 不妨设 $s_1 = -1$.
+
+假设 $t_1 \in A_{k+1}$ 且 $t_1 \notin A_k$, 则 $t_1 = x_{k+1}$. 由 $(s, t) \cdot (-1, x_{k+1}) = 0$, 得 $s = t x_{k+1} \ge x_{k+1}$, 与 $s \in A_k$ 矛盾.
+
+所以 $t_1 \in A_k$. 从而 $A_k$ 也具有性质 \textbf{P}. \hfill $\cdots\cdots 15$ 分
+
+现用数学归纳法证明： $x_i = q^{i-1}, i=1, 2, \cdots, n$.
+
+当 $n=2$ 时, 结论显然成立;
+
+假设 $n=k$ 时, $A_k = \{-1, 1, x_2, \cdots, x_k\}$ 有性质 \textbf{P}, 则 $x_i = q^{i-1}, i=1, 2, \cdots, k$;
+
+当 $n=k+1$ 时, 若 $A_{k+1} = \{-1, 1, x_2, \cdots, x_k, x_{k+1}\}$ 有性质 \textbf{P}, 则 $A_k = \{-1, 1, x_2, \cdots, x_k\}$ 也有性质 \textbf{P},
+
+所以 $A_{k+1} = \{-1, 1, q, \cdots, q^{k-1}, x_{k+1}\}$.
+
+取 $\vec{a}_1 = (x_{k+1}, q)$, 并设 $\vec{a}_2 = (s, t)$ 满足 $\vec{a}_1 \cdot \vec{a}_2 = 0$, 由此可得 $s = -1$ 或 $t = -1$.
+
+若 $t = -1$, 则 $x_{k+1} = \dfrac{q}{s} \le q$, 不可能;
+
+所以 $s = -1, x_{k+1} = qt = q^j \le q^k$ 且 $x_{k+1} > q^{k-1}$, 所以 $x_{k+1} = q^k$.
+
+综上所述, $x_i = q^{i-1}, i=1, 2, \cdots, n$. \hfill $\cdots\cdots 18$ 分
+\end{solutions}

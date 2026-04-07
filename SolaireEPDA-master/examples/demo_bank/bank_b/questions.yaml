@@ -1,0 +1,12 @@
+questions:
+  # 与 bank_a 中 math_001 短 id 相同，但 namespace 不同，互不冲突
+  - id: math_001
+    type: choice
+    content: "设函数 $f(x)=x$，则 $f(1)$ 为"
+    options:
+      A: "$0$"
+      B: "$1$"
+      C: "$2$"
+      D: "$-1$"
+    answer: "B"
+    analysis: "$f(1)=1$。"

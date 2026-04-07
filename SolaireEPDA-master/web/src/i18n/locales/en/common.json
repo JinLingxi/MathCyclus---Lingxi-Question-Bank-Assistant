@@ -1,0 +1,19 @@
+{
+  "cancel": "Cancel",
+  "open": "Open",
+  "create": "Create",
+  "all": "All",
+  "loading": "Loading…",
+  "processing": "Working…",
+  "close": "Close",
+  "save": "Save",
+  "delete": "Delete",
+  "confirm": "OK",
+  "yes": "Yes",
+  "no": "No",
+  "searchingSuffix": " · search active",
+  "collapseHint": "Tap to collapse",
+  "filter": "Filter",
+  "networkError": "Network error: {{detail}}",
+  "noResponseStream": "No response stream"
+}

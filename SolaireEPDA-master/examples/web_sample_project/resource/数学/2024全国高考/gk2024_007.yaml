@@ -1,0 +1,11 @@
+id: gk2024_007
+type: choice
+content: 当$x\in[0,2\pi]$时，曲线 $y=\sin x$与 $y=2\sin\left(3x-\dfrac{\pi}{6}\right)$ 的交点个数为
+options:
+  A: $3$
+  B: $4$
+  C: $6$
+  D: $8$
+answer: C
+analysis: 略
+metadata: {}

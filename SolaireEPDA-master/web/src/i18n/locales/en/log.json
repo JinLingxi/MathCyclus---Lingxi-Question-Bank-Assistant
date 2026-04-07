@@ -1,0 +1,11 @@
+{
+  "pageSummary": "Runtime log (this page only; cleared on refresh)",
+  "title": "Runtime log",
+  "intro": "Errors, warnings, uncaught exceptions, API failures, and some success notes for this session only (cleared on refresh).",
+  "level": "Level",
+  "copyAll": "Copy all",
+  "copied": "Copied",
+  "clear": "Clear",
+  "count": "{{n}} entries",
+  "empty": "No log entries yet."
+}

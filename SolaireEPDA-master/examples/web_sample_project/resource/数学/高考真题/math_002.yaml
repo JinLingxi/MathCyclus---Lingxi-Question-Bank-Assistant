@@ -1,0 +1,11 @@
+﻿id: math_002
+type: choice
+content: 函数 $f(x)=x^2-4x+3$ 的最小值为
+options:
+  A: $-1$
+  B: $0$
+  C: $1$
+  D: $-2$
+answer: A
+analysis: $f(x)=(x-2)^2-1$，最小值为 $-1$。
+metadata: {}

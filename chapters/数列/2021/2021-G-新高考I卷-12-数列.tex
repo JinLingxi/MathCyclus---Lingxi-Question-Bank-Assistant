@@ -1,0 +1,51 @@
+% === Begin Label Data ===
+% ID: 190
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2021}{G}{新高考I卷}{12}{数列}
+设正整数 $n = a_0 2^0 + a_1 2^1 + \cdots + a_{k-1} 2^{k-1} + a_k 2^k$，其中 $a_i \in \{0,1\}$，即 $\omega(n) = a_0 + a_1 + \cdots + a_{k-1} + a_k$，则（ \hspace{1cm}）
+
+\begin{choices}
+\choice{{$\omega(2n) = \omega(n)$}}
+\choice{{$\omega(2n+3) = \omega(n)+1$}}
+\choice{{$\omega(8n+5) = \omega(4n+3)$}}
+\choice{{$\omega(2^n - 1) = n$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+ACD
+\end{answer}
+
+
+\begin{solutions}
+选项 A：因为 $2n = a_0 2^1 + a_1 2^2 + \cdots + a_{k-1} 2^k + a_k 2^{k+1}$  
+$= 0 \cdot 2^0 + a_0 2^1 + a_1 2^2 + \cdots + a_{k-1} 2^k + a_k 2^{k+1}$，  
+所以 $\omega(2n) = 0 + a_0 + a_1 + \cdots + a_{k-1} + a_k = a_0 + a_1 + \cdots + a_{k-1} + a_k = \omega(n)$，  
+故 A 正确。
+
+选项 B：当 $n = 2$ 时，$2n + 3 = 7 = 1 \cdot 2^0 + 1 \cdot 2^1 + 1 \cdot 2^2$，则 $\omega(7) = 3$，  
+又 $n = 2 = 0 \cdot 2^0 + 1 \cdot 2^1$，则 $\omega(2) = 1$，所以 $\omega(7) \ne \omega(2) + 1$，  
+故 B 错误。
+
+选项 C：因为 $8n + 5 = a_0 2^3 + a_1 2^4 + \cdots + a_{k-1} 2^{k+2} + a_k 2^{k+3} + 5$  
+$= 1 \cdot 2^0 + 0 \cdot 2^1 + 1 \cdot 2^2 + a_0 2^3 + a_1 2^4 + \cdots + a_{k-1} 2^{k+2} + a_k 2^{k+3}$，  
+所以 $\omega(8n+5) = 1 + 0 + 1 + a_0 + a_1 + \cdots + a_{k-1} + a_k = a_0 + a_1 + \cdots + a_{k-1} + a_k + 2$  
+$= 2 + a_0 + a_1 + \cdots + a_{k-1} + a_k$．
+
+因为 $4n + 3 = a_0 2^2 + a_1 2^3 + \cdots + a_{k-1} 2^{k+1} + a_k 2^{k+2} + 3$  
+$= 1 \cdot 2^0 + 1 \cdot 2^1 + a_0 2^2 + a_1 2^3 + \cdots + a_{k-1} 2^{k+1} + a_k 2^{k+2}$，  
+所以 $\omega(4n+3) = 1 + 1 + a_0 + a_1 + \cdots + a_{k-1} + a_k = a_0 + a_1 + \cdots + a_{k-1} + a_k + 2$，  
+从而 $\omega(8n+5) = \omega(4n+3)$，  
+故 C 正确。
+
+选项 D：因为 $2^n - 1 = 2^0 + 2^1 + \cdots + 2^{n-1} = 1 \cdot 2^0 + 1 \cdot 2^1 + \cdots + 1 \cdot 2^{n-1}$，  
+所以 $\omega(2^n - 1) = 1 + 1 + \cdots + 1 = n$，  
+故 D 正确。
+
+综上：选 ACD。
+\end{solutions}

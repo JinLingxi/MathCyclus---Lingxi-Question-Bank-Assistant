@@ -1,0 +1,53 @@
+{
+  "brand": "Solaire",
+  "errorBannerLogHint": "（完整说明见运行日志）",
+  "nav": {
+    "compose": "组卷",
+    "bank": "题库",
+    "template": "模板",
+    "graph": "知识图谱",
+    "analysis": "分析",
+    "analysisTitle": "成绩分析与统计",
+    "assistant": "助手",
+    "assistantTitle": "打开或收起智能助手侧栏",
+    "settings": "设置",
+    "settingsTitle": "智能助手模型服务参数",
+    "help": "手册",
+    "helpTitle": "使用说明与高级使用说明",
+    "log": "日志",
+    "logTitle": "运行日志"
+  },
+  "header": {
+    "project": "项目："
+  },
+  "titleBar": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
+  "route": {
+    "composeSummary": "请先打开或创建项目后再组卷；绑定项目后即可使用侧栏智能助手协助校验与导出。",
+    "bankSummary": "请先打开或创建项目后再管理题库。",
+    "templateSummary": "请先打开或创建项目后再编辑试卷模板。",
+    "graphSummary": "请先打开或创建项目后再维护知识图谱。"
+  },
+  "project": {
+    "openTitle": "打开项目",
+    "openIntroBefore": "网页无法直接读取磁盘路径。点击下方按钮时，由",
+    "openIntroStrong": "本机后端",
+    "openIntroMid": "弹出系统文件夹对话框（与浏览器在同一台电脑、同一用户会话下运行）。也可手动输入绝对路径；若需启动后端时自动打开某文件夹作为项目根，请同时设置 ",
+    "openIntroAnd": " 与 ",
+    "openIntroAfter": "。",
+    "pickFolder": "选取文件夹…",
+    "rootLabel": "项目根路径（可手动粘贴）",
+    "rootPlaceholder": "例如 D:\\work\\my_project",
+    "openButton": "打开",
+    "newTitle": "新建项目",
+    "pickParent": "选取父文件夹…",
+    "parentLabel": "父目录",
+    "parentPlaceholder": "例如 D:\\work",
+    "folderName": "文件夹名",
+    "createButton": "创建"
+  }
+}

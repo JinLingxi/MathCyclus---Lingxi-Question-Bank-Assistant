@@ -1,0 +1,29 @@
+primebrush:
+  type: geometry_2d
+  seed: 42
+  canvas: { width: 400, height: 300, unit: px }
+  style:
+    stroke_width: 1.2
+    font_family: sans-serif
+
+  constructions:
+    - op: triangle
+      id: T1
+      nodes: [A, B, C]
+      attr: { type: random, min_angle: 30 }
+      label:
+        A: top
+        B: bottom_left
+        C: bottom_right
+
+    - op: in_line
+      id: M
+      source: [A, B]
+      params: 0.5
+      label: "M"
+
+    - op: line
+      id: L1
+      source: [C, M]
+      style: dashed
+      label: { text: "中线", pos: 0.5 }

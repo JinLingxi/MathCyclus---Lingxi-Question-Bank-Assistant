@@ -1,0 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-slate-200;
+  }
+  body {
+    @apply m-0 min-h-screen font-sans antialiased;
+  }
+}
+
+/* 桌面壳透明窗口：四角透出桌面，由内层圆角 + overflow 画出与 Win11 相近的圆角（关闭 shadow 后系统不再描边） */
+html.tauri-shell,
+html.tauri-shell body {
+  @apply bg-transparent;
+}
+
+html.tauri-shell body {
+  @apply min-h-screen;
+}
+
+html.tauri-shell #root {
+  @apply min-h-screen bg-transparent;
+}
+
+/* 无边框窗口：WebView2 需配合 CSS 才能让自定义标题栏拖动（仅 data 属性往往无效） */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+[data-tauri-drag-region="false"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

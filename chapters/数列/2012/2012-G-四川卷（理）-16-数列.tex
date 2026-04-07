@@ -1,0 +1,42 @@
+% === Begin Label Data ===
+% ID: 192
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{四川卷（理）}{16}{数列}
+记 $[x]$ 为不超过实数 $x$ 的最大整数. 例如, $[2]=2, [1.5]=1, [-0.3]=-1$. 设 $a$ 为正整数, 数列 $\{x_n\}$ 满足 $x_1=a, x_{n+1}=\left[\dfrac{x_n+[\frac{a}{x_n}]}{2}\right] (n \in \mathbf{N}^*)$. 现有下列命题：
+
+\circled{1} 当 $a=5$ 时, 数列 $\{x_n\}$ 的前 3 项依次为 5, 3, 2;
+
+\circled{2} 对数列 $\{x_n\}$, 都存在正整数 $k$, 当 $n \ge k$ 时总有 $x_n=x_k$;
+
+\circled{3} 当 $n \ge 1$ 时, $x_n > \sqrt{a}-1$;
+
+\circled{4} 对某个正整数 $k$, 若 $x_{k+1} \ge x_k$, 则 $x_k = [\sqrt{a}]$.
+
+其中的真命题有 \underline{\hspace{4em}}. (写出所有真命题的编号)
+\end{problem}
+
+\begin{answer}
+\circled{1}\circled{3}\circled{4}
+\end{answer}
+
+\begin{solutions}
+根据取整函数的定义, $[x] \le x < [x]+1$. (*)
+
+\circled{1} 因为 $x_1=a=5$, $x_2=\left[\dfrac{5+[\frac{5}{5}]}{2}\right]=3$, $x_3=\left[\dfrac{3+[\frac{5}{3}]}{2}\right]=2$, 故 \circled{1} 正确.
+
+\circled{2} 设 $a=3$, 则 $x_1=3, x_2=2, x_3=1, x_4=2$. 从第 2 项开始, $\{x_n\}$ 是以 2 为周期的数列, 所以此时不可能从某项开始就为常数列, 故 \circled{2} 错误.
+
+\circled{3} 当 $n=1$ 时显然正确. 当 $n \ge 2$ 时, 由 (*) 得
+
+$x_{n+1}=\left[\dfrac{x_n+[\frac{a}{x_n}]}{2}\right] \ge \left[\dfrac{x_n+\frac{a}{x_n}-1}{2}\right] \ge \left[\dfrac{2\sqrt{a}-1}{2}\right] > \sqrt{a}-1$. 
+
+故 \circled{3} 正确.
+
+\circled{4} 由 (*), $x_{k+1} \le \dfrac{x_k+[\frac{a}{x_k}]}{2} \le \dfrac{x_k+\frac{a}{x_k}}{2}$, 由于 $x_{k+1} \ge x_k$, 则 $x_k \le \dfrac{x_k+\frac{a}{x_k}}{2}$, 化简得 $x_k^2 \le a$, 因此 $x_k \le \sqrt{a}$.
+由 \circled{3}, $x_k > \sqrt{a}-1$, 根据 (*), 位于区间 $(\sqrt{a}-1, \sqrt{a}]$ 的正整数只有 $[\sqrt{a}]$. 所以 \circled{4} 正确.
+\end{solutions}

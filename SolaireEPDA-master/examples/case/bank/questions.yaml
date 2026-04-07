@@ -1,0 +1,203 @@
+- id: math_001
+  type: choice
+  content: "已知复数 $z=1+i$，则 $|z|$ 等于"
+  options:
+    A: "$1$"
+    B: "$\\sqrt{2}$"
+    C: "$2$"
+    D: "$\\sqrt{3}$"
+  answer: "B"
+  analysis: "$|1+i|=\\sqrt{1^2+1^2}=\\sqrt{2}$。"
+
+- id: math_002
+  type: choice
+  content: "函数 $f(x)=x^2-4x+3$ 的最小值为"
+  options:
+    A: "$-1$"
+    B: "$0$"
+    C: "$1$"
+    D: "$-2$"
+  answer: "A"
+  analysis: "$f(x)=(x-2)^2-1$，最小值为 $-1$。"
+
+- id: math_003
+  type: choice
+  content: "等差数列 $a_n$ 满足 $a_1=2, d=3$，则 $a_5=$"
+  options:
+    A: "$11$"
+    B: "$14$"
+    C: "$12$"
+    D: "$10$"
+  answer: "B"
+  analysis: "$a_5=a_1+4d=2+12=14$。"
+
+- id: math_004
+  type: choice
+  content: "若 $\\sin x=\\frac{1}{2}$，且 $x\\in(0,\\pi)$，则 $x=$"
+  options:
+    A: "$\\frac{\\pi}{6}$"
+    B: "$\\frac{\\pi}{3}$"
+    C: "$\\frac{\\pi}{2}$"
+    D: "$\\frac{2\\pi}{3}$"
+  answer: "A"
+  analysis: "在 $(0,\\pi)$ 内满足 $\\sin x=1/2$ 的解为 $x=\\pi/6$ 或 $5\\pi/6$，选项中只有 $\\pi/6$。"
+
+- id: math_005
+  type: choice
+  content: "函数 $f(x)=e^x$ 的导数为"
+  options:
+    A: "$xe^x$"
+    B: "$e^x$"
+    C: "$\\ln x$"
+    D: "$x^{e}$"
+  answer: "B"
+  analysis: "指数函数 $e^x$ 的导数仍为 $e^x$。"
+
+- id: math_006
+  type: choice
+  content: "若向量 $\\vec a=(1,2)$，$\\vec b=(2,1)$，则 $\\vec a \\cdot \\vec b=$"
+  options:
+    A: "$3$"
+    B: "$4$"
+    C: "$5$"
+    D: "$2$"
+  answer: "B"
+  analysis: "$1\\times2+2\\times1=4$。"
+
+- id: math_007
+  type: choice
+  content: "集合 $A=\\{1,2,3\\}$，$B=\\{2,3,4\\}$，则 $A\\cap B=$"
+  options:
+    A: "$\\{2,3\\}$"
+    B: "$\\{1,2\\}$"
+    C: "$\\{3,4\\}$"
+    D: "$\\{1,4\\}$"
+  answer: "A"
+  analysis: "交集为两个集合共同元素。"
+
+- id: math_008
+  type: choice
+  content: "若随机变量 $X$ 服从二项分布 $B(2,\\frac12)$，则 $P(X=0)=$"
+  options:
+    A: "$\\frac14$"
+    B: "$\\frac12$"
+    C: "$\\frac34$"
+    D: "$\\frac18$"
+  answer: "A"
+  analysis: "$P(X=0)=(1/2)^2=1/4$。"
+
+- id: math_009
+  type: choice
+  content: "函数 $f(x)=\\ln x$ 的定义域为"
+  options:
+    A: "$(-\\infty,\\infty)$"
+    B: "$[0,\\infty)$"
+    C: "$(0,\\infty)$"
+    D: "$(-\\infty,0)$"
+  answer: "C"
+  analysis: "对数函数要求 $x>0$。"
+
+- id: math_010
+  type: choice
+  content: "若 $a>0$，则 $\\log_a 1=$"
+  options:
+    A: "$0$"
+    B: "$1$"
+    C: "$a$"
+    D: "$-1$"
+  answer: "A"
+  analysis: "$a^0=1$。"
+
+- id: math_011
+  type: choice
+  content: "函数 $f(x)=x^3$ 在 $x=1$ 处的导数为"
+  options:
+    A: "$1$"
+    B: "$2$"
+    C: "$3$"
+    D: "$6$"
+  answer: "C"
+  analysis: "$f'(x)=3x^2$，代入得 $3$。"
+
+- id: math_012
+  type: choice
+  content: "若等比数列 $a_n$ 满足 $a_1=2,q=2$，则 $a_4=$"
+  options:
+    A: "$8$"
+    B: "$12$"
+    C: "$16$"
+    D: "$32$"
+  answer: "C"
+  analysis: "$a_4=a_1q^3=2\\times8=16$。"
+
+
+# ========================
+# 填空题（4题）
+# ========================
+
+- id: math_013
+  type: fill
+  content: "计算：$\\sum_{k=1}^{5} k = \\underline{\\qquad}$"
+  answer: "$15$"
+  analysis: "$1+2+3+4+5=15$。"
+
+- id: math_014
+  type: fill
+  content: "函数 $f(x)=x^2$ 在 $x=3$ 处的导数为 $\\underline{\\qquad}$"
+  answer: "$6$"
+  analysis: "$f'(x)=2x$，代入得 $6$。"
+
+- id: math_015
+  type: fill
+  content: "若 $\\sin^2 x+\\cos^2 x=$ $\\underline{\\qquad}$"
+  answer: "$1$"
+  analysis: "三角恒等式。"
+
+- id: math_016
+  type: fill
+  content: "若 $a,b$ 为实数，$(a+b)^2-a^2-b^2=$ $\\underline{\\qquad}$"
+  answer: "$2ab$"
+  analysis: "展开即可。"
+
+
+# ========================
+# 计算 / 证明题（5题）
+# ========================
+
+- id: math_017
+  type: reasoning
+  content: "已知函数 $f(x)=x^2-3x+2$。\n(1) 求函数的零点；\n(2) 求其在区间 $[0,3]$ 上的最小值。"
+  answer: |
+    (1) 解方程 $x^2-3x+2=0$，即 $(x-1)(x-2)=0$，故 $x=1$ 或 $x=2$。
+    (2) $f(x)=(x-\\frac{3}{2})^2-\\frac{1}{4}$，在 $[0,3]$ 上最小值为 $-\\frac{1}{4}$。
+  analysis: "通过因式分解和配方法求解。"
+
+- id: math_018
+  type: reasoning
+  content: "已知等差数列 $a_n$ 满足 $a_1=3,d=2$。\n(1) 求通项公式；\n(2) 求前10项和。"
+  answer: |
+    (1) $a_n=3+(n-1)\\cdot 2=2n+1$。
+    (2) $a_{10}=21$，$S_{10}=\\dfrac{10}{2}(a_1+a_{10})=120$。
+  analysis: "使用等差数列通项公式与求和公式。"
+
+- id: math_019
+  type: reasoning
+  content: "求函数 $f(x)=x^3-3x$ 的极值。"
+  answer: |
+    $f'(x)=3x^2-3$，令 $f'(x)=0$ 得 $x=\\pm 1$。
+    $f(1)=-2$ 为极小值，$f(-1)=2$ 为极大值。
+  analysis: "利用导数判定极值。"
+
+- id: math_020
+  type: reasoning
+  content: "证明：对任意实数 $a,b$，有\n$(a-b)^2 \\ge 0$。"
+  answer: |
+    $(a-b)^2\\ge 0$。展开得 $a^2-2ab+b^2\\ge 0$，故命题成立。
+  analysis: "平方恒非负。"
+
+- id: math_021
+  type: reasoning
+  content: "求定积分 $\\int_0^1 2x\\,dx$。"
+  answer: |
+    $\\displaystyle\\int_0^1 2x\\,dx = \\bigl[x^2\\bigr]_0^1 = 1$。
+  analysis: "基本积分公式。"

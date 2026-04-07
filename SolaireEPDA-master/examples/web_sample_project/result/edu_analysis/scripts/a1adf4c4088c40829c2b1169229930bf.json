@@ -1,0 +1,8 @@
+{
+  "script_id": "a1adf4c4088c40829c2b1169229930bf",
+  "name": "folder:default_exam_stats_rewrite.py",
+  "language": "python",
+  "code": "raw = get_rawdata()\nkg = get_graph()\n\npoints = []\nfor q in raw.get(\"question_stats\", [])[:20]:\n    if q.get(\"error_rate\") is not None:\n        points.append({\"label\": q.get(\"header\", \"\"), \"value\": q.get(\"error_rate\")})\n\nchart = HistogramChart(title=\"内置统计重写：题目错误率前20\", data=points)\npayload = chart.to_payload()\npayload[\"summary\"][\"student_count\"] = raw.get(\"student_count\", 0)\npayload[\"summary\"][\"question_count\"] = raw.get(\"question_count\", 0)\npayload[\"summary\"][\"graph_node_count\"] = len(kg.get(\"nodes\", []))\nRESULT = payload\n",
+  "updated_at": "2026-04-03T12:28:24.075408+00:00",
+  "created_at": "2026-04-03T12:28:24.075408+00:00"
+}
