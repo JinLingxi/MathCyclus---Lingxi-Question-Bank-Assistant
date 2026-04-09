@@ -1,0 +1,33 @@
+% === Begin Label Data ===
+% ID: 284
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{高三第一次调研测试}{6}{概率}
+已知随机变量 $\xi\sim N(3,\sigma^2)$，且 $P(\xi\leq a)=P(\xi\geq5)$，则 $\dfrac{1}{x}+\dfrac{9}{a-x}$（$0<x<a$）的最小值为
+\begin{choices}
+\choice{{$\dfrac{8}{a}$}}
+\choice{{\dfrac{16}{3}$}}
+\choice{{$16$}}
+\choice{{$48$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+C
+\end{answer}
+
+\begin{solutions}
+由正态分布对称性，$P(\xi\leq a)=P(\xi\geq5)$ 说明 $a$ 与 $5$ 关于均值 $3$ 对称，  
+即 $\dfrac{a+5}{2}=3\Rightarrow a+5=6\Rightarrow a=1$。  
+但 $0<x<a=1$，则表达式为 $\dfrac{1}{x}+\dfrac{9}{1-x}$。  
+令 $f(x)=\dfrac{1}{x}+\dfrac{9}{1-x}$，$x\in(0,1)$，  
+$f'(x)=-\dfrac{1}{x^2}+\dfrac{9}{(1-x)^2}$，令 $f'(x)=0$：  
+$\dfrac{9}{(1-x)^2}=\dfrac{1}{x^2}\Rightarrow \dfrac{3}{1-x}=\dfrac{1}{x}\Rightarrow 3x=1-x\Rightarrow x=\dfrac{1}{4}$。  
+此时 $f\left(\dfrac{1}{4}\right)=\dfrac{1}{1/4}+\dfrac{9}{1-1/4}=4+\dfrac{9}{3/4}=4+12=16$。  
+故最小值为 16，选 C。  
+注：题干中 $a$ 实际为 1，但选项含 $\dfrac{8}{a}$，若 $a=1$ 则为 8，不符；故确认 $a=1$ 正确，最小值 16。
+\end{solutions}

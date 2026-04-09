@@ -23,12 +23,6 @@ load_dotenv()
 from utils.core_config import *
 from utils.file_ops import *
 from utils.tikz_ops import *
-
-import importlib
-import utils.latex_ops
-import utils.csv_ops
-importlib.reload(utils.latex_ops)
-importlib.reload(utils.csv_ops)
 from utils.latex_ops import *
 from utils.csv_ops import add_to_csv_index, update_csv_index_for_edit
 
@@ -134,13 +128,6 @@ def zoom_image(img):
     </script>
     """
     components.html(html_code, height=520)
-
-def format_content_for_frontend(content, filename, save_dir):
-    """
-    废弃。由于用户要求在前端直接显示并编辑原始的 \begin{tikzpicture}，
-    不再进行任何替换。
-    """
-    return content
 
 def save_modified_tex_file(file_path, new_content):
     """
@@ -267,6 +254,121 @@ def ocr_image_to_latex(images=None):
                 
     except Exception as e:
         return f"❌ 发生错误: {str(e)}"
+
+def call_ai_for_tags(content: str) -> dict:
+    """调用 AI 为题目内容生成标签和难度"""
+    api_key = os.getenv("AI_API_KEY")
+    base_url = os.getenv("AI_BASE_URL")
+    model_name = os.getenv("AI_MODEL_NAME")
+    
+    if not api_key or not base_url or not model_name:
+        return {"error": "AI 配置不完整，请检查 .env 文件"}
+        
+    url = base_url.rstrip('/')
+    if "/v1" not in url and "/chat/completions" not in url:
+        url += "/v1"
+    if "/chat/completions" not in url:
+        url += "/chat/completions"
+        
+    prompt = f"""你是一个专业的高中数学教研专家。请分析以下 LaTeX 格式的数学题目，并为其打上合适的“难度星级”和“知识标签”。
+
+要求：
+1. 难度星级：0.0 到 6.0 的浮点数，步长为 0.5（例如 2.5, 3.0, 4.5）。其中，0-2星为基础题，3-4星为中档题，5-6星为压轴/难题。
+2. 知识标签：提取 2-4 个最核心的考点标签，以中文逗号“，”分隔（例如：导数应用，零点问题，分类讨论）。
+3. 必须严格以 JSON 格式输出，不要输出任何额外的解释文本。
+
+格式如下：
+{{
+    "difficulty": 3.5,
+    "tags": "标签1，标签2，标签3"
+}}
+
+题目内容：
+{content}"""
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "You are a JSON output bot. You only output valid JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"} if "gpt" in model_name.lower() or "qwen" in model_name.lower() else None
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                reply = result['choices'][0]['message']['content']
+                import json
+                try:
+                    reply_clean = reply.replace('```json', '').replace('```', '').strip()
+                    data = json.loads(reply_clean)
+                    return {
+                        "difficulty": float(data.get("difficulty", 0.0)),
+                        "tags": str(data.get("tags", ""))
+                    }
+                except json.JSONDecodeError:
+                    return {"error": "AI 返回格式解析失败"}
+            else:
+                return {"error": "AI 未返回有效内容"}
+        else:
+            return {"error": f"API 请求失败: {response.status_code}"}
+    except Exception as e:
+        return {"error": f"请求发生异常: {str(e)}"}
+
+def call_ai_for_polish(intent_text: str) -> str:
+    """调用 AI 润色用户的组卷意图"""
+    api_key = os.getenv("AI_API_KEY")
+    base_url = os.getenv("AI_BASE_URL")
+    model_name = os.getenv("AI_MODEL_NAME")
+    
+    if not api_key or not base_url or not model_name:
+        return "❌ AI 配置不完整，请检查 .env 文件"
+        
+    url = base_url.rstrip('/')
+    if "/v1" not in url and "/chat/completions" not in url:
+        url += "/v1"
+    if "/chat/completions" not in url:
+        url += "/chat/completions"
+        
+    prompt = f"""你是一个资深的高中数学教研专家。请帮我润色以下组卷意图，使其更加专业、明确、富有条理。
+润色后的文本将用于指导后续的 AI 抽题算法。
+要求：
+1. 保持原意不变，但语言更精准。
+2. 直接输出润色后的文本，不要带有任何“好的”、“没问题”等废话。
+
+原想法：
+{intent_text}"""
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        if response.status_code == 200:
+            result = response.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                return result['choices'][0]['message']['content'].strip()
+            else:
+                return "❌ AI 未返回有效内容"
+        else:
+            return f"❌ API 请求失败: {response.status_code}"
+    except Exception as e:
+        return f"❌ 请求发生异常: {str(e)}"
 
 def process_ocr_result(ocr_result, mode):
     """处理识别结果并更新界面"""
@@ -586,7 +688,38 @@ def page_entry():
                 st.markdown("<div style='font-size: 14px; color: #31333F; margin-bottom: 5px;'><b>备注</b></div>", unsafe_allow_html=True)
                 s_remark = st.text_input("备注", placeholder="例如: 2025新高考题型", key="entry_remark", label_visibility="collapsed")
             
-            content = st.text_area("题目内容 (LaTeX)", height=400, placeholder="在此粘贴题目内容...", key="entry_content")
+            c_content_lbl, c_ai_btn = st.columns([4, 1])
+            with c_content_lbl:
+                st.markdown("##### 📝 题目内容 (LaTeX)")
+            with c_ai_btn:
+                def on_ai_analyze_click():
+                    content = st.session_state.get("entry_content", "").strip()
+                    if not content:
+                        st.toast("题目内容为空，无法进行 AI 分析", icon="⚠️")
+                        return
+                    
+                    res = call_ai_for_tags(content)
+                    if "error" in res:
+                        st.toast(res["error"], icon="❌")
+                    else:
+                        diff = res["difficulty"]
+                        tags = res["tags"]
+                        
+                        if 0.0 <= diff <= 6.0:
+                            st.session_state["entry_difficulty"] = diff
+                        if tags:
+                            old_tags = st.session_state.get("entry_custom_tags", "").strip()
+                            if old_tags:
+                                all_tags = set([t.strip() for t in old_tags.split("，") if t.strip()] + [t.strip() for t in tags.split("，") if t.strip()])
+                                st.session_state["entry_custom_tags"] = "，".join(all_tags)
+                            else:
+                                st.session_state["entry_custom_tags"] = tags
+                                
+                        st.toast("AI 标签与难度评级成功！", icon="🪄")
+
+                st.button("🪄 AI 自动打标签", on_click=on_ai_analyze_click, use_container_width=True)
+
+            content = st.text_area("题目内容 (LaTeX)", height=400, placeholder="在此粘贴题目内容...", key="entry_content", label_visibility="collapsed")
             
             # --- 新增渲染预览区 ---
             if content.strip():
@@ -757,7 +890,20 @@ def page_entry():
             # 批量处理逻辑
             batch_text = st.text_area("批量文本内容", height=500, key="batch_content", placeholder="---1-集合.tex---\n\\begin{problem}...\n\n---2-复数.tex---\n\\begin{problem}...")
             
-            if st.button("开始处理同卷文本", type="primary"):
+            c_btn1, c_btn2 = st.columns([1, 1])
+            with c_btn1:
+                if st.button("开始处理同卷文本", type="primary", use_container_width=True):
+                    st.session_state["_run_same_paper_batch"] = True
+                    st.session_state["_run_ai_tagging_batch"] = False
+            with c_btn2:
+                if st.button("🪄 AI 自动补充难度与标签 (耗时)", use_container_width=True):
+                    st.session_state["_run_same_paper_batch"] = True
+                    st.session_state["_run_ai_tagging_batch"] = True
+            
+            if st.session_state.get("_run_same_paper_batch", False):
+                st.session_state["_run_same_paper_batch"] = False
+                enable_ai = st.session_state.get("_run_ai_tagging_batch", False)
+                
                 if not batch_text.strip():
                     st.warning("请输入内容")
                 elif not (u_year and u_paper):
@@ -767,18 +913,23 @@ def page_entry():
                     count = 0
                     log_msg = []
                     
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    total_files = len(parts) // 2
+                    
                     for i in range(1, len(parts), 2):
+                        current_idx = i // 2 + 1
                         if i + 1 < len(parts):
                             raw_fname = parts[i].strip()
                             file_content = parts[i+1].strip()
+                            
+                            status_text.text(f"正在处理: {raw_fname} ({current_idx}/{total_files})")
                             
                             # 解析题号和板块
                             name_body = raw_fname.replace('.tex', '')
                             segments = name_body.split('-')
                             
                             # 策略：取最后两个字段作为 题号 和 板块
-                            # 比如 "1-集合" -> num=1, subj=集合
-                            # 比如 "2023-Old-1-集合" -> num=1, subj=集合
                             if len(segments) >= 2:
                                 q_num = segments[-2]
                                 q_subj = segments[-1]
@@ -795,14 +946,24 @@ def page_entry():
                                 # 提取并替换 TikZ 代码
                                 file_content = extract_and_replace_tikz(file_content, final_filename, save_dir)
                                 
+                                # === AI 自动打标签逻辑 ===
+                                ai_diff = ""
+                                ai_tags = ""
+                                if enable_ai:
+                                    status_text.text(f"正在调用 AI 提取 {raw_fname} 的难度和标签...")
+                                    ai_res = call_ai_for_tags(file_content)
+                                    if "error" not in ai_res:
+                                        ai_diff = str(ai_res["difficulty"]) if ai_res["difficulty"] > 0 else ""
+                                        ai_tags = ai_res["tags"]
+                                
                                 # 注入 Label Data
                                 from utils.csv_ops import get_next_id
                                 from utils.latex_ops import inject_meta_data
                                 new_id = get_next_id()
                                 meta_dict = {
                                     "ID": new_id,
-                                    "难度星级": "",
-                                    "标签": "",
+                                    "难度星级": ai_diff,
+                                    "标签": ai_tags,
                                     "备注": "",
                                     "组卷引用次数": 0
                                 }
@@ -814,12 +975,15 @@ def page_entry():
                                     # 同步追加到 CSV 索引
                                     add_to_csv_index(file_path, file_content, str(u_year), u_type, u_paper, q_num, q_subj)
                                     count += 1
-                                    log_msg.append({"status": "success", "file": final_filename, "path": file_path})
+                                    log_msg.append({"status": "success", "file": final_filename, "path": file_path, "ai_info": f"星级:{ai_diff} 标签:{ai_tags}" if enable_ai else ""})
                                 except Exception as e:
                                     log_msg.append({"status": "error", "file": final_filename, "msg": str(e)})
                             else:
                                 log_msg.append({"status": "skip", "file": raw_fname, "msg": "文件名格式不足 (需至少包含 题号-板块)"})
-
+                                
+                        progress_bar.progress(current_idx / total_files)
+                        
+                    status_text.empty()
                     st.success(f"处理完成，共保存 {count} 个文件")
                     st.toast(f"同卷处理完成！共保存 {count} 个文件", icon="✅")
                     
@@ -827,7 +991,8 @@ def page_entry():
                         for log in log_msg:
                             if log["status"] == "success":
                                 c1, c2 = st.columns([4, 1])
-                                c1.success(f"✅ {log['file']}")
+                                ai_str = f" [AI: {log['ai_info']}]" if log.get('ai_info') else ""
+                                c1.success(f"✅ {log['file']}{ai_str}")
                                 if c2.button("📂 打开", key=f"open_log_u_{log['file']}"):
                                     try:
                                         os.startfile(log['path'])
@@ -872,17 +1037,39 @@ def page_entry():
 
             batch_text = st.text_area("批量文本内容", height=600, key="batch_content", placeholder="---2024-G-新课标I卷-1-集合.tex---\n\\begin{problem}...\n...")
             
-            if st.button("开始处理批量文本", type="primary"):
+            c_bbtn1, c_bbtn2 = st.columns([1, 1])
+            with c_bbtn1:
+                if st.button("开始处理批量文本", type="primary", use_container_width=True):
+                    st.session_state["_run_batch_mode"] = True
+                    st.session_state["_run_ai_tagging_global_batch"] = False
+            with c_bbtn2:
+                if st.button("🪄 AI 自动补充难度与标签 (耗时)", use_container_width=True):
+                    st.session_state["_run_batch_mode"] = True
+                    st.session_state["_run_ai_tagging_global_batch"] = True
+            
+            if st.session_state.get("_run_batch_mode", False):
+                st.session_state["_run_batch_mode"] = False
+                enable_ai = st.session_state.get("_run_ai_tagging_global_batch", False)
+                
                 if not batch_text.strip():
                     st.warning("请输入内容")
                 else:
                     parts = re.split(r'---(.+\.tex)---\s*', batch_text)
                     count = 0
                     log_msg = []
+                    
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    total_files = len(parts) // 2
+                    
                     for i in range(1, len(parts), 2):
+                        current_idx = i // 2 + 1
                         if i + 1 < len(parts):
                             filename = parts[i].strip()
                             file_content = parts[i+1].strip()
+                            
+                            status_text.text(f"正在处理: {filename} ({current_idx}/{total_files})")
+                            
                             name_body = filename.replace('.tex', '')
                             segments = name_body.split('-')
                             if len(segments) >= 5:
@@ -896,14 +1083,24 @@ def page_entry():
                                 # 提取并替换 TikZ 代码
                                 file_content = extract_and_replace_tikz(file_content, filename, save_dir)
                                 
+                                # === AI 自动打标签逻辑 ===
+                                ai_diff = ""
+                                ai_tags = ""
+                                if enable_ai:
+                                    status_text.text(f"正在调用 AI 提取 {filename} 的难度和标签...")
+                                    ai_res = call_ai_for_tags(file_content)
+                                    if "error" not in ai_res:
+                                        ai_diff = str(ai_res["difficulty"]) if ai_res["difficulty"] > 0 else ""
+                                        ai_tags = ai_res["tags"]
+                                
                                 # 注入 Label Data
                                 from utils.csv_ops import get_next_id
                                 from utils.latex_ops import inject_meta_data
                                 new_id = get_next_id()
                                 meta_dict = {
                                     "ID": new_id,
-                                    "难度星级": "",
-                                    "标签": "",
+                                    "难度星级": ai_diff,
+                                    "标签": ai_tags,
                                     "备注": "",
                                     "组卷引用次数": 0
                                 }
@@ -920,12 +1117,15 @@ def page_entry():
                                     )
                                     
                                     count += 1
-                                    log_msg.append({"status": "success", "file": filename, "path": file_path, "id": new_id})
+                                    log_msg.append({"status": "success", "file": filename, "path": file_path, "id": new_id, "ai_info": f"星级:{ai_diff} 标签:{ai_tags}" if enable_ai else ""})
                                 except Exception as e:
                                     log_msg.append({"status": "error", "file": filename, "msg": str(e)})
                             else:
                                 log_msg.append({"status": "skip", "file": filename, "msg": "文件名格式错误"})
+                                
+                        progress_bar.progress(current_idx / total_files)
                     
+                    status_text.empty()
                     st.success(f"处理完成，共保存 {count} 个文件")
                     clear_statistics_cache()
                     st.toast(f"批量处理完成！共保存 {count} 个文件", icon="✅")
@@ -935,7 +1135,8 @@ def page_entry():
                         for log in log_msg:
                             if log["status"] == "success":
                                 c1, c2 = st.columns([4, 1])
-                                c1.success(f"✅ {log['file']}")
+                                ai_str = f" [AI: {log['ai_info']}]" if log.get('ai_info') else ""
+                                c1.success(f"✅ {log['file']}{ai_str}")
                                 # 按钮 key 必须唯一
                                 if c2.button("📂 打开", key=f"open_log_{log['file']}"):
                                     try:
@@ -1949,6 +2150,165 @@ def page_exam_paper_generation():
             st.session_state["ai_exam_active"] = True
             st.session_state["ai_exam_modified"] = False # 重置修改状态
             st.rerun()
+            
+    # === 新增：AI 辅助预组卷面板 ===
+    if st.session_state.get("ai_exam_active", False):
+        st.markdown("---")
+        st.markdown("### 🤖 智能组卷条件配置")
+        with st.container(border=True):
+            # 1. 知识板块约束
+            st.markdown("##### 1. 考察知识板块")
+            c_ai_subj, c_ai_diff = st.columns([1.5, 1])
+            with c_ai_subj:
+                extended_subjects = ["高考范围"] + SUBJECTS
+                ai_subjects_raw = st.multiselect("选择本次组卷覆盖的知识板块", options=extended_subjects, default=["高考范围"], key="ai_exam_subjects")
+            with c_ai_diff:
+                # 2. 难度系数
+                st.markdown("<div style='font-size: 14px; color: #31333F; margin-bottom: 5px;'><b>目标平均难度星级</b></div>", unsafe_allow_html=True)
+                from utils.star_rating import st_star_rating
+                ai_difficulty = st_star_rating(label="", value=st.session_state.get("ai_exam_diff_val", 3.0), max_stars=6, key="star_ai_exam_diff")
+                if ai_difficulty is not None and ai_difficulty != st.session_state.get("ai_exam_diff_val", 3.0):
+                    st.session_state["ai_exam_diff_val"] = ai_difficulty
+            
+            # 新增：组卷意图与要求
+            st.markdown("##### 2. 组卷意图与附加要求")
+            c_intent_lbl, c_intent_btn = st.columns([4, 1], vertical_alignment="bottom")
+            with c_intent_lbl:
+                intent_text = st.text_area("请填写您的组卷想法（例如：侧重考察导数的隐零点问题，解答题最后一道必须是解析几何，且不要太难）", key="ai_exam_intent", height=100)
+            with c_intent_btn:
+                def do_polish():
+                    txt = st.session_state.get("ai_exam_intent", "").strip()
+                    if not txt:
+                        st.toast("请先填写初步想法", icon="⚠️")
+                        return
+                    res = call_ai_for_polish(txt)
+                    if res.startswith("❌"):
+                        st.toast(res, icon="❌")
+                    else:
+                        st.session_state["ai_exam_intent"] = res
+                        st.toast("润色成功！", icon="✨")
+                st.button("✨ AI 润色想法", on_click=do_polish, use_container_width=True)
+            
+            # 3. 题目数量与题型（根据主题推断，如果是试卷类则固定结构）
+            st.markdown("##### 3. 试卷结构约束")
+            is_paper = "试卷" in theme
+            if is_paper:
+                st.info("💡 当前为“试卷类模板”，系统将严格按照新高考结构（单选8+多选3+填空3+解答5=19题）抽取。")
+                ai_q_count = 19
+            else:
+                ai_q_count = st.session_state.get("exam_q_count_input", 10)
+                st.info(f"💡 当前为非试卷类模板，系统将按照您的预设，随机抽取 **{ai_q_count}** 道题目。")
+            
+            # 4. 执行生成按钮
+            if st.button("🚀 开始智能抽题 (基于本地题库标签)", type="primary", use_container_width=True):
+                if not ai_subjects_raw:
+                    st.warning("请至少选择一个知识板块！")
+                else:
+                    with st.spinner("正在遍历题库并进行智能抽样..."):
+                        # 执行基于规则的抽题算法
+                        from utils.csv_ops import read_csv_index
+                        csv_data = read_csv_index()
+                        
+                        if not csv_data:
+                            st.error("题库为空或索引未建立，请先在工具页一键重建题库索引。")
+                        else:
+                            import random
+                            # 解析“高考范围”快捷选项
+                            actual_subjects = set()
+                            for s in ai_subjects_raw:
+                                if s == "高考范围":
+                                    actual_subjects.update(["集合", "复数", "不等式", "函数", "概率", "统计", "排列组合", "圆锥曲线", "解三角形", "三角函数", "立体几何", "向量", "数列", "导数"])
+                                else:
+                                    actual_subjects.add(s)
+                            
+                            # 1. 第一轮硬过滤：过滤掉不属于所选板块的题目
+                            candidates = []
+                            for row in csv_data:
+                                row_subj = row.get("知识板块", "")
+                                # 只要该题的任何一个标签在用户选择的板块中，即可入选
+                                if any(s in row_subj for s in actual_subjects):
+                                    candidates.append(row)
+                            
+                            # 获取当前目标难度
+                            current_diff = st.session_state.get("ai_exam_diff_val", 3.0)
+                            
+                            # 辅助函数：根据难度范围过滤并随机抽取指定数量
+                            def sample_questions(pool, target_count, q_type=None, diff_range=None):
+                                filtered = pool
+                                if q_type:
+                                    filtered = [q for q in filtered if q_type in q.get("题目类型", "")]
+                                if diff_range:
+                                    # 如果没有星级，默认视为基础题 (1.0)
+                                    filtered = [q for q in filtered if diff_range[0] <= float(q.get("难度星级") or 1.0) <= diff_range[1]]
+                                
+                                if len(filtered) >= target_count:
+                                    return random.sample(filtered, target_count)
+                                else:
+                                    # 如果指定难度不够，放宽难度限制补齐
+                                    backup = [q for q in pool if q not in filtered and (q_type in q.get("题目类型", "") if q_type else True)]
+                                    needed = target_count - len(filtered)
+                                    return filtered + random.sample(backup, min(needed, len(backup)))
+
+                            selected_rows = []
+                            if is_paper:
+                                # 新高考标准结构抽样
+                                # 单选 8 题 (基础4 + 中档3 + 难题1)
+                                sq_base = sample_questions(candidates, 4, q_type="选择题", diff_range=(0.0, 2.5))
+                                sq_mid = sample_questions(candidates, 3, q_type="选择题", diff_range=(3.0, 4.0))
+                                sq_hard = sample_questions(candidates, 1, q_type="选择题", diff_range=(4.5, 6.0))
+                                
+                                # 多选 3 题 (基础1 + 中档1 + 难题1)
+                                mq_base = sample_questions(candidates, 1, q_type="选择题", diff_range=(0.0, 2.5))
+                                mq_mid = sample_questions(candidates, 1, q_type="选择题", diff_range=(3.0, 4.0))
+                                mq_hard = sample_questions(candidates, 1, q_type="选择题", diff_range=(4.5, 6.0))
+                                
+                                # 填空 3 题 (基础1 + 中档1 + 难题1)
+                                fq_base = sample_questions(candidates, 1, q_type="填空题", diff_range=(0.0, 2.5))
+                                fq_mid = sample_questions(candidates, 1, q_type="填空题", diff_range=(3.0, 4.0))
+                                fq_hard = sample_questions(candidates, 1, q_type="填空题", diff_range=(4.5, 6.0))
+                                
+                                # 解答 5 题 (基础2 + 中档2 + 难题1)
+                                aq_base = sample_questions(candidates, 2, q_type="解答题", diff_range=(0.0, 2.5))
+                                aq_mid = sample_questions(candidates, 2, q_type="解答题", diff_range=(3.0, 4.0))
+                                aq_hard = sample_questions(candidates, 1, q_type="解答题", diff_range=(4.5, 6.0))
+                                
+                                selected_rows = sq_base + sq_mid + sq_hard + mq_base + mq_mid + mq_hard + fq_base + fq_mid + fq_hard + aq_base + aq_mid + aq_hard
+                            else:
+                                # 非试卷类：根据目标难度和总数进行大乱炖抽样
+                                # 按照正态分布近似：60% 中档，20% 基础，20% 难题 (围绕目标难度上下浮动)
+                                base_count = int(ai_q_count * 0.2)
+                                hard_count = int(ai_q_count * 0.2)
+                                mid_count = ai_q_count - base_count - hard_count
+                                
+                                # 根据用户设定的 current_diff 动态平移区间
+                                mid_range = (max(0.0, current_diff - 1.0), min(6.0, current_diff + 1.0))
+                                base_range = (0.0, max(0.0, current_diff - 1.5))
+                                hard_range = (min(6.0, current_diff + 1.5), 6.0)
+                                
+                                r_base = sample_questions(candidates, base_count, diff_range=base_range)
+                                r_mid = sample_questions(candidates, mid_count, diff_range=mid_range)
+                                r_hard = sample_questions(candidates, hard_count, diff_range=hard_range)
+                                
+                                selected_rows = r_base + r_mid + r_hard
+                            
+                            # 最终检查并转换为路径
+                            final_paths = []
+                            for r in selected_rows:
+                                p = os.path.join(CHAPTERS_DIR, r["相对文件路径"])
+                                if os.path.exists(p) and p not in final_paths:
+                                    final_paths.append(p)
+                                    
+                            if len(final_paths) < ai_q_count:
+                                st.warning(f"题库中满足条件的题目不足，仅抽取到 {len(final_paths)} 题。")
+                            else:
+                                st.success(f"智能组卷完成！已成功抽取 {len(final_paths)} 道题目。")
+                                
+                            # 强制覆盖当前购物车
+                            st.session_state["exam_selected_qs"] = final_paths
+                            st.session_state["exam_q_count_input"] = len(final_paths)
+                            st.session_state["ai_exam_modified"] = False
+                            time.sleep(1)
+                            st.rerun()
             
     # 注入 CSS：美化 number_input 的边框使其明显，并隐藏原生上下箭头，以及根据状态设置 primary 按钮颜色
     css_injection = """
@@ -3152,21 +3512,22 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     pending_key = f"pending_diff_{fpath}"
     version_key = f"star_key_version_{fpath}"
     
-    # --- 注入 CSS 实现紧凑同行布局 ---
+    # --- 注入 CSS 实现紧凑同行布局与徽章样式 ---
     st.markdown("""
     <style>
-    /* 限定作用域，避免污染全局布局 (如知识板块等) */
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .star-col),
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .rem-lbl) {
-        align-items: center !important;
-        gap: 0px !important;
-        margin-bottom: 5px !important;
-    }
+    /* 限定作用域，避免污染全局布局 */
+    /* 移除对 stHorizontalBlock 的 :has 覆盖，防止左侧边栏布局崩溃 */
+    
     div[data-testid="column"]:has(.star-col) {
-        width: 220px !important;
-        min-width: 220px !important;
-        max-width: 220px !important;
+        width: 100px !important;
+        min-width: 100px !important;
+        max-width: 100px !important;
         flex: 0 0 auto !important;
+    }
+    div[data-testid="column"]:has(.star-col) iframe {
+        height: 45px !important; /* 强制约束星星组件高度 */
+        margin: 0 !important;
+        padding: 0 !important;
     }
     div[data-testid="column"]:has(.tight-lbl) {
         width: fit-content !important;
@@ -3175,33 +3536,81 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         padding-right: 0px !important;
         padding-left: 0px !important;
     }
+    div[data-testid="column"]:has(.tight-lbl) p {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        min-height: 30px; /* 与按钮高度保持一致的基础高度 */
+    }
+    div[data-testid="column"]:has(.rem-lbl) {
+        padding-left: 20px !important; /* 强制拉开备注与前面按钮的距离 */
+    }
     div[data-testid="column"]:has(.tight-btn) {
         width: fit-content !important;
-        min-width: fit-content !important;
+        min-width: 40px !important;
         flex: 0 0 auto !important;
         padding-left: 4px !important;
     }
+    
     /* 淡灰色 + 按钮 */
     div[data-testid="column"]:has(.tight-btn) div[data-testid="stPopover"] > button {
         color: #666 !important;
         background-color: #f5f6f8 !important;
         border: 1px solid #ddd !important;
-        padding: 0px 8px !important;
-        min-height: 26px !important;
-        height: 26px !important;
+        padding: 0px 10px !important;
+        min-height: 24px !important;
+        height: 24px !important;
         line-height: 1 !important;
         width: auto !important;
+        border-radius: 12px !important;
+        font-size: 12px !important;
+        margin: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transform: translateY(3px); /* 微调按钮位置以完美对齐文本 */
     }
     div[data-testid="column"]:has(.tight-btn) div[data-testid="stPopover"] > button:hover {
         background-color: #e2e6ea !important;
         border-color: #ccc !important;
     }
+    
+    /* 现代徽章样式 (Badge) */
+    .badge-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        font-size: 14px; /* 调整为与 Streamlit 默认正文文本一致的字号 */
+        font-weight: 600;
+        line-height: 1.5;
+        color: #0366d6;
+        background-color: #f1f8ff;
+        border: 1px solid #c8e1ff;
+        border-radius: 2em;
+        margin-right: 4px;
+    }
+    .badge-rem {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        font-size: 14px; /* 调整为与 Streamlit 默认正文文本一致的字号 */
+        font-weight: 500;
+        line-height: 1.5;
+        color: #b08800;
+        background-color: #fffdef;
+        border: 1px solid #dfd8c2;
+        border-radius: 4px;
+        margin-right: 4px;
+    }
     </style>
     """, unsafe_allow_html=True)
     
     with st.container(border=True):
-        # === Row 1: 星级与标签 ===
-        c_star, c_tag_lbl, c_tag_btn, _ = st.columns([1, 1, 1, 1], vertical_alignment="center")
+        # === 统一放在同一行：星级 | 标签 + 按钮 | 备注 + 按钮 ===
+        # 这里用更精细的列宽比例来挤压空间
+        c_star, c_tag_lbl, c_tag_btn, c_rem_lbl, c_rem_btn, _ = st.columns([1.1, 0.7, 0.3, 0.9, 0.3, 2.7], vertical_alignment="center")
         
         with c_star:
             st.markdown("<span class='star-col'></span>", unsafe_allow_html=True)
@@ -3218,9 +3627,11 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
 
         with c_tag_lbl:
             if tags:
-                st.markdown(f"<span class='tight-lbl'></span>**标签:** **{tags}**", unsafe_allow_html=True)
+                # 把逗号分隔的标签拆分成多个小徽章
+                tag_html = "".join([f"<span class='badge-tag'>🏷️ {t.strip()}</span>" for t in tags.split("，") if t.strip()])
+                st.markdown(f"<span class='tight-lbl'></span>**标签：**{tag_html}", unsafe_allow_html=True)
             else:
-                st.markdown("<span class='tight-lbl'></span>**标签:**", unsafe_allow_html=True)
+                st.markdown("<span class='tight-lbl'></span>**标签：**<span style='color:#aaa; font-size:12px;'>无标签</span>", unsafe_allow_html=True)
                 
         with c_tag_btn:
             st.markdown("<span class='tight-btn'></span>", unsafe_allow_html=True)
@@ -3244,30 +3655,11 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
                             st.session_state[f'tag_version_{fpath}'] = st.session_state.get(f'tag_version_{fpath}', 0) + 1
                             st.rerun()
 
-        # 处理未保存的星级变更弹窗
-        if pending_key in st.session_state:
-            st.warning(f"确认修改为 {st.session_state[pending_key]} 星吗？")
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                if st.button("✅ 确认", key=f"diff_ok_{fpath}", type="primary"):
-                    final_diff = st.session_state[pending_key]
-                    update_question_meta(fpath, "难度星级", str(final_diff))
-                    del st.session_state[pending_key]
-                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
-                    st.rerun()
-            with bc2:
-                if st.button("❌ 取消", key=f"diff_cancel_{fpath}", type="secondary"):
-                    del st.session_state[pending_key]
-                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
-                    st.rerun()
-
-        # === Row 2: 备注 ===
-        c_rem_lbl, c_rem_btn, _ = st.columns([1, 1, 1], vertical_alignment="center")
         with c_rem_lbl:
             if remark:
-                st.markdown(f"<span class='rem-lbl tight-lbl'></span><span style='margin-right: -18px;'>**备注:** <span style='background-color: #f0f2f6; padding: 2px 6px; border-radius: 4px; color: #555; font-size: 0.95em;'>{remark}</span></span>", unsafe_allow_html=True)
+                st.markdown(f"<span class='rem-lbl tight-lbl'></span>**备注：**<span class='badge-rem'>📝 {remark}</span>", unsafe_allow_html=True)
             else:
-                st.markdown("<span class='rem-lbl tight-lbl'></span><span style='margin-right: -18px;'>**备注:**</span>", unsafe_allow_html=True)
+                st.markdown("<span class='rem-lbl tight-lbl'></span>**备注：**<span style='color:#aaa; font-size:12px;'>无备注</span>", unsafe_allow_html=True)
                 
         with c_rem_btn:
             st.markdown("<span class='tight-btn'></span>", unsafe_allow_html=True)
@@ -3290,6 +3682,23 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
                         if st.button("取消", key=f"rem_cancel_{rem_popover_key}", type="secondary"):
                             st.session_state[f'rem_version_{fpath}'] = st.session_state.get(f'rem_version_{fpath}', 0) + 1
                             st.rerun()
+
+        # 处理未保存的星级变更弹窗（放到最后，避免打乱单行布局）
+        if pending_key in st.session_state:
+            st.warning(f"确认修改为 {st.session_state[pending_key]} 星吗？")
+            bc1, bc2 = st.columns(2)
+            with bc1:
+                if st.button("✅ 确认", key=f"diff_ok_{fpath}", type="primary"):
+                    final_diff = st.session_state[pending_key]
+                    update_question_meta(fpath, "难度星级", str(final_diff))
+                    del st.session_state[pending_key]
+                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+                    st.rerun()
+            with bc2:
+                if st.button("❌ 取消", key=f"diff_cancel_{fpath}", type="secondary"):
+                    del st.session_state[pending_key]
+                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+                    st.rerun()
         
 # ================= 辅助函数：搜索匹配 =================
 import datetime
@@ -3673,6 +4082,12 @@ def main():
         
         c_s_1, c_s_2, c_s_3 = st.columns([0.25, 0.6, 0.15])
         search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
+        
+        # 定义统一的搜索回调函数，使得回车也能触发搜索
+        def on_search_trigger():
+            st.session_state["global_search_active"] = True
+            st.session_state["main_nav_selection"] = "🔍 全局浏览与编辑"
+
         with c_s_1:
             g_type_1 = st.selectbox("一级类型", search_opts, index=0, key="g_t1")
         with c_s_2:
@@ -3680,12 +4095,12 @@ def main():
                 # 移除 label_visibility="collapsed" 以便对齐，并显示标签
                 g_query_1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="g_q1_sel")
             else:
-                g_query_1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="g_q1")
+                g_query_1 = st.text_input("一级关键词", placeholder="输入一级关键词... (回车搜索)", key="g_q1", on_change=on_search_trigger)
         with c_s_3:
             # 为了让搜索按钮和输入框对齐，重新加回空行
             st.write("")
             st.write("")
-            g_submit = st.button("🔍 搜索", use_container_width=True)
+            g_submit = st.button("🔍 搜索", use_container_width=True, on_click=on_search_trigger)
             
         # 直接显示多级筛选，不使用 expander，也不使用分割线
         c_adv_1, c_adv_2 = st.columns([1, 2])
@@ -3695,7 +4110,7 @@ def main():
             if g_type_2 == "题目类型":
                 g_query_2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="g_q2_sel")
             else:
-                g_query_2 = st.text_input("二级关键词", key="g_q2")
+                g_query_2 = st.text_input("二级关键词", placeholder="(回车搜索)", key="g_q2", on_change=on_search_trigger)
         
         c_adv_3, c_adv_4 = st.columns([1, 2])
         with c_adv_3: 
@@ -3704,7 +4119,7 @@ def main():
             if g_type_3 == "题目类型":
                 g_query_3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="g_q3_sel")
             else:
-                g_query_3 = st.text_input("三级关键词", key="g_q3")
+                g_query_3 = st.text_input("三级关键词", placeholder="(回车搜索)", key="g_q3", on_change=on_search_trigger)
             
         st.write("") # 增加一点间距
 

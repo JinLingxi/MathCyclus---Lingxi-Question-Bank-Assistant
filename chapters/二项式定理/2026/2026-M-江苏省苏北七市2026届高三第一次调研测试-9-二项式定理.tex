@@ -1,0 +1,33 @@
+% === Begin Label Data ===
+% ID: 286
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2023}{G}{新课标I}{9}{二项式定理}
+在$\left(x-\dfrac{2}{x^2}\right)^6$的二项展开式中，下列结论正确的是
+\begin{choices}
+\choice{{常数项是$60$}}
+\choice{{各项系数之和是$64$}}
+\choice{{二项式系数最大值是$20$}}
+\choice{{不含$x^3$的项}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A, C
+\end{answer}
+
+\begin{solutions}
+通项为$T_{k+1}=\binom{6}{k}x^{6-k}\left(-\dfrac{2}{x^2}\right)^k=\binom{6}{k}(-2)^k x^{6-3k}$。
+
+（1）常数项：令$6-3k=0\Rightarrow k=2$，则常数项为$\binom{6}{2}(-2)^2=15\times4=60$，A正确。
+
+（2）各项系数之和：令$x=1$，得$(1-2)^6=(-1)^6=1$，非64，B错误。
+
+（3）二项式系数指$\binom{6}{k}$，最大值为$\binom{6}{3}=20$，C正确。
+
+（4）含$x^3$项：令$6-3k=3\Rightarrow k=1$，存在该项，D错误。
+\end{solutions}

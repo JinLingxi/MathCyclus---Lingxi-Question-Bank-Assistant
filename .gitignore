@@ -21,7 +21,10 @@ log.csv
 ocr_prompt.txt
 AutoTikz.md
 debug.log
+ocr的备份.txt
 
+# 外部大型参考项目 (避免索引崩溃与上传超时)
+SolaireEPDA-master/
 
 # LaTeX 编译输出
 main.synctex.gz

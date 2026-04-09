@@ -1,0 +1,33 @@
+% === Begin Label Data ===
+% ID: 287
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2023}{G}{新课标I}{10}{立体几何}
+如图，已知圆柱$O_1O_2$，底面半径为$1$，$O_1O_2=2$，$P$为$\odot O_2$上一点，正方形$ABCD$内接于$\odot O_1$，则
+\begin{choices}
+\choice{{$BC\mathop{//} \text{平面} PAD$}}
+\choice{{四棱锥$P-ABCD$的体积不为定值}}
+\choice{{四棱锥$P-ABCD$外接球的表面积为$8\pi$}}
+\choice{{直线$PB$与平面$ABCD$所成角的最小值为$\dfrac{\pi}{4}$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A, C, D
+\end{answer}
+
+\begin{solutions}
+设$O_1$为坐标原点，底面在$xy$-平面，$O_2=(0,0,2)$，正方形$ABCD$内接于$\odot O_1$，边长$\sqrt{2}$，可取$A(1,0,0),B(0,1,0),C(-1,0,0),D(0,-1,0)$。$P$在$\odot O_2$上，设$P(\cos\theta,\sin\theta,2)$。
+
+A. 向量$\overrightarrow{BC}=(-1,-1,0)$，平面$PAD$中$\overrightarrow{PA}=(1-\cos\theta,-\sin\theta,-2)$，$\overrightarrow{PD}=(-\cos\theta,-1-\sin\theta,-2)$，法向量$\vec{n}=\overrightarrow{PA}\times\overrightarrow{PD}$，计算得$\overrightarrow{BC}\cdot\vec{n}=0$，故$BC\mathop{//}$平面$PAD$，A正确。
+
+B. 四棱锥高恒为$|O_1O_2|=2$，底面积$S_{ABCD}=2$，体积$V=\dfrac{1}{3}\times2\times2=\dfrac{4}{3}$为定值，B错误。
+
+C. 外接球心必在$O_1O_2$中垂面$z=1$上，设球心$O(0,0,1)$，则$OA=\sqrt{1^2+0^2+1^2}=\sqrt{2}$，$OP=\sqrt{\cos^2\theta+\sin^2\theta+(2-1)^2}=\sqrt{2}$，故半径$r=\sqrt{2}$，表面积$4\pi r^2=8\pi$，C正确。
+
+D. 直线$PB$与底面夹角$\alpha$满足$\sin\alpha=\dfrac{2}{|PB|}$，$|PB|^2=(\cos\theta)^2+(\sin\theta-1)^2+4=6-2\sin\theta$，当$\sin\theta=1$时$|PB|$最小为$\sqrt{4}=2$，此时$\sin\alpha=1$，$\alpha=\dfrac{\pi}{2}$；当$\sin\theta=-1$时$|PB|$最大为$\sqrt{8}=2\sqrt{2}$，$\sin\alpha=\dfrac{2}{2\sqrt{2}}=\dfrac{\sqrt{2}}{2}$，$\alpha=\dfrac{\pi}{4}$，即最小角为$\dfrac{\pi}{4}$，D正确。
+\end{solutions}

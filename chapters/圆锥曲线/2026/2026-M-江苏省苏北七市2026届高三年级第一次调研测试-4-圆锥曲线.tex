@@ -1,0 +1,41 @@
+% === Begin Label Data ===
+% ID: 282
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{高三第一次调研测试}{4}{圆锥曲线}
+在对称轴为坐标轴的双曲线中，“离心率为 $\sqrt{5}$” 是 “渐近线方程为 $y=\pm2x$” 的
+\begin{choices}
+\choice{{充分不必要条件}}
+\choice{{必要不充分条件}}
+\choice{{充要条件}}
+\choice{{既不充分又不必要条件}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+D
+\end{answer}
+
+\begin{solutions}
+设双曲线标准方程为 $\dfrac{x^2}{a^2}-\dfrac{y^2}{b^2}=1$（焦点在 $x$ 轴），则渐近线为 $y=\pm\dfrac{b}{a}x$，离心率 $e=\sqrt{1+\dfrac{b^2}{a^2}}$。  
+若渐近线为 $y=\pm2x$，则 $\dfrac{b}{a}=2\Rightarrow \dfrac{b^2}{a^2}=4\Rightarrow e=\sqrt{1+4}=\sqrt{5}$。  
+反之，若 $e=\sqrt{5}$，则 $1+\dfrac{b^2}{a^2}=5\Rightarrow \dfrac{b^2}{a^2}=4\Rightarrow \dfrac{b}{a}=2$ 或 $-2$，即渐近线为 $y=\pm2x$。  
+但注意：双曲线也可能为 $\dfrac{y^2}{a^2}-\dfrac{x^2}{b^2}=1$，此时渐近线为 $y=\pm\dfrac{a}{b}x$，离心率 $e=\sqrt{1+\dfrac{b^2}{a^2}}$。  
+若 $e=\sqrt{5}$，则 $1+\dfrac{b^2}{a^2}=5\Rightarrow \dfrac{b^2}{a^2}=4\Rightarrow \dfrac{a}{b}=\dfrac{1}{2}$，渐近线为 $y=\pm\dfrac{1}{2}x$，非 $y=\pm2x$。  
+因此，“离心率为 $\sqrt{5}$” 不能推出 “渐近线为 $y=\pm2x$”，除非限定焦点在 $x$ 轴；  
+而 “渐近线为 $y=\pm2x$” 可推出离心率为 $\sqrt{5}$（无论哪种开口方向，只要渐近线斜率为 $\pm2$，则对应 $\dfrac{b}{a}=2$ 或 $\dfrac{a}{b}=2$，离心率均为 $\sqrt{5}$）。  
+验证：若 $\dfrac{y^2}{a^2}-\dfrac{x^2}{b^2}=1$ 且渐近线 $y=\pm2x$，则 $\dfrac{a}{b}=2\Rightarrow a=2b$，  
+$e=\sqrt{1+\dfrac{b^2}{a^2}}=\sqrt{1+\dfrac{1}{4}}=\sqrt{\dfrac{5}{4}}=\dfrac{\sqrt{5}}{2}\neq\sqrt{5}$ —— 错！  
+正确：对 $\dfrac{y^2}{a^2}-\dfrac{x^2}{b^2}=1$，渐近线 $y=\pm\dfrac{a}{b}x$，令 $\dfrac{a}{b}=2\Rightarrow a=2b$，  
+则 $e=\sqrt{1+\dfrac{b^2}{a^2}}=\sqrt{1+\dfrac{1}{4}}=\dfrac{\sqrt{5}}{2}$。  
+而若要求 $e=\sqrt{5}$，则 $\sqrt{1+\dfrac{b^2}{a^2}}=\sqrt{5}\Rightarrow \dfrac{b^2}{a^2}=4\Rightarrow \dfrac{a}{b}=\dfrac{1}{2}$，渐近线斜率为 $\dfrac{1}{2}$。  
+因此：  
+- 渐近线为 $y=\pm2x$ $\Rightarrow$ 若焦点在 $x$ 轴，则 $e=\sqrt{5}$；若焦点在 $y$ 轴，则 $e=\dfrac{\sqrt{5}}{2}$。  
+题目说“对称轴为坐标轴的双曲线”，未指定开口方向，故“渐近线为 $y=\pm2x$” 不能保证 $e=\sqrt{5}$（可能 $e=\dfrac{\sqrt{5}}{2}$）；  
+同理，“$e=\sqrt{5}$” 也不能保证渐近线为 $y=\pm2x$（可能为 $y=\pm\dfrac{1}{2}x$）。  
+故二者既不充分也不必要，选 D。
+\end{solutions}

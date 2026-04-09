@@ -15,3 +15,144 @@
 
 （3）是否存在 $a$，满足：$\Gamma_2$ 在 $\Gamma_1$ 的上方，且 $\Gamma_2$ 有两条不同的切线被 $\Gamma_1$ 所解得的线段长相等？若存在，求出 $a$ 的取值范围；若不存在，请说明理由.
 \end{problem}
+
+
+\begin{solutions}
+(1) 设 $\Gamma_1: x^2 = 2py\ (p>0)$. 由 $F\left(0, \dfrac{1}{4}\right)$ 计算可得 $\dfrac{p}{2} = \dfrac{1}{4} \Rightarrow p = \dfrac{1}{2}$.
+
+因此有 $\Gamma_1: y = x^2$.
+
+现在考虑 $\Gamma_2: x^2 + (y-a)^2 = 1\ (x > 0, y < a)$，
+
+进行移项$(y-a)^2 = 1- x^2\ (x > 0, y < a)$，开方取负半部分得 $y = a - \sqrt{1-x^2}\ (0 <  x < 1)$.
+
+因此有 $\Gamma_2: y = a - \sqrt{1-x^2}\ (0< x <1)$.
+
+\begin{tikzpicture}[scale=2]
+    % 定义参数
+    \def\a{1.8} % 圆心 y 坐标
+    \def\thetaAngle{40} % 半径与负 y 轴的夹角 (对应草图中的 \theta)
+    
+    % 坐标轴
+    \draw[->, thick] (-2, 0) -- (2.5, 0) node[below] {$x$};
+    \draw[->, thick] (0, -0.5) -- (0, 3.5) node[right] {$y$};
+    \node[below left] at (0,0) {$O$};
+    
+    % 抛物线 \Gamma_1: y=x^2
+    \draw[thick, name path=parabola] plot[domain=-1.5:1.6, samples=100] (\x, {\x*\x});
+    
+    % 圆心 A(0, a)
+    \coordinate (A) at (0, \a);
+    \fill (A) circle (1.2pt) node[left] {$A(0,a)$};
+    
+    % 圆 \Gamma_2 (半径为1)
+    \draw[thick] (A) circle (1);
+    
+    % 切点 P: (\sin\theta, a - \cos\theta)
+    \coordinate (P) at ({sin(\thetaAngle)}, {\a - cos(\thetaAngle)});
+    
+    % 计算切线的斜率和截距
+    % 根据几何关系，半径 AP 的倾角为 -90+\thetaAngle，因此切线倾角为 \thetaAngle
+    \def\slope{tan(\thetaAngle)}
+    \def\yint{\a - 1/cos(\thetaAngle)}
+    
+    % 绘制切线 (红色)
+    \draw[thick, black, name path=tangent] plot[domain=-1.3:1.8] (\x, {\slope*\x + \yint});
+    
+    % 半径 AP (红色)
+    \draw[thick, black] (A) -- (P);
+    
+    % 辅助线：向下垂线和 P 点水平线
+    \coordinate (Adown) at (0, {\a - 1.2});
+    \draw[dashed] (A) -- (Adown);
+    \coordinate (Pright) at ($(P) + (1, 0)$);
+    \draw[dashed] (P) -- (Pright);
+    
+    % 使用 intersections 求切线与抛物线的交点 M, N
+    \path [name intersections={of=parabola and tangent, by={M,N}}];
+    
+    % 绘制交点及标签 (红色)
+    \fill[black] (P) circle (1.2pt) node[below] {$M$};
+    \fill[black] (M) circle (1.2pt) node[left] {$P$};
+    \fill[black] (N) circle (1.2pt) node[right] {$Q$};
+    
+    % 标记角度 \theta
+    % A 处的 \theta
+    \pic [draw, black, "$\theta$", angle radius=0.4cm, angle eccentricity=1.5] {angle = Adown--A--P};
+    
+    % P 处的 \theta (切线与水平线的夹角)
+    \coordinate (Pline) at ($(P) + (1, {\slope})$);
+    \pic [draw, black, "$\theta$", angle radius=0.5cm, angle eccentricity=1.4] {angle = Pright--P--Pline};
+    
+    % 标记切点 P 处的直角
+    \coordinate (Ptang) at ($(P) + (-0.5, {-0.5*\slope})$);
+    \pic [draw, black, angle radius=0.2cm] {right angle = A--P--Ptang};
+    
+\end{tikzpicture}
+
+(2) 设 $P(x_1, y_1), Q(x_2, y_2)$ 为 $\Gamma_1$ 与直线 $l:y=x+2$ 的两个交点，点 $M$ 为 $PQ$ 中点 $M(x_0, y_0)$.
+
+考虑点差法，根据 $P,Q$ 在 $\Gamma_1$ 上，故有 $\begin{cases} y_1 = x_1^2 \\ y_2 = x_2^2 \end{cases}$
+
+因此 $ y_2 - y_1 = x_2^2 - x_1^2 $，即 $ k_{PQ}=\dfrac{y_2 - y_1}{x_2 - x_1} = x_2 + x_1=1$.
+
+所以 $x_M = \dfrac{x_1 + x_2}{2} = \dfrac{1}{2}$. 代入直线 $l$ 可得 $y_M=\dfrac{1}{2}+2=\dfrac{5}{2}$.
+
+即 $M\left(\dfrac{1}{2}, \dfrac{5}{2}\right)$，代入 $\Gamma_2$ 有 $\dfrac{5}{2} = a - \sqrt{1 - \left(\dfrac{1}{2}\right)^2}$，整理得 $a = \dfrac{5+\sqrt{3}}{2}$.
+
+(3) 由题意，首先需保证 $\Gamma_2$ 在 $\Gamma_1$ 上方，即对于任意 $x \in (0,1)$，有 $a - \sqrt{1-x^2} > x^2$ 恒成立。
+
+令 $u = \sqrt{1-x^2} \in (0,1)$，则不等式化为 $a > -u^2 + u + 1 = -\left(u - \dfrac{1}{2}\right)^2 + \dfrac{5}{4}$.
+
+由于 $u \in (0,1)$，右侧最大值为 $\dfrac{5}{4}$，故 $a > \dfrac{5}{4}$. 
+
+
+设切点 $M(\sin\theta, a-\cos\theta)$. 由于圆方程为 $x^2 + (y-a)^2 = 1$，因此过圆上切点 $M$ 的切线方程为：
+$\sin\theta \cdot x + (-\cos\theta)(y-a) = 1$.
+
+由于 $\theta \in \left[0, \dfrac{\pi}{2}\right)$，所以 $\cos\theta \in (0, 1]$. 将切线方程化为：$y = \tan\theta \cdot x + a - \dfrac{1}{\cos\theta}$.
+
+与抛物线联立得：
+$$
+\tan\theta \cdot x + a - \dfrac{1}{\cos\theta} = x^2 \implies x^2 - \tan\theta \cdot x + \dfrac{1}{\cos\theta} - a = 0.
+$$
+
+仍设切线与抛物线交于 $P(x_1, y_1), Q(x_2, y_2)$，则：$x_1 + x_2 = \tan\theta, \quad x_1 x_2 = \dfrac{1}{\cos\theta} - a$.
+
+
+\begin{align*}
+|MN| &= \sqrt{(k^2+1)[(x_1+x_2)^2 - 4x_1x_2]} \\
+&= \sqrt{(\tan^2\theta+1)\left[\tan^2\theta + 4a - \dfrac{4}{\cos\theta}\right]} \\
+&= \sqrt{\dfrac{\sin^2\theta+\cos^2\theta}{\cos^2\theta} \cdot \dfrac{\sin^2\theta + 4a\cos^2\theta - 4\cos\theta}{\cos^2\theta}} \\
+&= \sqrt{\dfrac{(4a-1)\cos^2\theta - 4\cos\theta + 1}{\cos^4\theta}}
+\end{align*}
+
+
+记 $t = \dfrac{1}{\cos\theta}$，由于 $\theta \in \left(0, \dfrac{\pi}{2}\right)$ 时 $\cos\theta \in (0, 1)$，所以 $t > 1$. 则 $|MN| = \sqrt{(4a-1)t^2 - 4t^3 + t^4}$.
+
+考虑函数 $f(t) = t^4 - 4t^3 + (4a-1)t^2 \quad (t > 1)$.
+
+若要满足题意，即存在两条不同的切线截得线段长相等，等价于存在不同的 $m, n \in (-\infty, -1)$ 使得 $f(m) = f(n)$，即 $f(t)$ 在 $(1,\infty)$ 上不具有单调性。
+
+通过上面的转化我们就把切线的存在性化为了一个方程有解的问题，就变为了大家熟悉的经典导数分析交点问题了。
+
+对 $f(t)$ 求导得 $f'(t) = 4t^3 - 12t^2 + (8a-2)t = 2t(2t^2 - 6t + 4a - 1)$.
+
+因为 $t > 1$，所以 $2t > 0$，
+而二次函数 $y = 2t^2 - 6t=2(t-\dfrac{3}{2})^2-\dfrac{9}{2}$，故 $2t^2 - 6t \in \left[-\dfrac{9}{2}, +\infty\right)$.
+
+若 $4a - 1 \geqslant  \dfrac{9}{2} $，即 $a \geqslant \dfrac{11}{8}$ 时，有 $2t^2 - 6t + 4a - 1 \geqslant 0$ 恒成立，从而 $f'(t) \geqslant 0$.
+
+此时 $f(t)$ 在 $(1,+\infty)$ 上单调递增，不存在不同的 $t_1, t_2$ 使 $f(t_1) = f(t_2)$，不合题意。
+
+若 $4a - 1 < \dfrac{9}{2} $， 即 $a < \dfrac{11}{8}$ 时， $2t^2 - 6t + 4a - 1$ 在 $(1,+\infty)$ 上有两个不同的零点，
+
+此时 $f'(t)$ 有两零点 $t_1, t_2$（不妨设 $t_1 < t_2$）.
+
+$f(t)$ 在 $(1,t_1)$ 上单调递增，在 $(t_1, t_2)$ 上单调递减，在 $(t_2, +\infty)$ 上单调递增。
+
+此时必然存在不同的 $m, n$ 使得 $f(m) = f(n)$，符合题意。
+
+综上所述，结合前面求得的 $a > \dfrac{5}{4}$，
+$a$ 的取值范围是 $a \in \left(\dfrac{5}{4}, \dfrac{11}{8}\right)$.
+\end{solutions}

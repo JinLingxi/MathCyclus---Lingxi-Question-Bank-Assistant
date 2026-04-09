@@ -1,0 +1,39 @@
+% === Begin Label Data ===
+% ID: 283
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{高三第一次调研测试}{5}{统计}
+已知线性相关的两个变量 $x,y$ 的取值如右表所示，如果其线性回归方程为 $\hat{y}=14x-20$，那么当 $x=7$ 时的残差为
+\begin{center}
+\begin{tabular}{c|ccccc}
+$x$ & 3 & 4 & 6 & 7 \\
+\hline
+$y$ & 20 & 40 & 60 & $m$
+\end{tabular}
+\end{center}
+\begin{choices}
+\choice{{2}}
+\choice{{3}}
+\choice{{4}}
+\choice{{5}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+残差 $= y_{\text{实际}} - \hat{y}_{\text{预测}}$。  
+当 $x=7$ 时，$\hat{y}=14\times7-20=98-20=78$。  
+需先求 $m$。由线性回归过点 $(\bar{x},\bar{y})$：  
+$\bar{x}=\dfrac{3+4+6+7}{4}=\dfrac{20}{4}=5$，  
+$\bar{y}=\dfrac{20+40+60+m}{4}=\dfrac{120+m}{4}=30+\dfrac{m}{4}$。  
+代入回归方程：$\bar{y}=14\bar{x}-20=14\times5-20=70-20=50$，  
+故 $30+\dfrac{m}{4}=50\Rightarrow \dfrac{m}{4}=20\Rightarrow m=80$。  
+则当 $x=7$ 时，实际 $y=80$，预测 $\hat{y}=78$，残差 $=80-78=2$。
+\end{solutions}
