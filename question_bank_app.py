@@ -351,6 +351,345 @@ def call_ai_for_tags(content: str) -> dict:
     except Exception as e:
         return {"error": f"请求发生异常: {str(e)}"}
 
+def _extract_json_obj_from_text(text: str):
+    import json
+    if text is None:
+        raise ValueError("empty response")
+    cleaned = str(text).replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", cleaned)
+        if not m:
+            raise
+        return json.loads(m.group(0))
+
+def _extract_problem_env(tex: str) -> str:
+    if not tex:
+        return ""
+    m = re.search(r"\\begin\{problem\}[\s\S]*?\\end\{problem\}", tex)
+    return m.group(0).strip() if m else ""
+
+def _extract_env_block(tex: str, env_name: str) -> str:
+    if not tex:
+        return ""
+    m = re.search(rf"\\begin\{{{re.escape(env_name)}\}}[\s\S]*?\\end\{{{re.escape(env_name)}\}}", tex)
+    return m.group(0).strip() if m else ""
+
+def _replace_first_env_or_insert_after_problem(tex: str, env_name: str, new_block: str) -> str:
+    new_block = (new_block or "").strip()
+    if not new_block:
+        return tex
+    pat = re.compile(rf"\\begin\{{{re.escape(env_name)}\}}[\s\S]*?\\end\{{{re.escape(env_name)}\}}")
+    if pat.search(tex):
+        return pat.sub(new_block, tex, count=1)
+    if "\\end{problem}" in tex:
+        return tex.replace("\\end{problem}", "\\end{problem}\n\n" + new_block, 1)
+    return tex.rstrip() + "\n\n" + new_block + "\n"
+
+def _insert_block_after(tex: str, anchor_pat: str, new_block: str) -> str:
+    m = re.search(anchor_pat, tex)
+    if not m:
+        return tex.rstrip() + "\n\n" + new_block.strip() + "\n"
+    insert_pos = m.end()
+    prefix = tex[:insert_pos]
+    suffix = tex[insert_pos:]
+    return prefix + "\n\n" + new_block.strip() + suffix
+
+def _insert_block_before(tex: str, anchor_pat: str, new_block: str) -> str:
+    m = re.search(anchor_pat, tex)
+    if not m:
+        return new_block.strip() + "\n\n" + tex.lstrip()
+    insert_pos = m.start()
+    prefix = tex[:insert_pos]
+    suffix = tex[insert_pos:]
+    return prefix.rstrip() + "\n\n" + new_block.strip() + "\n\n" + suffix.lstrip()
+
+def _replace_or_insert_answer_solutions(tex: str, new_answer: str, new_solutions: str) -> str:
+    answer_pat = re.compile(r"\\begin\{answer\}[\s\S]*?\\end\{answer\}")
+    sol_pat = re.compile(r"\\begin\{solutions\}[\s\S]*?\\end\{solutions\}")
+    has_answer = answer_pat.search(tex) is not None
+    has_sol = sol_pat.search(tex) is not None
+
+    if has_answer and has_sol:
+        updated = answer_pat.sub(new_answer.strip(), tex, count=1)
+        updated = sol_pat.sub(new_solutions.strip(), updated, count=1)
+        return updated
+
+    if has_answer and not has_sol:
+        updated = answer_pat.sub(new_answer.strip(), tex, count=1)
+        return _insert_block_after(updated, r"\\end\{answer\}", new_solutions)
+
+    if not has_answer and has_sol:
+        updated = sol_pat.sub(new_solutions.strip(), tex, count=1)
+        return _insert_block_before(updated, r"\\begin\{solutions\}", new_answer)
+
+    if "\\end{problem}" in tex:
+        return _insert_block_after(tex, r"\\end\{problem\}", (new_answer.strip() + "\n\n" + new_solutions.strip()).strip())
+    return (tex.rstrip() + "\n\n" + new_answer.strip() + "\n\n" + new_solutions.strip() + "\n").strip() + "\n"
+
+def _extract_solutions_inner(new_solutions_block: str) -> str:
+    m = re.search(r"\\begin\{solutions\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{solutions\}", new_solutions_block or "")
+    if not m:
+        return ""
+    return (m.group(1) or "").strip()
+
+def _append_alt_solutions_after_last_solutions(tex: str, new_solutions_block: str, alt_label: str) -> str:
+    inner = _extract_solutions_inner(new_solutions_block)
+    if not inner:
+        raise ValueError("empty solutions")
+
+    label = (alt_label or "").strip()
+    if label:
+        alt_block = f"\\begin{{solutions}}[{label}]\n{inner}\n\\end{{solutions}}"
+    else:
+        alt_block = f"\\begin{{solutions}}\n{inner}\n\\end{{solutions}}"
+
+    matches = list(re.finditer(r"\\end\{solutions\}", tex))
+    if matches:
+        last = matches[-1]
+        insert_pos = last.end()
+        return tex[:insert_pos] + "\n\n" + alt_block + tex[insert_pos:]
+
+    if "\\end{answer}" in tex:
+        return _insert_block_after(tex, r"\\end\{answer\}", alt_block)
+    if "\\end{problem}" in tex:
+        return _insert_block_after(tex, r"\\end\{problem\}", alt_block)
+    return tex.rstrip() + "\n\n" + alt_block + "\n"
+
+def _prepend_line_after_begin(block: str, env_name: str, line: str) -> str:
+    block = (block or "").strip()
+    if not block:
+        return block
+    begin = f"\\begin{{{env_name}}}"
+    if begin not in block:
+        return block
+    return block.replace(begin, begin + "\n" + line, 1)
+
+def _split_answer_solutions_from_text(text: str):
+    ans = _extract_env_block(text, "answer")
+    sol = _extract_env_block(text, "solutions")
+    return ans, sol
+
+def _repair_latex_from_json_escapes(text: str) -> str:
+    s = text or ""
+    s = s.replace("\x08", r"\b")
+    s = s.replace("\x0c", r"\f")
+    s = s.replace("\x09", r"\t")
+    s = s.replace("\x0d", r"\r")
+    s = s.replace("\x1b", "\\")
+    s = re.sub(r"\n(?=eq\b)", r"\\n", s)
+    s = re.sub(r"\n(?=abla\b)", r"\\n", s)
+    return s
+
+def _normalize_ai_generated_tex_for_preview(text: str) -> str:
+    s = _repair_latex_from_json_escapes(text or "")
+    s = s.replace("```json", "").replace("```latex", "").replace("```", "")
+    s = s.replace("`", "")
+    s = re.sub(r"\$\s*\\boxed\{([\s\S]*?)\}\s*\$", r"\\boxed{\1}", s)
+    s = re.sub(r"\$\$\s*\\boxed\{([\s\S]*?)\}\s*\$\$", r"\\boxed{\1}", s)
+    s = re.sub(r"\$\$\s*([\s\S]*?)\s*\$\$", lambda m: "$$\n" + m.group(1).strip() + "\n$$", s)
+    s = re.sub(r"\$([\s\S]*?)\$", lambda m: "$" + m.group(1).strip() + "$", s)
+    s = re.sub(r"(\$|\$\$)\s*。", r"\1.", s)
+    s = re.sub(r"(\$|\$\$)\s*，", r"\1,", s)
+    s = re.sub(r"(\$|\$\$)\s*；", r"\1;", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+def call_ai_for_answer_solutions(problem_tex: str) -> dict:
+    load_dotenv(override=True)
+    api_key = os.getenv("AI_API_KEY")
+    base_url = os.getenv("AI_BASE_URL")
+    model_name = os.getenv("AI_SOLVER_MODEL_NAME") or "qwen3.6-flash"
+    
+    if not api_key or not base_url or not model_name:
+        return {"error": "AI 配置不完整，请检查 .env 文件"}
+
+    url = base_url.rstrip("/")
+    if "/v1" not in url and "/chat/completions" not in url:
+        url += "/v1"
+    if "/chat/completions" not in url:
+        url += "/chat/completions"
+
+    problem_tex = (problem_tex or "").strip()
+    if not problem_tex:
+        return {"error": "未识别到 \\begin{problem}...\\end{problem}，无法生成解答"}
+
+    prompt = f"""你是一名资深高中数学教研专家。请为下面的 LaTeX problem 生成对应的答案与解析。
+
+要求：
+1) 严格输出 JSON 格式，包含两个字段：answer_tex 与 solutions_tex。不要输出多余解释。
+2) answer_tex 必须用 \\begin{{answer}}...\\end{{answer}} 包裹，且这两句一定要单独一行，中间内容仅输出最终答案（如选项字母、数值或集合）。
+3) solutions_tex 必须用 \\begin{{solutions}}...\\end{{solutions}} 包裹，且这两句一定要单独一行。
+4) **解析要求极简高效**：请给出关键公式和核心推导步骤，不需要过多啰嗦的文字描述。优先采用公式表达，且因为所以采用中文，不采用数学符号做这种连接，同时避免长篇大论。
+5) 保持 LaTeX 书写规范（如下），注意数学符号排版，最终结论可以使用 \\boxed{{}}；\\boxed{{}} 外面不需要打 $，内部内容涉及到公式时再单独打 $。
+6) 禁止输出任何反引号 ` 或 Markdown 代码块标记。
+7) solutions_tex 中每个逻辑步骤单独成段，段落之间空一行（用两个换行）。
+8) 重要：你输出的是 JSON 字符串。所有 LaTeX 命令的反斜杠必须写成双反斜杠，例如 \\\\frac、\\\\boxed、\\\\neq、\\\\text、\\\\right、\\\\left、\\\\displaystyle。
+9) 重要：禁止输出 $\\boxed{...}$ 或 $$\\boxed{...}$$，只能输出 \\boxed{...}。
+
+排版与符号规范：
+- 【公式环境】行内公式用 $ 包裹，居中行间公式用 $$ 包裹。要求：$$ 必须单独占一行（不要写成 $$ 公式 $$），公式本体单独占一行。绝对禁止使用 \\(\\) 或 \\[\\]。
+- 【符号规范】遇到分式、求和、累乘等公式（包含行内公式），内部必须强制加 \\displaystyle 指令！数学括号必须使用 \\left( \\right)、\\left[ \\right] 等自适应大小指令！平行用 \\mathop{{//}}。带圈数字（如①、②、③、④等）必须无条件使用 \\circled{{1}}、\\circled{{2}} 格式，绝对禁止直接输出特殊字符①②③！
+- 【独立数字/字母】单独的阿拉伯数字(1, 2)或英文字母(A, a)必须、无条件用 $ $ 包裹(如 $1$, $A$)！
+- 【标点与空格规范】纯中文句子的结尾正常使用中文句号 。；但紧跟在数学公式或表达式后面的句号，必须严格使用英文句号 .！
+- 【文字与公式间距】数学公式（$ $ 或 $$ $$）与前后的中文文字之间，必须强制加一个空格！（例如：已知函数 $ f(x) $ 的定义域）。每一个完整的话（或段落）之间必须空一空行！题目小问直接写（1）（2）或（a），禁止使用 {{enumerate}} 环境。
+
+problem_tex：
+{problem_tex}"""
+
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "You are a JSON output bot. You only output valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"} if "gpt" in model_name.lower() or "qwen" in model_name.lower() else None,
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=(10, 150))
+        if response.status_code != 200:
+            return {"error": f"API 请求失败: {response.status_code}\n{response.text[:500]}"}
+        result = response.json()
+        if "choices" not in result or not result["choices"]:
+            return {"error": "AI 未返回有效内容"}
+        reply = result["choices"][0]["message"]["content"]
+        try:
+            data = _extract_json_obj_from_text(reply)
+        except Exception:
+            return {"error": "AI 返回格式解析失败（非 JSON）"}
+
+        answer_tex = str(data.get("answer_tex", "")).strip()
+        solutions_tex = str(data.get("solutions_tex", "")).strip()
+        answer_tex = _repair_latex_from_json_escapes(answer_tex)
+        solutions_tex = _repair_latex_from_json_escapes(solutions_tex)
+        if not answer_tex or not solutions_tex:
+            return {"error": "AI 返回 JSON 缺少 answer_tex / solutions_tex"}
+        if "\\begin{answer}" not in answer_tex or "\\end{answer}" not in answer_tex:
+            return {"error": "answer_tex 不是完整的 answer 环境"}
+        if "\\begin{solutions}" not in solutions_tex or "\\end{solutions}" not in solutions_tex:
+            return {"error": "solutions_tex 不是完整的 solutions 环境"}
+        return {"answer_tex": answer_tex, "solutions_tex": solutions_tex}
+    except requests.exceptions.Timeout:
+        return {"error": f"请求超时（模型：{model_name}）。可重试或切换更快模型。"}
+    except Exception as e:
+        return {"error": f"请求发生异常: {str(e)}"}
+
+def _update_csv_index_for_content_change(fpath: str, new_content: str):
+    try:
+        from utils.csv_ops import update_csv_index_for_edit
+        basename = os.path.basename(fpath).replace(".tex", "")
+        parts = basename.split("-")
+        if len(parts) >= 5:
+            update_csv_index_for_edit(fpath, fpath, new_content, parts[0], parts[1], parts[2], parts[3], parts[4])
+    except Exception:
+        return
+
+def _apply_generated_answer_solutions_to_file(fpath: str, new_answer: str, new_solutions: str, mode: str, alt_label: str = ""):
+    with open(fpath, "r", encoding="utf-8") as f:
+        old_tex = f.read()
+
+    new_answer = (new_answer or "").strip()
+    new_solutions = (new_solutions or "").strip()
+    if mode == "replace":
+        if not new_answer or not new_solutions:
+            raise ValueError("empty answer/solutions")
+    else:
+        if not new_solutions:
+            raise ValueError("empty solutions")
+
+    if mode == "replace":
+        updated = _replace_or_insert_answer_solutions(old_tex, new_answer, new_solutions)
+    elif mode == "append":
+        updated = _append_alt_solutions_after_last_solutions(old_tex, new_solutions, alt_label)
+    else:
+        raise ValueError("invalid mode")
+
+    final_content = save_modified_tex_file(fpath, updated)
+    _update_csv_index_for_content_change(fpath, final_content)
+    clear_statistics_cache()
+    return final_content
+
+def _ai_sol_keys(fpath: str, key_prefix: str):
+    import hashlib
+    fhash = hashlib.md5(f"{key_prefix}:{fpath}".encode()).hexdigest()[:10]
+    data_key = f"ai_sol_data_{fhash}"
+    editor_key = f"ai_sol_editor_{fhash}"
+    return fhash, data_key, editor_key
+
+def render_ai_solution_generate_button(fpath: str, current_content: str, key_prefix: str, use_container_width: bool = True):
+    fhash, data_key, editor_key = _ai_sol_keys(fpath, key_prefix)
+    gen_btn_key = f"ai_sol_gen_{fhash}"
+    if st.button("🤖 开始生成解答", key=gen_btn_key, use_container_width=use_container_width):
+        problem_tex = _extract_problem_env(current_content)
+        with st.spinner("🤖 AI 正在生成解答..."):
+            res = call_ai_for_answer_solutions(problem_tex)
+        if "error" in res:
+            st.toast(res["error"], icon="❌")
+        else:
+            combined = _normalize_ai_generated_tex_for_preview(res["answer_tex"].strip() + "\n\n" + res["solutions_tex"].strip())
+            st.session_state[data_key] = {"answer_tex": res["answer_tex"], "solutions_tex": res["solutions_tex"]}
+            st.session_state[editor_key] = combined
+            st.toast("已生成解答（未写回文件）", icon="🪄")
+            st.rerun()
+
+def render_ai_solution_panel(fpath: str, q_label: str, key_prefix: str):
+    fhash, data_key, editor_key = _ai_sol_keys(fpath, key_prefix)
+    if data_key not in st.session_state:
+        return
+
+    st.markdown(f"### {q_label} <span style='color: #1E90FF;'>问题的新生成解答</span>", unsafe_allow_html=True)
+    
+    col_close, _ = st.columns([0.15, 0.85])
+    with col_close:
+        if st.button("✖ 关闭面板", key=f"close_ai_panel_{fhash}", use_container_width=True):
+            del st.session_state[data_key]
+            st.rerun()
+
+    c_left, c_right = st.columns([1, 1])
+    with c_left:
+        gen_text = st.text_area("解答源码", key=editor_key, height=320)
+    with c_right:
+        try:
+            preview_text = _normalize_ai_generated_tex_for_preview(gen_text)
+            st.markdown(latex_to_markdown(preview_text, show_title=False), unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"渲染错误: {e}")
+
+    ans, sol = _split_answer_solutions_from_text(gen_text)
+    if not sol:
+        st.warning("解答源码中未检测到 solutions 环境，暂无法写回。")
+        return
+
+    opt_c1, opt_c2 = st.columns([1, 1])
+    with opt_c1:
+        if st.button("✅ 替换原本的解答与答案", key=f"ai_sol_apply_replace_{fhash}", type="primary", use_container_width=True):
+            if not ans:
+                st.toast("缺少 answer 环境，无法执行替换。", icon="❌")
+                return
+            try:
+                _apply_generated_answer_solutions_to_file(fpath, ans, sol, mode="replace")
+                st.toast("已替换并保存", icon="✅")
+                del st.session_state[data_key]
+                st.rerun()
+            except Exception as e:
+                st.toast(f"保存失败: {e}", icon="❌")
+    with opt_c2:
+        st.markdown("**保存为（另解/解法）**", unsafe_allow_html=True)
+        alt_label = st.text_input("保存为（另解/解法）", value="另解", key=f"ai_sol_alt_label_{fhash}", label_visibility="collapsed")
+        if st.button("💾 保存为另解/解法", key=f"ai_sol_apply_append_{fhash}", use_container_width=True):
+            try:
+                _apply_generated_answer_solutions_to_file(fpath, ans, sol, mode="append", alt_label=alt_label)
+                st.toast("已追加并保存", icon="✅")
+                del st.session_state[data_key]
+                st.rerun()
+            except Exception as e:
+                st.toast(f"保存失败: {e}", icon="❌")
+
 def call_ai_for_polish(intent_text: str) -> str:
     """调用 AI 润色用户的组卷意图"""
     api_key = os.getenv("AI_API_KEY")
@@ -1738,12 +2077,13 @@ def page_browse(is_exam_mode=False):
                                             time.sleep(0.5)
                                             st.rerun()
                                     else:
-                                        st.text_area("源码", value=content, height=est_height, disabled=True, key=text_area_key + "_readonly")
+                                        mtime_token = int(os.path.getmtime(fpath)) if os.path.exists(fpath) else 0
+                                        st.text_area("源码", value=content, height=est_height, disabled=True, key=f"{text_area_key}_readonly_{mtime_token}")
                                         
                                         tag_edit_key = f"tag_edit_mode_{fpath}"
                                         is_tag_editing = st.session_state.get(tag_edit_key, False)
                                         
-                                        btn_c1, btn_c2 = st.columns(2)
+                                        btn_c1, btn_c2, btn_c3 = st.columns(3)
                                         with btn_c1:
                                             if st.button("✏️ 开始修改tex内容", key=f"subj_start_btn_{fpath}"):
                                                 st.session_state[edit_mode_key] = True
@@ -1764,6 +2104,8 @@ def page_browse(is_exam_mode=False):
                                                 if st.button("🏷️ 开始修改板块标签", key=f"tag_start_btn_{fpath}"):
                                                     st.session_state[tag_edit_key] = True
                                                     st.rerun()
+                                        with btn_c3:
+                                            render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1")
                                                 
                                         if is_tag_editing:
                                             current_tags = extract_tags_from_fpath(fpath)
@@ -1775,6 +2117,8 @@ def page_browse(is_exam_mode=False):
                                         st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
                                     except Exception as e:
                                         st.error(f"渲染错误: {e}")
+                                
+                                render_ai_solution_panel(fpath, q_label, key_prefix="ai_solution_v1")
                                 
                                 st.divider()
                         elif selected_option:
@@ -1860,7 +2204,7 @@ def page_browse(is_exam_mode=False):
                                         tag_edit_key = f"tag_edit_mode_{fpath}"
                                         is_tag_editing = st.session_state.get(tag_edit_key, False)
                                         
-                                        btn_c1, btn_c2 = st.columns(2)
+                                        btn_c1, btn_c2, btn_c3 = st.columns(3)
                                         with btn_c1:
                                             if st.button("✏️ 开始修改tex内容", key=f"subj_start_btn_{fpath}"):
                                                 st.session_state[edit_mode_key] = True
@@ -1881,6 +2225,8 @@ def page_browse(is_exam_mode=False):
                                                 if st.button("🏷️ 开始修改板块标签", key=f"tag_start_btn_{fpath}"):
                                                     st.session_state[tag_edit_key] = True
                                                     st.rerun()
+                                        with btn_c3:
+                                            render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1")
                                                 
                                         if is_tag_editing:
                                             current_tags = extract_tags_from_fpath(fpath)
@@ -1892,6 +2238,8 @@ def page_browse(is_exam_mode=False):
                                         st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
                                     except Exception as e:
                                         st.error(f"渲染错误: {e}")
+                                
+                                render_ai_solution_panel(fpath, q_label, key_prefix="ai_solution_v1")
                                 
                                 st.divider()
 
@@ -2080,7 +2428,7 @@ def page_browse(is_exam_mode=False):
                                     tag_edit_key = f"tag_edit_mode_{q_path}"
                                     is_tag_editing = st.session_state.get(tag_edit_key, False)
                                     
-                                    btn_c1, btn_c2 = st.columns(2)
+                                    btn_c1, btn_c2, btn_c3 = st.columns(3)
                                     with btn_c1:
                                         if st.button("✏️ 开始修改tex内容", key=f"start_btn_{q_path}"):
                                             st.session_state[edit_mode_key] = True
@@ -2101,6 +2449,8 @@ def page_browse(is_exam_mode=False):
                                             if st.button("🏷️ 开始修改板块标签", key=f"tag_start_btn_{q_path}"):
                                                 st.session_state[tag_edit_key] = True
                                                 st.rerun()
+                                    with btn_c3:
+                                        render_ai_solution_generate_button(q_path, content, key_prefix="ai_solution_v1")
                                             
                                     if is_tag_editing:
                                         current_tags = extract_tags_from_fpath(q_path)
@@ -2109,6 +2459,8 @@ def page_browse(is_exam_mode=False):
     
                             with c2:
                                 st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+                            
+                            render_ai_solution_panel(q_path, q_label, key_prefix="ai_solution_v1")
                             
                             st.divider()
     
@@ -2231,12 +2583,13 @@ def page_browse(is_exam_mode=False):
                                 time.sleep(0.5)
                                 st.rerun()
                         else:
-                            st.text_area("源码", value=content, height=est_height, disabled=True, key=text_area_key + "_readonly")
+                            mtime_token = int(os.path.getmtime(fpath)) if os.path.exists(fpath) else 0
+                            st.text_area("源码", value=content, height=est_height, disabled=True, key=f"{text_area_key}_readonly_{mtime_token}")
                             
                             tag_edit_key = f"time_tag_edit_mode_{fpath}"
                             is_tag_editing = st.session_state.get(tag_edit_key, False)
                             
-                            btn_c1, btn_c2 = st.columns(2)
+                            btn_c1, btn_c2, btn_c3 = st.columns(3)
                             with btn_c1:
                                 if st.button("✏️ 开始修改tex内容", key=f"time_start_btn_{fpath}"):
                                     st.session_state[edit_mode_key] = True
@@ -2257,6 +2610,8 @@ def page_browse(is_exam_mode=False):
                                     if st.button("🏷️ 开始修改板块标签", key=f"time_tag_start_btn_{fpath}"):
                                         st.session_state[tag_edit_key] = True
                                         st.rerun()
+                            with btn_c3:
+                                render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1")
                                     
                             if is_tag_editing:
                                 current_tags = extract_tags_from_fpath(fpath)
@@ -2268,6 +2623,8 @@ def page_browse(is_exam_mode=False):
                             st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
                         except Exception as e:
                             st.error(f"渲染错误: {e}")
+                    
+                    render_ai_solution_panel(fpath, q_label, key_prefix="ai_solution_v1")
                     
                     st.divider()
 
@@ -2320,10 +2677,14 @@ def page_browse(is_exam_mode=False):
                 with col_edit:
                     editor_key = f"editor_{selected_file_path}"
                     new_content = st.text_area("源码", value=current_content, height=600, key=editor_key, label_visibility="collapsed")
-                    if st.button("💾 保存修改", type="primary", key=f"save_{selected_file_path}"):
-                        save_modified_tex_file(selected_file_path, new_content)
-                        st.session_state["last_saved"] = time.time() 
-                        st.toast("文件已保存！", icon="✅")
+                    s1, s2 = st.columns(2)
+                    with s1:
+                        if st.button("💾 保存修改", type="primary", key=f"save_{selected_file_path}", use_container_width=True):
+                            save_modified_tex_file(selected_file_path, new_content)
+                            st.session_state["last_saved"] = time.time() 
+                            st.toast("文件已保存！", icon="✅")
+                    with s2:
+                        render_ai_solution_generate_button(selected_file_path, new_content, key_prefix="ai_solution_v1", use_container_width=True)
                         
                 with col_preview:
                     try:
@@ -2332,6 +2693,8 @@ def page_browse(is_exam_mode=False):
                         st.markdown(md_content, unsafe_allow_html=True)
                     except Exception as e:
                         st.error(f"预览渲染出错: {e}")
+                
+                render_ai_solution_panel(selected_file_path, q_label, key_prefix="ai_solution_v1")
                         
             if not is_exam_mode:
                 with st.expander("查看文件路径"):
@@ -3972,7 +4335,8 @@ def page_tag_edit():
         with c_edit_left:
             st.subheader("LaTeX 源码预览")
             est_height = get_editor_height(content)
-            st.text_area("源码", value=content, height=est_height, disabled=True, key=f"te_preview_left_{file_path}")
+            mtime_token = int(os.path.getmtime(file_path)) if os.path.exists(file_path) else 0
+            st.text_area("源码", value=content, height=est_height, disabled=True, key=f"te_preview_left_{file_path}_{mtime_token}")
             st.caption(f"文件路径: {file_path}")
             
         with c_edit_right:
@@ -4745,12 +5109,59 @@ def render_advanced_search_results():
             c1, c2 = st.columns([1, 1])
             with c1:
                 fpath_hash = hashlib.md5(fpath.encode()).hexdigest()
-                st.text_area("源码", value=content, height=get_editor_height(content), disabled=True, key=f"adv_search_readonly_{fpath_hash}")
+                edit_mode_key = f"adv_edit_mode_{fpath_hash}"
+                tag_edit_key = f"adv_tag_edit_mode_{fpath_hash}"
+                is_editing = st.session_state.get(edit_mode_key, False)
+                est_height = get_editor_height(content)
+
+                if is_editing:
+                    new_content = st.text_area("源码", value=content, height=est_height, key=f"adv_search_edit_{fpath_hash}")
+                    if st.button("💾 保存修改", key=f"adv_search_save_{fpath_hash}", type="primary"):
+                        save_modified_tex_file(fpath, new_content)
+                        st.session_state[edit_mode_key] = False
+                        st.toast(f"{q_label} 已保存", icon="✅")
+                        time.sleep(0.5)
+                        st.rerun()
+                else:
+                    mtime_token = int(os.path.getmtime(fpath)) if os.path.exists(fpath) else 0
+                    st.text_area("源码", value=content, height=est_height, disabled=True, key=f"adv_search_readonly_{fpath_hash}_{mtime_token}")
+                    is_tag_editing = st.session_state.get(tag_edit_key, False)
+
+                    b1, b2, b3 = st.columns(3)
+                    with b1:
+                        if st.button("✏️ 开始修改tex内容", key=f"adv_search_start_{fpath_hash}", use_container_width=True):
+                            st.session_state[edit_mode_key] = True
+                            st.rerun()
+                    with b2:
+                        if is_tag_editing:
+                            if st.button("✅ 完成修改板块标签", key=f"adv_tag_save_{fpath_hash}", type="primary", use_container_width=True):
+                                new_tags = st.session_state.get(f"adv_tag_select_{fpath_hash}")
+                                if new_tags:
+                                    if update_file_tags(fpath, new_tags):
+                                        st.toast("标签修改成功！", icon="✅")
+                                        st.session_state[tag_edit_key] = False
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    else:
+                                        st.error("文件名格式不支持修改标签")
+                        else:
+                            if st.button("🏷️ 开始修改板块标签", key=f"adv_tag_start_{fpath_hash}", use_container_width=True):
+                                st.session_state[tag_edit_key] = True
+                                st.rerun()
+                    with b3:
+                        render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1", use_container_width=True)
+
+                    if is_tag_editing:
+                        current_tags = extract_tags_from_fpath(fpath)
+                        valid_tags = [t for t in current_tags if t in SUBJECTS] or [SUBJECTS[0]]
+                        st.multiselect("修改知识板块 (首个为主)", options=SUBJECTS, default=valid_tags, key=f"adv_tag_select_{fpath_hash}")
             with c2:
                 try:
                     st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"渲染错误: {e}")
+
+            render_ai_solution_panel(fpath, q_label, key_prefix="ai_solution_v1")
             st.divider()
     else:
         st.warning("未找到匹配的题目。")

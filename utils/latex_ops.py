@@ -82,6 +82,9 @@ def latex_to_markdown(content, show_title=True):
     content = re.sub(r'\\end\{answer\}', '', content)
     
     # 处理 solution/solutions 环境
+    # 优先匹配带参数的 \begin{solutions}[另解]
+    content = re.sub(r'\\begin\{solutions?\}\[(.*?)\]', r'\n\n**【\1】**\n', content)
+    # 再匹配没有参数的普通解答
     content = re.sub(r'\\begin\{solutions?\}', '\n\n**【解答】**\n', content)
     content = re.sub(r'\\end\{solutions?\}', '', content)
     
@@ -145,6 +148,9 @@ def latex_to_markdown(content, show_title=True):
         return f'<span style="display:inline-block; width:1.2em; height:1.2em; line-height:1.2em; text-align:center; border-radius:50%; border:1px solid currentColor; font-size:0.85em;">{num}</span>'
 
     content = re.sub(r'\\circled\{(.*?)\}', replace_circled, content)
+    
+    # 处理 \boxed{}
+    content = re.sub(r'\\boxed\{(.*?)\}', r'<span style="border: 1px solid #c9d1d9; padding: 2px 6px; border-radius: 4px; font-weight: bold;">\1</span>', content)
 
     # 1. 替换被抽离的 \input{... 相关图/...} 命令为渲染图片
     def replace_input_tikz(match):

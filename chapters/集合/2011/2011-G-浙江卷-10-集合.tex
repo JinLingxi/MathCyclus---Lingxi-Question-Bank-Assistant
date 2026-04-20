@@ -24,3 +24,23 @@ D
 \begin{solutions}
 注意到 $a\neq0$, $c\neq0$ 时，$x+a=0$ 与 $ax+1=0$，$x^2+bx+c=0$ 与 $cx^2+bx+1=0$ 的解互为倒数，进而 $g(x)=0$ 的根是 $f(x)=0$ 非零根的倒数，因此 $|T|\leq|S|$，D 错误。
 \end{solutions}
+
+\begin{solutions}[另解]
+分析函数零点个数与参数关系。
+
+当 $a=0$ 时 ， $g(x)=c\displaystyle{x^2+bx+1}$,此时 $|T|\le 2$ . 不可能为 $3$ .
+
+当 $c=0$ 时 ， $g(x)=(a\displaystyle{x+1})(b\displaystyle{x+1})$,此时 $|T|\le 2$ . 不可能为 $3$ .
+
+当 $a\neq 0$ 且 $c\neq 0$ 时 ， 设 $x^2+b\displaystyle{x+c}=0$ 的两根为 $r_1,r_2$, 则 $c\displaystyle{x^2+b\displaystyle{x+1}=0}$ 的两根为 $\displaystyle{\frac{1}{r_1}},\displaystyle{\frac{1}{r_2}}$ .
+
+集合 $S$ 的元素为 $-a,r_1,r_2$, 集合 $T$ 的元素为 $-\displaystyle{\frac{1}{a}},\displaystyle{\frac{1}{r_1}},\displaystyle{\frac{1}{r_2}}$ .
+
+若 $|S|=2$, 则必有两元素相等。 因判别式 $\Delta=b^2-4c$, 若 $\Delta=0$ 则 $r_1=r_2$, 此时 $|T|\le 2$; 故必有 $\Delta>0$ 且 $-a=r_1$（或 $-a=r_2$） .
+
+由 $-a=r_1$ 可得 $\displaystyle{\frac{1}{r_1}}=-\displaystyle{\frac{1}{a}}$, 即集合 $T$ 中已有两个元素重合。
+
+因此 $T$ 中不同实数根的个数最多为 $2$, 不可能等于 $3$.
+
+综上 ， $|S|=2$ 且 $|T|=3$ 的情况不可能出现， 故选 \boxed{D}.
+\end{solutions}
