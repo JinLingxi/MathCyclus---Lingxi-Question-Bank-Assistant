@@ -51,18 +51,23 @@ def get_editor_height(content):
         return base_height + tikz_count * 300
     return base_height
 
-def latex_to_markdown(content):
+def latex_to_markdown(content, show_title=True):
     """简单的 LaTeX 转 Markdown 用于预览"""
+    # 处理批量模式下的多题分割线 ---xxx.tex---
+    if "---" in content:
+        # 将分割线替换为 Markdown 分隔符和文件名标题
+        content = re.sub(r'---(.*?\.tex)---', r'\n\n---\n### 📄 \1\n', content)
+        
     # 提取 problem / question 环境参数
-    header = ""
-    # 尝试匹配 \begin{problem}{...}{...}{...}{...}{...}
-    match = re.search(r'\\begin\{problem\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}', content)
-    if match:
+    # 使用 re.finditer 处理多题情况
+    for match in reversed(list(re.finditer(r'\\begin\{problem\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}', content))):
         year, ptype, name, num, subj = match.groups()
-        # 将标题格式修改为: 【年份 试卷名称，题号】（板块名称）
-        header = f"**【{year}  {name}，{num}】**"
-        # 移除 begin 标签
-        content = content[match.end():]
+        if show_title:
+            header = f"**【{year}  {name}，{num}】**\n\n"
+            content = content[:match.start()] + header + content[match.end():]
+        else:
+            # 将原有的 \begin{problem}... 标签直接去掉，不重复添加 Markdown header
+            content = content[:match.start()] + content[match.end():]
     
     # 移除可能存在的 \begin{problem} / \end{problem} (不带参数)
     content = re.sub(r'\\begin\{problem\}(\[.*?\])?', '', content)
@@ -79,6 +84,10 @@ def latex_to_markdown(content):
     # 处理 solution/solutions 环境
     content = re.sub(r'\\begin\{solutions?\}', '\n\n**【解答】**\n', content)
     content = re.sub(r'\\end\{solutions?\}', '', content)
+    
+    # 清理批量模式下的 Label Data
+    content = re.sub(r'%(?: === Meta Data ===| === Begin Label Data ===)\n(.*?)%(?: === End Meta ===| === End\s+Label Data ===)\n', '', content, flags=re.DOTALL)
+
     
     # 处理 choices 环境 (A. B. C. D. 样式)
     def replace_choices_env(match):
@@ -235,7 +244,7 @@ def latex_to_markdown(content):
     content = re.sub(r'\\\[(.*?)\\\]', r'$$\n\1\n$$', content, flags=re.DOTALL)
     content = re.sub(r'\\\((.*?)\\\)', r'$\1$', content, flags=re.DOTALL)
     
-    return header + content
+    return content
 
 def generate_filename(year, p_type, name, number, subject):
     return f"{year}-{p_type}-{name}-{number}-{subject}.tex"

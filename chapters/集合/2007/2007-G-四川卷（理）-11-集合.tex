@@ -1,0 +1,55 @@
+% === Begin Label Data ===
+% ID: 297
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2007}{G}{四川卷（理）}{11}{集合}
+11. 如图，$ l_1 $、$ l_2 $、$ l_3 $ 是同一平面内的三条平行直线，$ l_1 $ 与 $ l_2 $ 间的距离是 $ 1 $，$ l_2 $ 与 $ l_3 $ 间的距离是 $ 2 $，正三角形 $ ABC $ 的三顶点分别在 $ l_1 $、$ l_2 $、$ l_3 $ 上，则 $ \triangle ABC $ 的边长是
+
+\begin{choices}
+\choice{{$2\sqrt{3}$}}
+\choice{{$\dfrac{4\sqrt{6}}{3}$}}
+\choice{{$\dfrac{3\sqrt{7}}{4}$}}
+\choice{{$\dfrac{2\sqrt{21}}{3}$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+D
+\end{answer}
+
+\begin{solutions}
+如图，以直线 $ l_2 $ 为 $ x $ 轴，点 $ B $ 为原点建立平面直角坐标系，由题意及图象得直线 $ l_1 $ 的方程为 $ y=1 $，直线 $ l_3 $ 的方程为 $ y=-2 $，设正 $ \triangle ABC $ 的边长为 $ a $（$ a>0 $），设点 $ A(x_1,1) $，点 $ C(x_2,-2) $，由两点间距离公式可得 $ |AB|^2=x_1^2+1=a^2 $，即 $ x_1^2=a^2-1 $，且 $ |BC|^2=x_2^2+(-2)^2=a^2 $，即 $ x_2^2=a^2-4 $，又 $ |AC|^2=(x_1-x_2)^2+(1-(-2))^2=x_1^2+x_2^2-2x_1x_2+9=a^2 $，代入 $ x_1^2 $ 与 $ x_2^2 $ 化简得 $ a^2+4=2x_1x_2 $，两边平方得 $ (a^2+4)^2=4x_1^2x_2^2=4(a^2-1)(a^2-4) $，展开整理得 $ 3a^4-28a^2=0 $，因 $ a>0 $，解得 $ a^2=\dfrac{28}{3} $，即 $ a=\dfrac{2\sqrt{21}}{3} $，故选 D.
+
+\begin{tikzpicture}[scale=1.2]
+    % 定义三条平行线的纵坐标
+    \def\yOne{1}
+    \def\yTwo{0}
+    \def\yThr{-2}
+
+    % 绘制三条平行线，并适当向左右延伸
+    \draw (-2, \yOne) -- (4.5, \yOne) node[right] {$l_1$};
+    \draw (-2, \yTwo) -- (4.5, \yTwo) node[right] {$l_2$};
+    \draw (-2, \yThr) -- (4.5, \yThr) node[right] {$l_3$};
+
+    % 严格按照解析几何计算的精确坐标定义顶点
+    % B 作为原点
+    \coordinate (B) at (0, \yTwo);
+    % A 的横坐标为 5\sqrt{3}/3，纵坐标为 1
+    \coordinate (A) at ({5*sqrt(3)/3}, \yOne);
+    % C 的横坐标为 4\sqrt{3}/3，纵坐标为 -2
+    \coordinate (C) at ({4*sqrt(3)/3}, \yThr);
+
+    % 绘制正三角形 ABC (稍微加粗一点以突出重点)
+    \draw[thick] (A) -- (B) -- (C) -- cycle;
+
+    % 添加顶点标签
+    \node[above] at (A) {$A$};
+    \node[below left] at (B) {$B$};
+    \node[below] at (C) {$C$};
+
+\end{tikzpicture}
+\end{solutions}

@@ -1,0 +1,31 @@
+% === Begin Label Data ===
+% ID: 299
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2026}{M}{2026年普通高等学校招生全国统一考试数学模拟测试(五)}{6}{解析几何}
+将双曲线 $ C\colon\dfrac{x^{2}}{a^{2}}-\dfrac{y^{2}}{b^{2}}=1 $（$ a>0 $，$ b>0 $）绕原点 $ O $ 逆时针旋转 $ \dfrac{3\pi}{8} $ 后，得到函数 $ y=x+\dfrac{1}{x} $ 的图象，则 $ ab= $
+\begin{choices}
+\choice{{$1$}}
+\choice{{$2$}}
+\choice{{$\sqrt{6}$}}
+\choice{{$2\sqrt{2}$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+$2$
+\end{answer}
+
+\begin{solutions}
+
+
+但由手写稿推导：令 $ x_{0}^{2} = \dfrac{1}{\sqrt{2}} $，得 $ a^{2} = 2(\sqrt{2}+1) $，$ \dfrac{b}{a} = \sqrt{2}-1 $，故
+$$
+ab = a^{2}\cdot\dfrac{b}{a} = 2(\sqrt{2}+1)(\sqrt{2}-1) = 2(2-1) = 2
+$$
+（【AI 纠错】：手写稿中 $ x_{0}^{2} = \dfrac{1}{\sqrt{2}} = \dfrac{\sqrt{2}}{2} $ 正确；后续 $ a = \dfrac{\sqrt{2}}{\sqrt{x_{0}^{2}+1}} $ 推导有误，正确应由旋转后曲线为等轴双曲线 $ xy = 1 $ 平移所得，原双曲线为等轴双曲线当且仅当 $ a = b $，但此处非等轴；更严谨方法是：函数 $ y = x + \dfrac{1}{x} $ 可写为 $ (x-y)x = -1 $，即 $ x^{2} - xy + 1 = 0 $，其二次型矩阵特征值对应原双曲线的 $ \dfrac{1}{a^{2}}, -\dfrac{1}{b^{2}} $，经旋转角 $ \theta $ 后交叉项系数为 $ \sin 2\theta\left(\dfrac{1}{a^{2}} + \dfrac{1}{b^{2}}\right) $，令其等于 $ -1 $，且无 $ Y^{2} $ 项，得 $ \dfrac{\sin^{2}\theta}{a^{2}} = \dfrac{\cos^{2}\theta}{b^{2}} $，联立解得 $ ab = 2 $，与答案一致。）
+\end{solutions}

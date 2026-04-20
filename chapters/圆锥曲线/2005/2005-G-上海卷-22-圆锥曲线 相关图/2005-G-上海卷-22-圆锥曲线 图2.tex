@@ -1,0 +1,87 @@
+\begin{tikzpicture}[scale=1.2]
+    % 1. 基础参数与椭圆
+    \def\a{3.2}     % 半长轴
+    \def\b{2.0}     % 半短轴
+    \def\rot{30}    % 椭圆旋转角度
+    
+    % 绘制椭圆并命名路径以便求交点
+    \draw[thick, rotate=\rot, name path=ellipse] (0,0) ellipse (\a cm and \b cm);
+    
+    % 中心 O
+    \coordinate (O) at (0,0);
+    \fill (O) circle (1.2pt) node[below right] {$O$};
+
+    % 2. 第一组平行弦 AB (上) 和 CD (下)
+    \def\angOne{18} % 斜率角度
+    % 通过调整基准点让 A 落在椭圆最左侧附近
+    \path[name path=lineAB] (0, 0.6) +(\angOne:-5) -- +(\angOne:5);
+    \path[name path=lineCD] (0, -1.2) +(\angOne:-5) -- +(\angOne:5);
+    
+    % 自动求交点
+    \path [name intersections={of=ellipse and lineAB, by={A,B}}];
+    \path [name intersections={of=ellipse and lineCD, by={C,D}}];
+    
+    % 绘制弦并打上黑点和标签
+    \draw (A) -- (B);
+    \draw (C) -- (D);
+    \fill (A) circle (1.2pt) node[left]  {$A$};
+    \fill (B) circle (1.2pt) node[right] {$B$};
+    \fill (C) circle (1.2pt) node[left]  {$C$};
+    \fill (D) circle (1.2pt) node[right] {$D$};
+    
+    % 中点 M1, M2
+    \coordinate (M1) at ($(A)!0.5!(B)$);
+    \coordinate (M2) at ($(C)!0.5!(D)$);
+    \fill (M1) circle (1.2pt) node[above  right] {$M_1$};
+    \fill (M2) circle (1.2pt) node[below right] {$M_2$};
+
+    % 3. 第二组平行弦 EF (左) 和 GH (右)
+    \def\angTwo{82} % 近乎竖直的倾斜角度
+    \path[name path=lineEF] (-0.6, 0) +(\angTwo:-5) -- +(\angTwo:5);
+    \path[name path=lineGH] (1.2, 0) +(\angTwo:-5) -- +(\angTwo:5);
+    
+    % 自动求交点（注意由于角度是从左下到右上，第一个交点是底部的）
+    \path [name intersections={of=ellipse and lineEF, by={E,F}}];
+    \path [name intersections={of=ellipse and lineGH, by={G,H}}];
+    
+    % 绘制弦并打上黑点和标签
+    \draw (E) -- (F);
+    \draw (G) -- (H);
+    \fill (E) circle (1.2pt) node[above] {$E$};
+    \fill (F) circle (1.2pt) node[below left] {$F$};
+    \fill (G) circle (1.2pt) node[above right] {$G$};
+    \fill (H) circle (1.2pt) node[below] {$H$};
+    
+    % 中点 M3, M4
+    \coordinate (M3) at ($(E)!0.5!(F)$);
+    \coordinate (M4) at ($(G)!0.5!(H)$);
+    \fill (M3) circle (1.2pt) node[below left] {$M_3$};
+    \fill (M4) circle (1.2pt) node[below right] {$M_4$};
+
+    % 4. 绘制延伸到椭圆边界的中点连线 (完美解决不相交问题)
+    % 构造足够长的射线求与椭圆的交点
+    \path[name path=rayM1M2] ($(M1)!-2!(M2)$) -- ($(M1)!3!(M2)$);
+    \path [name intersections={of=ellipse and rayM1M2, by={M1ext1, M1ext2}}];
+    \draw (M1ext1) -- (M1ext2); % 画出贯穿椭圆的直线
+
+    \path[name path=rayM3M4] ($(M3)!-2!(M4)$) -- ($(M3)!3!(M4)$);
+    \path [name intersections={of=ellipse and rayM3M4, by={M3ext1, M3ext2}}];
+    \draw (M3ext1) -- (M3ext2); % 画出贯穿椭圆的直线
+
+    % 5. 绘制辅助虚线 AC 及其延长线
+    % 利用向量计算，让虚线向 A 上方和 C 下方延伸出 15% 的长度
+    \coordinate (dirAC) at ($(C)-(A)$);
+    \coordinate (A_up) at ($(A) - 0.15*(dirAC)$);
+    \coordinate (C_down) at ($(C) + 0.15*(dirAC)$);
+    
+    \draw[dashed] (A_up) -- (C_down);
+
+    % 6. 精确的角标记 (同旁内角)
+    % A 处：弦 AB 与 虚线 AC 的夹角
+    % C 处：弦 CD 与 虚线 CA 的夹角
+    \pic [draw, angle radius=0.25cm] {angle = B--A--A_up};
+    \pic [draw, angle radius=0.35cm] {angle = B--A--A_up};
+    \pic [draw, angle radius=0.25cm] {angle = D--C--A};
+    \pic [draw, angle radius=0.35cm] {angle = D--C--A};
+
+\end{tikzpicture}

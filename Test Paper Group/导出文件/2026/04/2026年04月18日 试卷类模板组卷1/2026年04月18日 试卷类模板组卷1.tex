@@ -1,0 +1,435 @@
+\let\stop\empty
+\documentclass{exam-zh}
+\usepackage{siunitx}
+\usepackage{tkz-euclide}
+\usepackage{diagbox}  
+\usepackage{lastpage}
+\usepackage{caption}
+\examsetup{
+  page/size=a4paper,
+  paren/show-paren=true,
+  paren/show-answer=true,
+  fillin/show-answer=false,
+  font      = times,
+  math-font = xits,
+  fillin/no-answer-type=none,
+  %solution/show-solution=show-stay,
+  %solution/label-indentation=false
+  }
+%\newcommand{\customcurve}[1][1]{%
+  %\tikz[baseline,scale=#1,line width=0.8pt,line cap=round]{%
+    %\draw (0.15,0.1) ellipse (0.15 and 0.1);
+    %\draw (0,0.1) -- (-0.12 , -0.1);
+    %\draw (0,0.1) -- (-0.12 , 0.3);
+  %}%
+%}
+\newcommand{\customcurve}[1][1]{%
+  \tikz[baseline,yshift=3,scale=0.05,thick,line width=0.8pt,
+        line cap=round, domain=-1:2.832, samples=300]{
+    \draw plot (\x,{sqrt(16/(\x+2)^2 - (\x-2)^2)});
+    \draw plot (\x,{-sqrt(16/(\x+2)^2 - (\x-2)^2)});
+    }
+}
+
+\everymath{\displaystyle}
+
+\title{2026年04月18日 试卷类模板组卷1}
+
+\subject{数学}
+
+
+
+\begin{document}
+
+% \information{
+%   姓名\underline{\hspace{6em}},
+%   座位号\underline{\hspace{15em}}
+% }
+% \warning{（在此卷上答题无效）}
+
+\secret
+
+\maketitle
+\begin{center}
+    本试卷共 \pageref{LastPage} 页，19 题。全卷满分 150 分。考试用时 120 分钟。
+\end{center}
+
+
+\begin{notice}
+  \item 答题前，先将自己的姓名、准考证号、考场号、座位号填写在试卷和答题卡上，
+    并将准考证号条形码粘贴在答题卡上的指定位置。
+  \item 选择题的作答：每小题选出答案后，用 2B 铅笔把答题卡上对应题目的答案标号涂黑。
+    写在试卷、草稿纸和答题卡上的非答题区域均无效。
+  \item 填空题和解答题的作答：用黑色签字笔直接答在答题卡上对应的答题区域内。
+    写在试卷、草稿纸和答题卡上的非答题区域均无效。
+  \item 考试结束后，请将本试卷和答题卡一并上交。
+\end{notice}
+
+
+
+\section{%
+  选择题：本题共 8 小题，每小题 5 分，共 40 分。
+  在每小题给出的四个选项中，只有一项是符合题目要求的。
+}
+
+% 1.
+% === Begin Label Data ===
+% ID: 22
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+数据 2, 8, 14, 16, 20 的平均数为
+(\hspace{1cm})
+\begin{choices}
+\item 8
+\item 9
+\item 12
+\item 18
+\end{choices}
+\end{question}
+
+% 2.
+% === Begin Label Data ===
+% ID: 33
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+已知复数 $z=1+\mathrm{i}$，则 $\dfrac{1}{z-1}=$
+(\hspace{1cm})
+\begin{choices}
+\item $-\mathrm{i}$
+\item $\mathrm{i}$
+\item -1
+\item 1
+\end{choices}
+\end{question}
+
+% 3.
+% === Begin Label Data ===
+% ID: 34
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+已知集合 $A=\{-4,0,1,2,8\}$，$B=\{x \mid x^3=x\}$，则 $A \cap B =$
+(\hspace{1cm})
+\begin{choices}
+\item $\{0,1,2\}$
+\item $\{1,2,8\}$
+\item $\{2,8\}$
+\item $\{0,1\}$
+\end{choices}
+\end{question}
+
+% 4.
+% === Begin Label Data ===
+% ID: 35
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+不等式 $\dfrac{x-4}{x-1} \geqslant 2$ 的解集是
+(\hspace{1cm})
+\begin{choices}
+\item $\{x \mid -2 \leqslant x \leqslant 1\}$
+\item $\{x \mid x \leqslant -2\}$
+\item $\{x \mid -2 \leqslant x < 1\}$
+\item $\{x \mid x > 1\}$
+\end{choices}
+\end{question}
+
+% 5.
+% === Begin Label Data ===
+% ID: 36
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+在 $\triangle ABC$ 中，已知 $BC=2$，$AC=1+\sqrt{3}$，$AB=\sqrt{6}$，则 $A=$
+(\hspace{1cm})
+\begin{choices}
+\item $45^\circ$
+\item $60^\circ$
+\item $120^\circ$
+\item $135^\circ$
+\end{choices}
+\end{question}
+
+% 6.
+% === Begin Label Data ===
+% ID: 37
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+设抛物线 $C: y^2=2px (p>0)$ 的焦点为 $F$，点 $A$ 在 $C$ 上，过作 $C$ 的准线的垂线，垂足为 $B$. 若直线 $BF$ 的方程为 $y=-2x+2$，则 $|AF|=$
+(\hspace{1cm})
+\begin{choices}
+\item 3
+\item 4
+\item 5
+\item 6
+\end{choices}
+\end{question}
+
+% 7.
+% === Begin Label Data ===
+% ID: 113
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+记 $S_n$ 为等差数列 $\{a_n\}$ 的前 $n$ 项和，若 $S_3=6, S_5=-5$，则 $S_6=$
+(\hspace{1cm})
+\begin{choices}
+\item $-20$
+\item $-15$
+\item $-10$
+\item $-5$
+\end{choices}
+\end{question}
+
+% 8.
+% === Begin Label Data ===
+% ID: 38
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+已知 $0<\alpha<\pi$，$\cos \dfrac{\alpha}{2} = \dfrac{\sqrt{5}}{5}$，则 $\sin\left(\alpha-\dfrac{\pi}{4}\right)=$
+(\hspace{1cm})
+\begin{choices}
+\item $\dfrac{\sqrt{2}}{10}$
+\item $\dfrac{\sqrt{2}}{5}$
+\item $\dfrac{3\sqrt{2}}{10}$
+\item $\dfrac{7\sqrt{2}}{10}$
+\end{choices}
+\end{question}
+
+\section{%
+  选择题：本题共 3 小题，每小题 6 分，共 18 分。
+  在每小题给出的选项中，有多项符合题目要求的。
+  全部选对的得 6 分，部分选择的得部分分，有选错的得 0 分。
+}
+
+% 9.
+% === Begin Label Data ===
+% ID: 114
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+记 $S_n$ 为等比数列 $\{a_n\}$ 的前 $n$ 项和，$q$ 为 $\{a_n\}$ 的公比，$q>0$，若 $S_3=7, a_3=1$，则
+(\hspace{1cm})
+\begin{choices}
+\item $q=\dfrac{1}{2}$
+\item $a_5=\dfrac{1}{9}$
+\item $S_5=8$
+\item $a_n+S_n=8$
+\end{choices}
+\end{question}
+
+% 10.
+% === Begin Label Data ===
+% ID: 23
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+已知 $f(x)$ 是定义在 $\mathbf{R}$ 上奇函数，当 $x>0$ 时，$f(x)=(x^2-3)e^x+2$，则
+(\hspace{1cm})
+\begin{choices}
+\item $f(0)=0$
+\item 当 $x<0$ 时，$f(x)=(3-x^2)e^{-x}-2$
+\item $f(x) \geqslant 2$ 当且仅当 $x \geqslant \sqrt{3}$
+\item $x=-1$ 是 $f(x)$ 的极大值点
+\end{choices}
+\end{question}
+
+% 11.
+% === Begin Label Data ===
+% ID: 24
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+双曲线 $C: \dfrac{x^2}{a^2} - \dfrac{y^2}{b^2} = 1 (a>0, b>0)$ 的左、右焦点分别为 $F_1, F_2$，左、右顶点分别为 $A_1, A_2$. 以 $F_1 F_2$ 为直径的圆与 $C$ 的一条渐近线交于 $M,N$ 两点，且 $\angle MA_1N = \dfrac{5\pi}{6}$，则
+(\hspace{1cm})
+\begin{choices}
+\item $\angle A_1MA_2 = \dfrac{\pi}{6}$
+\item $|MA_1|=2|MA_2|$
+\item $C$ 的离心率为 $\sqrt{13}$
+\item 当 $a=\sqrt{2}$ 时，四边形 $NA_1MA_2$ 的面积为 $8\sqrt{3}$
+\end{choices}
+\end{question}
+
+\section{填空题：本题共 3 小题，每小题 5 分，共 15 分。}
+
+% 12.
+% === Begin Label Data ===
+% ID: 25
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+已知向量 $\mathbf{a}=(x,1)$，$\mathbf{b}=(x-1, 2x)$. 若 $\mathbf{a} \perp (\mathbf{a}-\mathbf{b})$，则 $|\mathbf{a}|=$ \underline{\hspace{4em}}.
+\end{question}
+
+% 13.
+% === Begin Label Data ===
+% ID: 26
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+已知 $x=2$ 是 $f(x)=(x-1)(x-2)(x-a)$ 的极值点，则 $f(0)=$ \underline{\hspace{4em}}.
+\end{question}
+
+% 14.
+% === Begin Label Data ===
+% ID: 27
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{question}
+一个底面半径为 4cm，高为 9cm 的封闭圆柱形容器内有两个半径相等的铁球，则铁球半径的最大值为 \underline{\hspace{4em}} cm.
+\end{question}
+
+\section{解答题：本题共 5 小题，共 77 分。解答应写出文字说明、证明过程或者演算步骤。}
+
+% 15.
+% === Begin Label Data ===
+% ID: 28
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}[points = 13]
+已知函数 $f(x)=\cos(2x+\varphi) (0 \leqslant \varphi < \pi)$，$f(0)=\dfrac{1}{2}$.
+
+(1) 求 $\varphi$;
+
+(2) 设 $g(x)=f(x)+f\left(x-\dfrac{\pi}{6}\right)$，求 $g(x)$ 的值域和单调区间.
+\end{problem}
+
+% 16.
+% === Begin Label Data ===
+% ID: 29
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}[points = 15]
+已知椭圆 $C: \dfrac{x^2}{a^2} + \dfrac{y^2}{b^2} = 1 (a>b>0)$ 的离心率为 $\dfrac{\sqrt{2}}{2}$，长轴长为 4.
+
+(1) 求 $C$ 的方程;
+
+(2) 过点 $(0,-2)$ 的直线 $l$ 与 $C$ 交于 $A,B$ 两点，$O$ 为坐标原点. 若 $\triangle AOB$ 的面积为 $\sqrt{2}$，求 $|AB|$.
+\end{problem}
+
+% 17.
+% === Begin Label Data ===
+% ID: 30
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}[points = 15]
+如图，平面四边形 $ABCD$ 中，$AB \mathop{//} CD$，$\angle DAB = 90^\circ$，$AD=\dfrac{CD}{2}=\dfrac{AB}{3}$，点 $E$ 在 $AB$ 上，点 $F$ 是 $CD$ 的中点，且 $EF \mathop{//} AD$. 将四边形 $EFDA$ 沿 $EF$ 翻折至四边形 $EFD'A'$，使得面 $EFD'A'$ 与面 $EFBC$ 所成二面角为 $60^\circ$.
+
+(1) 证明: $A'B \mathop{//}$ 平面 $CD'F$;
+
+(2) 求面 $BCD'$ 与面 $EFD'A'$ 所成二面角的正弦值.
+\end{problem}
+
+% 18.
+% === Begin Label Data ===
+% ID: 31
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}[points = 17]
+已知函数 $f(x)=\ln(1+x)-x+\dfrac{1}{2}x^2-kx^3$，其中 $0 < k < \dfrac{1}{3}$.
+
+(1) 证明: $f(x)$ 在 $(0,+\infty)$ 存在唯一极值点和唯一零点;
+
+(2) 设 $x_1, x_2$ 分别为 $f(x)$ 的极值点和零点.
+\begin{enumerate}
+\item 设 $g(t)=f(x_1+t)-f(x_1-t)$，证明: $g(t)$ 在 $(0, x_1)$ 单调递减;
+\item 比较 $2x_1$ 与 $x_2$ 的大小.
+\end{enumerate}
+\end{problem}
+
+% 19.
+% === Begin Label Data ===
+% ID: 32
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}[points = 17]
+甲、乙两人进行乒乓球练习，每个球胜者得 1 分、负者得 0 分. 设每个球甲胜的概率为 $p \left(\dfrac{1}{2}<p<1\right)$，乙胜的概率为 $q$，$p+q=1$，且各球的胜负相互独立. 对正整数 $k \geqslant 2$，记 $p_k$ 为打完 $k$ 个球后甲比乙至少多得 2 分的概率，$q_k$ 为打完 $k$ 个球后乙比甲至少多得 2 分的概率.
+
+(1) 求 $p_3, p_4$ (用 $p$ 表示);
+
+(2) 若 $\dfrac{p_4-p_3}{q_4-q_3}=4$，求 $p$;
+
+(3) 证明: 对于任意正整数 $m$，$p_{2m+1}-q_{2m+1} < p_{2m}-q_{2m} < p_{2m+2}-q_{2m+2}$.
+\end{problem}
+
+\end{document}

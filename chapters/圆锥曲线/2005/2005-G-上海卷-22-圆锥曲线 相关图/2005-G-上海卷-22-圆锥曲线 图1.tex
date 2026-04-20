@@ -1,0 +1,9 @@
+\begin{tikzpicture}[scale=1.2]
+    % 1. 基础参数与椭圆
+    \def\a{3.2}     % 半长轴
+    \def\b{2.0}     % 半短轴
+    \def\rot{30}    % 椭圆旋转角度
+    
+    % 绘制椭圆并命名路径以便求交点
+    \draw[thick, rotate=\rot, name path=ellipse] (0,0) ellipse (\a cm and \b cm);
+\end{tikzpicture}
