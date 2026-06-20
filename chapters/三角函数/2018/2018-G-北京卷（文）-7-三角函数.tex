@@ -1,0 +1,63 @@
+% === Begin Label Data ===
+% ID: 443
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2018}{G}{北京卷（文）}{7}{三角函数}
+在平面直角坐标系中，$\widehat{AB}$，$\widehat{CD}$，$\widehat{EF}$，$\widehat{GH}$ 是圆 $x^2+y^2=1$ 上的四段圆弧（如图），点 $P$ 在其中一段上，角 $\alpha$ 以 $Ox$ 为始边，$OP$ 为终边．若 $\tan\alpha<\cos\alpha<\sin\alpha$，则 $P$ 所在的圆弧是 （ ）
+\begin{tikzpicture}[scale=1.05, line cap=round, line join=round]
+\def\R{2.2}
+\coordinate (O) at (0,0);
+
+% axes
+\draw[->] (-2.9,0) -- (2.9,0) node[below] {$x$};
+\draw[->] (0,-2.9) -- (0,2.9) node[left] {$y$};
+
+% circle
+\draw[dashed] (O) circle (\R);
+
+% points on unit circle (angles chosen to match the picture layout)
+\coordinate (A) at (\R,0);
+\coordinate (B) at ({\R*cos(35)},{\R*sin(35)});
+\coordinate (C) at ({\R*cos(65)},{\R*sin(65)});
+\coordinate (D) at ({\R*cos(85)},{\R*sin(85)});
+\coordinate (E) at ({\R*cos(100)},{\R*sin(100)});
+\coordinate (F) at ({\R*cos(140)},{\R*sin(140)});
+\coordinate (G) at ({\R*cos(180)},{\R*sin(180)});
+\coordinate (H) at ({\R*cos(210)},{\R*sin(210)});
+
+% highlight arcs AB, CD, EF, GH
+\draw[thick] (A) arc[start angle=0, end angle=35, radius=\R];
+\draw[thick] (C) arc[start angle=65, end angle=90, radius=\R];
+\draw[thick] (E) arc[start angle=100, end angle=140, radius=\R];
+\draw[thick] (G) arc[start angle=180, end angle=210, radius=\R];
+
+% labels
+\node[below left] at (O) {$O$};
+\node[above right] at (A) {$A$};
+\node[right] at (B) {$B$};
+\node[above] at (C) {$C$};
+\node[above] at (D) {$D$};
+\node[above] at (E) {$E$};
+\node[left] at (F) {$F$};
+\node[below left] at (G) {$G$};
+\node[below left] at (H) {$H$};
+\end{tikzpicture}
+\begin{choices}
+\choice{{$\widehat{AB}$}}
+\choice{{$\widehat{CD}$}}
+\choice{{$\widehat{EF}$}}
+\choice{{$\widehat{GH}$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+
+\end{answer}
+
+\begin{solutions}
+
+\end{solutions}

@@ -1,0 +1,77 @@
+% === Begin Label Data ===
+% ID: 811
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2012}{G}{上海卷}{17}{概率}
+设 $10\leqslant x_1<x_2<x_3<x_4\leqslant 10^4$，$x_5=10^5$．随机变量 $\xi_1$ 取值 $x_1$、$x_2$、$x_3$、$x_4$、$x_5$ 的概率均为 $0.2$，随机变量 $\xi_2$ 取值 $\dfrac{x_1+x_2}{2}$、$\dfrac{x_2+x_3}{2}$、$\dfrac{x_3+x_4}{2}$、$\dfrac{x_4+x_5}{2}$、$\dfrac{x_5+x_1}{2}$ 的概率也均为 $0.2$．若记 $D\xi_1$、$D\xi_2$ 分别为 $\xi_1$、$\xi_2$ 的方差，则 (\hspace{1cm})
+\begin{choices}
+\choice{{A. $D\xi_1>D\xi_2$}}
+\choice{{B. $D\xi_1=D\xi_2$}}
+\choice{{C. $D\xi_1<D\xi_2$}}
+\choice{{D. $D\xi_1$ 与 $D\xi_2$ 的大小关系与 $x_1$、$x_2$、$x_3$、$x_4$ 的取值有关}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+方法一：两个随机变量的均值都是 $\bar{x}=\dfrac{x_1+x_2+x_3+x_4+x_5}{5}$．从直观上看，$\xi_1$ 只有 $x_5$ 偏离 $\bar{x}$ 很多，而 $\xi_2$ 有 $\dfrac{x_4+x_5}{2}$、$\dfrac{x_5+x_1}{2}$ 偏离 $\bar{x}$ 很多，计算方差的时候只需要直观上看“大头”，注意
+$$
+(x_5-\bar{x})^2\approx\dfrac{9}{16}x_5^2,
+$$
+$$
+\left(\dfrac{x_4+x_5}{2}-\bar{x}\right)^2+\left(\dfrac{x_5+x_1}{2}-\bar{x}\right)^2\approx\dfrac{9}{50}x_5^2,
+$$
+所以 $D\xi_1>D\xi_2$．
+
+方法二：把方法一严格化，证明如下：由于 $10\leqslant x_1<x_2<x_3<x_4\leqslant 10^4$，$x_5=10^5$，所以
+$$
+2\times 10^4<\bar{x}<2.8\times 10^4.
+$$
+从而对 $k=1,2,3,4$，$1\times 10^4\leqslant |x_k-\bar{x}|\leqslant 1.8\times 10^4$；并且
+$$
+7.2\times 10^4\leqslant |x_5-\bar{x}|\leqslant 8\times 10^4.
+$$
+所以 $\left|\dfrac{x_k+x_5}{2}-\bar{x}\right|<3.5\times 10^4$．
+$$
+D\xi_1=\dfrac{1}{5}\sum_{k=1}^{5}(x_k-\bar{x})^2
+$$
+$$
+\geqslant\dfrac{1}{5}(x_5-\bar{x})^2=10.368\times 10^8,
+$$
+$$
+D\xi_2=\dfrac{1}{5}\sum_{k=1}^{5}\left(\dfrac{x_k+x_{k+1}}{2}-\bar{x}\right)^2\quad (x_6=x_1)
+$$
+$$
+\leqslant\dfrac{1}{5}\left[3\times(1.8\times 10^4)^2+2\times(3.5\times 10^4)^2\right]
+$$
+$$
+=6.844\times 10^8.
+$$
+所以 $D\xi_1>D\xi_2$，故选 A．
+
+方法三：事实上去掉题干条件也能选出答案．首先，两个随机变量的均值都是 $\bar{x}=\dfrac{x_1+x_2+x_3+x_4+x_5}{5}$．下面为方便起见，取 $x_6=x_1$，并记 $y_k=x_k-\bar{x}$．于是
+$$
+D\xi_1=\dfrac{1}{5}\sum_{k=1}^{5}(x_k-\bar{x})^2=\dfrac{1}{5}\sum_{k=1}^{5}y_k^2,
+$$
+$$
+D\xi_2=\dfrac{1}{5}\sum_{k=1}^{5}\left(\dfrac{x_k+x_{k+1}}{2}-\bar{x}\right)^2=\dfrac{1}{5}\sum_{k=1}^{5}\dfrac{(y_k+y_{k+1})^2}{4}.
+$$
+于是，
+$$
+5(D\xi_1-D\xi_2)=\sum_{k=1}^{5}y_k^2-\sum_{k=1}^{5}\dfrac{(y_k+y_{k+1})^2}{4}
+$$
+$$
+=\sum_{k=1}^{5}\dfrac{y_k^2}{2}-\sum_{k=1}^{5}\dfrac{y_k y_{k+1}}{2}
+$$
+$$
+=\sum_{k=1}^{5}\dfrac{(y_k-y_{k+1})^2}{4}>0.
+$$
+所以 $D\xi_1>D\xi_2$．
+\end{solutions}

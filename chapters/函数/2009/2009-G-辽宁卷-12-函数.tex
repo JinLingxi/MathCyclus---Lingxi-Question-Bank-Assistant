@@ -1,0 +1,29 @@
+% === Begin Label Data ===
+% ID: 805
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2009}{G}{辽宁卷}{12}{函数}
+若 $ x_1 $ 满足 $ 2x_1 + 2^{x_1} = 5 $，$ x_2 $ 满足 $ 2x_2 + 2\log_2(x_2 - 1) = 5 $，则 $ x_1 + x_2 = $ (\hspace{1cm})
+\begin{choices}
+\choice{{$\dfrac{5}{2}$}}
+\choice{{$3$}}
+\choice{{$\dfrac{7}{2}$}}
+\choice{{$4$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+C
+\end{answer}
+
+\begin{solutions}
+思路 1：$ 1 < x_1 < \dfrac{3}{2} $，$ 2 < x_2 < \dfrac{5}{2} $，则 $ 3 < x_1 + x_2 < 4 $，只有 C 符合题意。
+
+思路 2：由已知 $ x_1 $ 满足 $ 2^{x_1 - 1} = \dfrac{5 - 2x_1}{2} $，$ x_2 $ 满足 $ \log_2(x_2 - 1) = \dfrac{5 - 2x_2}{2} $，由于 $ y = 2^x $ 与 $ y = \log_2 x $ 的图象关于直线 $ y = x $ 对称，可知 $ y = 2^{x - 1} $ 与 $ y = \log_2(x - 1) $ 的图象关于直线 $ y = x - 1 $ 对称，因此，点 $ (x_1, 2^{x_1 - 1}) $、$ (x_2, \log_2(x_2 - 1)) $ 关于直线 $ y = x - 1 $ 对称，而直线 $ y = x - 1 $ 与直线 $ y = \dfrac{5 - 2x}{2} $ 交于点 $ \left( \dfrac{7}{4}, \dfrac{3}{4} \right) $，因此，$ x_1 + x_2 = 2 \times \dfrac{7}{4} = \dfrac{7}{2} $.
+
+思路 3：由于 $ 2x_1 + 2^{x_1} = 5 $，则 $ x_1 = \log_2(5 - 2x_1) $.令 $ t = \dfrac{7}{2} - x_1 $，则 $ \dfrac{7}{2} - t = \log_2(2 - 2t) = 1 + \log_2(t - 1) $，于是 $ 2t + 2\log_2(t - 1) = 5 $.由于方程 $ 2x + 2\log_2(x - 1) = 5 $ 只有一个根，所以 $ t = x_2 $，故 $ x_1 + x_2 = \dfrac{7}{2} $.
+\end{solutions}

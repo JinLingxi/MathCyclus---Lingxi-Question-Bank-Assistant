@@ -1,0 +1,32 @@
+% === Begin Label Data ===
+% ID: 744
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2010}{G}{福建卷（理）}{9}{复数}
+对于复数 $ a,b,c,d $，若集合 $ S=\{a,b,c,d\} $ 具有性质“对任意 $ x,y\in S $，必有 $ xy\in S $”，则当 $ \begin{cases} a=1 \\ b^2=1 \\ c^2=b \end{cases} $ 时，$ b+c+d=(\hspace{1cm}) $ (\hspace{1cm})
+\begin{choices}
+\choice{{$1$}}
+\choice{{$-1$}}
+\choice{{$0$}}
+\choice{{$i$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+$-1$
+\end{answer}
+
+\begin{solutions}
+由 $ a=1 $，$ b^2=1 $ 得 $ b=\pm1 $.  
+若 $ b=1 $，则 $ c^2=1 $，故 $ c=\pm1 $.又 $ S=\{1,1,c,d\} $，元素重复，不满足集合定义，舍去。  
+若 $ b=-1 $，则 $ c^2=-1 $，故 $ c=\pm i $.  
+取 $ c=i $，则 $ ic=i^2=-1\in S $，$ i\cdot(-1)=-i\in S $，故 $ d=-i $；  
+或取 $ c=-i $，则 $ (-i)\cdot(-1)=i\in S $，$ (-i)\cdot i=1\in S $，故 $ d=i $.  
+两种情形下 $ S=\{1,-1,i,-i\} $，满足封闭性。  
+此时 $ b+c+d=-1+i+(-i)=-1 $ 或 $ -1+(-i)+i=-1 $.  
+故 $ b+c+d=-1 $.
+\end{solutions}

@@ -1,5 +1,5 @@
 % === Begin Label Data ===
-% ID: 293
+% ID: 808
 % 难度星级: 
 % 标签: 
 % 备注: 
@@ -7,13 +7,12 @@
 % === End  Label Data ===
 
 \begin{problem}{2011}{G}{浙江卷}{10}{集合}
-设$a,b,c$为实数，$f(x)=(x+a)(x^2+bx+c)$，$g(x)=(ax+1)(cx^2+bx+1)$．记集合$S=\{x\mid f(x)=0,x\in\mathbb{R}\}$，$T=\{x\mid g(x)=0,x\in\mathbb{R}\}$，若$|S|,|T|$分别为集合$S,T$的元素个数，则下列结论不可能的是（ ）
-
+设 $ a $，$ b $，$ c $ 为实数，$ f(x)=(x+a)(x^2+bx+c) $，$ g(x)=(ax+1)(cx^2+bx+1) $.记集合 $ S=\{x\mid f(x)=0,x\in\mathbb{R}\} $，$ T=\{x\mid g(x)=0,x\in\mathbb{R}\} $.若 $ |S| $，$ |T| $ 分别表示集合 $ S $，$ T $ 的元素个数，则下列结论不可能的是 (\hspace{1cm})
 \begin{choices}
-\choice{{ $|S|=1$ 且 $|T|=0$ }}
-\choice{{ $|S|=1$ 且 $|T|=1$ }}
-\choice{{ $|S|=2$ 且 $|T|=2$ }}
-\choice{{ $|S|=2$ 且 $|T|=3$ }}
+\choice{{$ |S|=1 $ 且 $ |T|=0 $}}
+\choice{{$ |S|=1 $ 且 $ |T|=1 $}}
+\choice{{$ |S|=2 $ 且 $ |T|=2 $}}
+\choice{{$ |S|=2 $ 且 $ |T|=3 $}}
 \end{choices}
 \end{problem}
 
@@ -22,25 +21,17 @@ D
 \end{answer}
 
 \begin{solutions}
-注意到 $a\neq0$, $c\neq0$ 时，$x+a=0$ 与 $ax+1=0$，$x^2+bx+c=0$ 与 $cx^2+bx+1=0$ 的解互为倒数，进而 $g(x)=0$ 的根是 $f(x)=0$ 非零根的倒数，因此 $|T|\leq|S|$，D 错误。
-\end{solutions}
+ 方程 $ x^2+bx+c=0 $ 与 $ cx^2+bx+1=0 $ 的判别式都为 $ \Delta=b^2-4c $.
 
-\begin{solutions}[另解]
-分析函数零点个数与参数关系。
+当 $ \Delta=0 $ 时，方程 $ x^2+bx+c=0 $ 与 $ cx^2+bx+1=0 $ 的根分别为 $ -\dfrac{b}{2} $ 与 $ -\dfrac{2}{b} $（$ b\neq0 $）。
 
-当 $a=0$ 时 ， $g(x)=c\displaystyle{x^2+bx+1}$,此时 $|T|\le 2$ . 不可能为 $3$ .
+\circled{1} 若 $ a=b=c=0 $，则 $ f(x)=x^3 $，$ g(x)=1 $，此时 $ S=\{0\} $，$ T=\varnothing $，从而 $ |S|=1 $，$ |T|=0 $，故 A 选项的情形可能发生。
 
-当 $c=0$ 时 ， $g(x)=(a\displaystyle{x+1})(b\displaystyle{x+1})$,此时 $|T|\le 2$ . 不可能为 $3$ .
+\circled{2} 若 $ a=0 $，$ \Delta=0 $，则 $ S=\left\{-\dfrac{b}{2},0\right\} $，$ T=\left\{-\dfrac{2}{b}\right\} $，从而 $ |T|=1 $，$ |S|=2 $，不能排除选项。
 
-当 $a\neq 0$ 且 $c\neq 0$ 时 ， 设 $x^2+b\displaystyle{x+c}=0$ 的两根为 $r_1,r_2$, 则 $c\displaystyle{x^2+b\displaystyle{x+1}=0}$ 的两根为 $\displaystyle{\frac{1}{r_1}},\displaystyle{\frac{1}{r_2}}$ .
+\circled{3} 若 $ a\neq0 $，$ \Delta<0 $，则 $ S=\{-a\} $，$ T=\left\{-\dfrac{1}{a}\right\} $，从而 $ |S|=|T|=1 $，故 B 选项的情形可能发生。
 
-集合 $S$ 的元素为 $-a,r_1,r_2$, 集合 $T$ 的元素为 $-\displaystyle{\frac{1}{a}},\displaystyle{\frac{1}{r_1}},\displaystyle{\frac{1}{r_2}}$ .
+\circled{4} 若 $ a\neq0 $，$ \Delta=0 $，则 $ S=\left\{-a,-\dfrac{b}{2}\right\} $，$ T=\left\{-\dfrac{1}{a},-\dfrac{2}{b}\right\} $.若 $ 2a\neq b $，则 $ |S|=|T|=2 $，故 C 选项的情形可能发生。
 
-若 $|S|=2$, 则必有两元素相等。 因判别式 $\Delta=b^2-4c$, 若 $\Delta=0$ 则 $r_1=r_2$, 此时 $|T|\le 2$; 故必有 $\Delta>0$ 且 $-a=r_1$（或 $-a=r_2$） .
-
-由 $-a=r_1$ 可得 $\displaystyle{\frac{1}{r_1}}=-\displaystyle{\frac{1}{a}}$, 即集合 $T$ 中已有两个元素重合。
-
-因此 $T$ 中不同实数根的个数最多为 $2$, 不可能等于 $3$.
-
-综上 ， $|S|=2$ 且 $|T|=3$ 的情况不可能出现， 故选 \boxed{D}.
+\circled{5} （反证）若 $ |T|=3 $，则必有 $ a\neq0 $，$ \Delta>0 $，则 $ T=\left\{-\dfrac{1}{a},\dfrac{-b\pm\sqrt{b^2-4c}}{2}\right\} $，且 $ -\dfrac{1}{a}\neq\dfrac{-b\pm\sqrt{b^2-4c}}{2} $，此时 $ S=\left\{-a,\dfrac{2}{-b\pm\sqrt{b^2-4c}}\right\} $，$ |S|=3 $，不可能有 $ |S|=2 $，故 D 选项的情形不可能发生，从而选 D。
 \end{solutions}

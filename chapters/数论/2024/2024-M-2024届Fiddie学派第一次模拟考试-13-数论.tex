@@ -1,0 +1,33 @@
+% === Begin Label Data ===
+% ID: 584
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2024}{M}{2024届Fiddie学派第一次模拟考试}{13}{数论}
+1995年，安德鲁·怀尔斯成功证明了费马大定理：当整数 $ n>2 $ 时，方程 $ a^n+b^n=c^n $ 没有正整数解．而早在18世纪，数学家欧拉就证明了费马大定理中 $ n=3 $ 的情形．某同学想寻找 $ n=3 $ 情形的简单证明，即证 “方程 $ a^3+b^3=c^3 $ 没有正整数解”．他的证明过程如下：
+
+若存在正整数 $ a,b,c $ 使得 $ a^3+b^3=c^3 $，  
+则 $ a^3=c^3-b^3 $， \hfill \circled{1}  
+所以 $ a^3=(c-b)(c^2+cb+b^2) $． \hfill \circled{2}  
+因为 $ a\leq c^2 $ 并且 $ c-b\leq c^2+cb+b^2 $，所以 $ a=c-b $ 并且 $ a^2=c^2+cb+b^2 $． \hfill \circled{3}  
+消掉 $ a $，可得 $ (c-b)^2=c^2+cb+b^2 $． \hfill \circled{4}  
+于是 $ c^2-2cb+b^2=c^2+cb+b^2 $． \hfill \circled{5}  
+所以 $ 3cb=0 $，从而 $ b=0 $ 或 $ c=0 $，这与 $ b,c $ 都是正整数矛盾． \hfill \circled{6}  
+
+综上，方程 $ a^3+b^3=c^3 $ 没有正整数解．
+
+该名同学的证明过程 \underline{\hspace{4em}} （填 “正确” 或 “错误”），如果你认为证明过程错误，首个错误步骤的序号是 \underline{\hspace{4em}} （如果第一个空填了 “正确”，无需作答第二个空）．
+\end{problem}
+
+\begin{answer}
+错误；\circled{3}
+\end{answer}
+
+\begin{solutions}
+步骤 \circled{3} 中，“因为 $ a\leq c^2 $ 并且 $ c-b\leq c^2+cb+b^2 $，所以 $ a=c-b $ 并且 $ a^2=c^2+cb+b^2 $” 是错误的．  
+由 $ a^3=(c-b)(c^2+cb+b^2) $ 不能直接推出两个因子分别等于 $ a $ 和 $ a^2 $，除非已知 $ c-b $ 与 $ c^2+cb+b^2 $ 互素，但此处未证明该条件成立．事实上，$ \gcd(c-b, c^2+cb+b^2) $ 可能为 $ 1 $ 或 $ 3 $，需分情况讨论，不能直接断言两因子分别为 $ a $ 和 $ a^2 $．  
+
+\end{solutions}

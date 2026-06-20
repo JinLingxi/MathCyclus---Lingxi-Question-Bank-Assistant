@@ -1,0 +1,38 @@
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.95]
+\usetikzlibrary{calc}
+
+\coordinate (O) at (0,0);
+\def\R{2.2}
+
+% points (choose angles to match the picture layout)
+\coordinate (B) at ({\R*cos(200)},{\R*sin(200)});
+\coordinate (A) at ({\R*cos(320)},{\R*sin(320)});
+\coordinate (D) at ({\R*cos(80)},{\R*sin(80)});
+\coordinate (P) at ({\R*cos(40)},{\R*sin(40)});
+
+% circle
+\draw[thick] (O) circle (\R);
+
+% solid chords
+\draw[thick] (B)--(A);
+\draw[thick] (B)--(D);
+\draw[thick] (D)--(A);
+\draw[thick] (A)--(P);
+\draw[thick] (B)--(P);
+
+% dashed radii / helpers
+\draw[dashed] (O)--(A);
+\draw[dashed] (O)--(B);
+\draw[dashed] (O)--(D);
+\draw[dashed] (D)--(O);
+
+% center mark
+\fill (O) circle (1.2pt) node[right] {$O$};
+
+% point marks + labels
+\fill (A) circle (1.1pt) node[below right] {$A$};
+\fill (B) circle (1.1pt) node[left] {$B$};
+\fill (D) circle (1.1pt) node[above] {$D$};
+\fill (P) circle (1.1pt) node[right] {$P$};
+
+\end{tikzpicture}

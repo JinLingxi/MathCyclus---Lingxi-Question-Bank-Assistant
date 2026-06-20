@@ -1,0 +1,73 @@
+% === Begin Label Data ===
+% ID: 491
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2020}{G}{新高考I卷}{15}{立体几何}
+某中学开展劳动实习，学生加工制作零件，零件的截面如图所示．$ O $ 为圆孔及轮廓圆弧 $ AB $ 所在圆的圆心，$ A $ 是圆弧 $ AB $ 与直线 $ AG $ 的切点，$ B $ 是圆弧 $ AB $ 与直线 $ BC $ 的切点，四边形 $ DEFG $ 为矩形，$ BC\perp DG $，垂足为 $ C $，$ \tan\angle ODC=\dfrac{3}{4} $，$ BH\mathop{//}DG $，$ EF=12\,\mathrm{cm} $，$ DE=2\,\mathrm{cm} $，$ A $ 到直线 $ DE $ 和 $ EF $ 的距离均为 $ 7\,\mathrm{cm} $，圆孔半径为 $ 1\,\mathrm{cm} $，则图中阴影部分的面积为 \underline{\hspace{4em}}$\mathrm{cm}^2$．
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.6]
+\usetikzlibrary{calc,intersections}
+
+\def\W{12}
+\def\H{2}
+\def\r{1}
+\def\R{4}
+
+\coordinate (E) at (0,0);
+\coordinate (F) at (\W,0);
+\coordinate (G) at (\W,\H);
+\coordinate (D) at (0,\H);
+
+\coordinate (O) at (5.2,5);
+\coordinate (A) at ($(O)+(60:\R)$);
+\coordinate (B) at ($(O)+(180:\R)$);
+\path let \p1=(B) in coordinate (C) at (\x1,\H);
+
+\path[name path=AG] (A) -- (G);
+\path[name path=yfive] (-1,5) -- (\W+1,5);
+\path[name intersections={of=AG and yfive, by=Hpt}];
+\path let \p1=(O) in coordinate (Odown) at (\x1,\H);
+\coordinate (Oup) at ($(O)+(0,\R)$);
+
+\fill[gray!20,even odd rule]
+  (B)
+  arc[start angle=180,end angle=60,radius=\R] -- (G) -- (C) -- cycle
+  (B) -- (C) -- (G) -- (Hpt) -- cycle;
+
+\fill[white] (O) circle (\r);
+
+\draw[thick] (D) -- (E) -- (F) -- (G);
+\draw[thick] (D) -- (C);
+\draw[dashed] (C) -- (G);
+\draw[thick] (C) -- (B);
+\draw[thick] (B) arc[start angle=180,end angle=60,radius=\R];
+\draw[thick] (A) -- (G);
+\draw[thick] (O) circle (\r);
+
+\draw[dashed] (O) -- (Oup);
+\draw[dashed] (O) -- (Odown);
+\draw[dashed] (B) -- (Hpt);
+\draw[dashed] (O) -- (D);
+
+\node[left] at (B) {$B$};
+\node[above right] at (A) {$A$};
+\node[below] at (C) {$C$};
+\node[left] at (D) {$D$};
+\node[below left] at (E) {$E$};
+\node[below right] at (F) {$F$};
+\node[right] at (G) {$G$};
+\node[right] at (Hpt) {$H$};
+\node at ($(O)+(0.25,-0.25)$) {$O$};
+\end{tikzpicture}
+\end{problem}
+
+\begin{answer}
+
+\end{answer}
+
+\begin{solutions}
+
+\end{solutions}

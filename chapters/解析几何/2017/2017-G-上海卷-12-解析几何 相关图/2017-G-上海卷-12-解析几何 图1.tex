@@ -1,0 +1,21 @@
+\begin{tikzpicture}[x=0.7cm,y=0.7cm,line cap=round,line join=round]
+% grid: 7 columns × 5 rows = 35 unit squares
+\draw[step=1,gray!70] (0,0) grid (7,5);
+\draw[thick] (0,0) rectangle (7,5);
+
+% points Pi (chosen to match the picture layout)
+\fill (0,4) circle (2.2pt) node[left] {$P_1$};
+\fill (3,2) circle (2.2pt) node[left] {$P_2$};
+\fill (4,2) circle (2.2pt) node[right] {$P_3$};
+\fill (6,5) circle (2.2pt) node[above] {$P_4$};
+
+% marked triangle points (▲) at vertices of unit squares
+\node at (0,3) {\Large $\blacktriangle$};
+\node at (4,4) {\Large $\blacktriangle$};
+\node at (1,0) {\Large $\blacktriangle$};
+\node at (7,1) {\Large $\blacktriangle$};
+
+% optional: slightly enlarge labels like in the scan
+% (remove if you don't want it)
+\node[scale=1.6] at ($(0,4)+(0.2,0.1)$) {$\,$};
+\end{tikzpicture}

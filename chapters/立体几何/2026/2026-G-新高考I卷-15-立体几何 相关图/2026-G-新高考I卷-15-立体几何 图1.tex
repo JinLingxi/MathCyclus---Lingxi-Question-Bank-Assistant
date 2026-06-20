@@ -1,0 +1,31 @@
+\begin{tikzpicture}[scale=1, line cap=round, line join=round]    % 三棱柱顶点    
+\coordinate (C)  at (0.5, 0);   
+ \coordinate (A)  at (-2.0, -1.05);   
+ \coordinate (B)  at (2.0, -1.0);    
+\coordinate (C1) at (0.5, 3.0);    
+\coordinate (A1) at (-2.0, 2.0);   
+ \coordinate (B1) at (2.0, 2.05);        % 特殊点    
+\coordinate (D)  at (0, -1.025);    % AB 中点   
+ \coordinate (E)  at (-0.75, 0.975); % AC₁ 中点
+    % 不可见棱及辅助线(虚线)    
+\draw[dashed] (A) -- (C);    
+\draw[dashed] (B) -- (C);   
+ \draw[dashed] (A) -- (C1);  % 体对角线 AC₁(经过 E)
+    % 可见棱(实线)   
+ \draw (A)  -- (B);    
+\draw (A)  -- (A1);    
+\draw (B)  -- (B1);   
+ \draw (C)  -- (C1);   
+ \draw (A1) -- (B1);   
+ \draw (A1) -- (C1);   
+ \draw (B1) -- (C1);
+    % 标签(无小圆点)   
+ \node[below left,  inner sep=2pt] at (A)  {$A$};    
+\node[below right, inner sep=2pt] at (B)  {$B$};   
+ \node[below,       inner sep=4pt] at (C)  {$C$};    
+\node[above left,  inner sep=2pt] at (A1) {$A_1$};    
+\node[above right, inner sep=2pt] at (B1) {$B_1$};   
+ \node[above,       inner sep=2pt] at (C1) {$C_1$};   
+ \node[below,       inner sep=2pt] at (D)  {$D$};   
+ \node[left,        inner sep=2pt] at (E)  {$E$};
+\end{tikzpicture}

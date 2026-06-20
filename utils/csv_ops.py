@@ -46,7 +46,11 @@ def _parse_tex_content(content, pname):
     
     # Extract problem content (题干部分)
     # 兼容多种写法： \begin{problem}{...} 或者没有参数的 \begin{problem}
-    prob_match = re.search(r'\\begin\{problem\}(?:\{.*?\})*?(.*?)\\end\{problem\}', clean_content, re.DOTALL)
+    prob_match = re.search(
+        r'\\begin\{problem\}(?:\[[^\]]*\])?(?:\s*\{[^\}]*\}){0,5}\s*([\s\S]*?)\\end\{problem\}',
+        clean_content,
+        re.DOTALL,
+    )
     stem_text = prob_match.group(1).strip() if prob_match else ""
 
     # Extract solution (解析部分) - 独立于 problem 之外

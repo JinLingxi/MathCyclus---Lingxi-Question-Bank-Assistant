@@ -1,5 +1,6 @@
 import os
 import re
+import html
 from .core_config import CHAPTERS_DIR, BASE_DIR
 from .file_ops import ensure_dir
 from .tikz_ops import get_tikz_image_b64
@@ -53,6 +54,8 @@ def get_editor_height(content):
 
 def latex_to_markdown(content, show_title=True):
     """简单的 LaTeX 转 Markdown 用于预览"""
+    content = re.sub(r"(?<!\$)\$([^$\n]*?)\$(?!\$)", lambda m: "$" + m.group(1).strip() + "$", content)
+    content = re.sub(r"\$\$\s*([\s\S]*?)\s*\$\$", lambda m: "$$\n" + m.group(1).strip() + "\n$$", content)
     # 处理批量模式下的多题分割线 ---xxx.tex---
     if "---" in content:
         # 将分割线替换为 Markdown 分隔符和文件名标题
@@ -60,7 +63,8 @@ def latex_to_markdown(content, show_title=True):
         
     # 提取 problem / question 环境参数
     # 使用 re.finditer 处理多题情况
-    for match in reversed(list(re.finditer(r'\\begin\{problem\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}', content))):
+    problem_header_pat = r'\\begin\{problem\}(?:\[[^\]]*\])?\s*\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}'
+    for match in reversed(list(re.finditer(problem_header_pat, content))):
         year, ptype, name, num, subj = match.groups()
         if show_title:
             header = f"**【{year}  {name}，{num}】**\n\n"
@@ -69,12 +73,12 @@ def latex_to_markdown(content, show_title=True):
             # 将原有的 \begin{problem}... 标签直接去掉，不重复添加 Markdown header
             content = content[:match.start()] + content[match.end():]
     
-    # 移除可能存在的 \begin{problem} / \end{problem} (不带参数)
-    content = re.sub(r'\\begin\{problem\}(\[.*?\])?', '', content)
+    # 移除可能存在的 \begin{problem} / \end{problem}（兜底：即使参数解析失败也尽量剔除头部）
+    content = re.sub(r'\\begin\{problem\}(?:\[[^\]]*\])?(?:\s*\{[^\}]*\}){0,5}', '', content)
     content = content.replace(r'\end{problem}', '')
 
     # 移除可能存在的 \begin{question} / \end{question}
-    content = re.sub(r'\\begin\{question\}(\[.*?\])?', '', content)
+    content = re.sub(r'\\begin\{question\}(?:\[[^\]]*\])?(?:\s*\{[^\}]*\}){0,5}', '', content)
     content = content.replace(r'\end{question}', '')
     
     # 处理 answer 环境
@@ -89,7 +93,7 @@ def latex_to_markdown(content, show_title=True):
     content = re.sub(r'\\end\{solutions?\}', '', content)
     
     # 清理批量模式下的 Label Data
-    content = re.sub(r'%(?: === Meta Data ===| === Begin Label Data ===)\n(.*?)%(?: === End Meta ===| === End\s+Label Data ===)\n', '', content, flags=re.DOTALL)
+    content = re.sub(r'%(?: === Meta Data ===| === Begin Label Data ===)\r?\n([\s\S]*?)%(?: === End Meta ===| === End\s+Label Data ===)\r?\n', '', content, flags=re.DOTALL)
 
     
     # 处理 choices 环境 (A. B. C. D. 样式)
@@ -148,9 +152,6 @@ def latex_to_markdown(content, show_title=True):
         return f'<span style="display:inline-block; width:1.2em; height:1.2em; line-height:1.2em; text-align:center; border-radius:50%; border:1px solid currentColor; font-size:0.85em;">{num}</span>'
 
     content = re.sub(r'\\circled\{(.*?)\}', replace_circled, content)
-    
-    # 处理 \boxed{}
-    content = re.sub(r'\\boxed\{(.*?)\}', r'<span style="border: 1px solid #c9d1d9; padding: 2px 6px; border-radius: 4px; font-weight: bold;">\1</span>', content)
 
     # 1. 替换被抽离的 \input{... 相关图/...} 命令为渲染图片
     def replace_input_tikz(match):
@@ -170,9 +171,18 @@ def latex_to_markdown(content, show_title=True):
                 if b64:
                     return f"\n\n<div style='text-align: center;'><img src='data:image/png;base64,{b64}' style='max-width:100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 10px 0;'></div>\n\n"
                 elif err == "MISSING_PYMUPDF":
-                    return f"\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n```latex\n{tikz_code}\n```\n\n"
+                    safe_code = html.escape(tikz_code)
+                    return (
+                        "\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n"
+                        f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
+                    )
                 else:
-                    return f"\n\n> ⚠️ **TikZ 编译失败** (`{err}`)。请检查 LaTeX 语法或本地环境。\n\n```latex\n{tikz_code}\n```\n\n"
+                    safe_code = html.escape(tikz_code)
+                    safe_err = html.escape(str(err))
+                    return (
+                        f"\n\n> ⚠️ **TikZ 编译失败** (`{safe_err}`)。请检查 LaTeX 语法或本地环境。\n\n"
+                        f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
+                    )
             else:
                 return f"\n> ⚠️ 找不到引用的图片文件: `{input_path}`\n"
         return match.group(0)
@@ -186,9 +196,18 @@ def latex_to_markdown(content, show_title=True):
         if b64:
             return f"\n\n<div style='text-align: center;'><img src='data:image/png;base64,{b64}' style='max-width:100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 10px 0;'></div>\n\n"
         elif err == "MISSING_PYMUPDF":
-            return f"\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n```latex\n{tikz_code}\n```\n\n"
+            safe_code = html.escape(tikz_code)
+            return (
+                "\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n"
+                f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
+            )
         else:
-            return f"\n\n> ⚠️ **TikZ 编译失败** (`{err}`)。请检查 LaTeX 语法或本地环境。\n\n```latex\n{tikz_code}\n```\n\n"
+            safe_code = html.escape(tikz_code)
+            safe_err = html.escape(str(err))
+            return (
+                f"\n\n> ⚠️ **TikZ 编译失败** (`{safe_err}`)。请检查 LaTeX 语法或本地环境。\n\n"
+                f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
+            )
 
     content = re.sub(r'\\begin\{tikzpicture\}.*?\\end\{tikzpicture\}', replace_inline_tikz, content, flags=re.DOTALL)
     
@@ -249,6 +268,55 @@ def latex_to_markdown(content, show_title=True):
 
     content = re.sub(r'\\\[(.*?)\\\]', r'$$\n\1\n$$', content, flags=re.DOTALL)
     content = re.sub(r'\\\((.*?)\\\)', r'$\1$', content, flags=re.DOTALL)
+
+    def _wrap_boxed_outside_math(s: str) -> str:
+        s = s or ""
+        out = []
+        i = 0
+        in_inline = False
+        in_display = False
+        while i < len(s):
+            if s.startswith("$$", i) and not in_inline:
+                in_display = not in_display
+                out.append("$$")
+                i += 2
+                continue
+            if s[i] == "$" and not in_display:
+                in_inline = not in_inline
+                out.append("$")
+                i += 1
+                continue
+            if (not in_inline) and (not in_display) and s.startswith(r"\boxed{", i):
+                j = i + len(r"\boxed{")
+                depth = 1
+                while j < len(s) and depth > 0:
+                    if s[j] == "{":
+                        depth += 1
+                    elif s[j] == "}":
+                        depth -= 1
+                    j += 1
+                if depth == 0:
+                    boxed_full = s[i:j]
+                    inner = boxed_full[len(r"\boxed{"):-1].strip()
+                    if inner.startswith("$") and inner.endswith("$") and inner.count("$") == 2:
+                        inner = inner[1:-1].strip()
+                        boxed_full = r"\boxed{" + inner + "}"
+                    out.append("$" + boxed_full + "$")
+                    i = j
+                    continue
+            out.append(s[i])
+            i += 1
+        return "".join(out)
+
+    content = _wrap_boxed_outside_math(content)
+    content = re.sub(r"\$\$\s*([。．\.，,；;])", r"$$\n\1", content)
+    content = re.sub(r"([。．\.，,；;])\s*\$\$", r"\1\n$$", content)
+    content = re.sub(r"[ \t]*\$\$[ \t]*", "$$", content)
+    content = re.sub(r"(?<!\n)\$\$", r"\n$$", content)
+    content = re.sub(r"\$\$(?!\n)", r"$$\n", content)
+    content = content.replace("```", "")
+    content = re.sub(r"(?m)^(?:\t+| {4,})", "", content)
+    content = re.sub(r"\n{3,}", "\n\n", content)
     
     return content
 

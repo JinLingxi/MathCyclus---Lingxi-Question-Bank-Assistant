@@ -31,13 +31,19 @@
 
 ## 🚀 快速启动
 
-1. 确保您的电脑已安装 **Python 3.8+** 以及以下依赖库：
+1. 确保您的电脑已安装 **Python 3.8+**，然后安装项目依赖：
 
    ```bash
-   pip install streamlit pymupdf python-dotenv requests
+   pip install -r requirements.txt
    ```
 2. 确保本地已安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），且 `xelatex` 命令已加入系统环境变量中。
-3. 在项目根目录的 `.env` 文件中配置您的 AI 模型密钥（如阿里云 API KEY）。
+3. 在项目根目录创建 `.env` 文件并配置 AI 模型密钥。可参考 `.env.example` 模板：
+
+   ```env
+   AI_API_KEY=your_api_key_here
+   AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+   AI_MODEL_NAME=qwen-vl-plus
+   ```
 4. 双击运行 `启动程序.bat`，或者在终端执行：
 
    ```bash
@@ -46,13 +52,28 @@
 
    即可自动在浏览器中打开工作台。
 
+## 💡 创新亮点
+
+- **首创"教学审核"OCR**：AI 识别解答时自动审核逻辑，发现错误会标注原错并附加 AI 纠错，兼顾教学真实性与正确性。
+- **严苛的 LaTeX 排版规范**：通过 AI Prompt 强制约束分数显示、括号匹配、中英文混排空格等细节，输出代码可直接用于专业出版。
+- **Label Data 元数据系统**：每道题自带 ID、难度星级、标签、备注、引用次数的结构化注释头，实现题目级别的精细化管理。
+- **TikZ 深度整合 + 智能缓存**：几何图形编译无缝嵌入编辑流程，基于文件修改时间的缓存机制实现秒级实时预览。
+
 ## 📁 核心目录结构
 
 ```text
 ├── chapters/              # 存放按学科板块和年份分类的 LaTeX 题库源文件 (.tex)
-├── utils/                 # 系统核心工具库 (配置、文件读写、TikZ 渲染、抽样算法)
+├── utils/                 # 系统核心工具库 (配置、文件读写、TikZ 渲染、CSV 索引管理)
+├── Test Paper Group/      # LaTeX 试卷/讲义/练习模板
 ├── ocr_prompt.txt         # AI OCR 与排版约束的系统提示词（热重载）
+├── MathCyclus_book.cls    # LaTeX 自定义文档类
 ├── question_bank_app.py   # Streamlit 主程序入口 (包含 UI 布局与核心逻辑)
 ├── 启动程序.py             # 守护进程与服务启动脚本
-└── log.csv                # 批量题目处理与归档日志
+├── 启动程序.bat            # Windows 一键启动脚本
+├── requirements.txt       # Python 依赖清单
+└── .env.example           # 环境变量配置模板
 ```
+
+## 📄 开源协议
+
+本项目采用 MIT License 开源协议，欢迎贡献与使用。

@@ -132,7 +132,13 @@ def update_chapter_contents():
                     })
         
         if not tex_files:
-            print(f"跳过板块 {topic}: 未找到 .tex 题目文件")
+            output_file = os.path.join(topic_dir, f'content_{topic}.tex')
+            try:
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write('')
+                print(f"板块 {topic}: 未找到 .tex 题目文件，已生成空索引：{output_file}")
+            except Exception as e:
+                print(f"板块 {topic}: 写入空索引失败：{e}")
             continue
             
         print(f"正在处理板块：{topic} ({len(tex_files)} 题)")

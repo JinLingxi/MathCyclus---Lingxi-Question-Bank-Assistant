@@ -50,6 +50,8 @@ def get_tikz_image_b64(tikz_code, base_dir, source_tex_path=None, target_png_pat
 \\usepackage{{amsmath}}
 \\usepackage{{amssymb}}
 \\usepackage{{tikz}}
+\\usepackage{{pgfplots}}
+\\pgfplotsset{{compat=1.16}}
 \\usetikzlibrary{{patterns}}
 \\usetikzlibrary{{calc,positioning,intersections,arrows}}
 \\usetikzlibrary{{shapes.geometric,through,decorations.pathmorphing,arrows.meta,quotes,mindmap,shapes.symbols,shapes.arrows,automata,angles,3d,trees,shadows,shapes.callouts,decorations.pathreplacing,decorations.markings}}

@@ -1,0 +1,53 @@
+% === Begin Label Data ===
+% ID: 812
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2006}{G}{安徽卷（文）}{11}{解三角形}
+如果 $\triangle A_1B_1C_1$ 的三个内角的余弦值分别等于 $\triangle A_2B_2C_2$ 的三个内角的正弦值，则 (\hspace{1cm})
+\begin{choices}
+\choice{{$\triangle A_1B_1C_1$ 和 $\triangle A_2B_2C_2$ 都是锐角三角形}}
+\choice{{$\triangle A_1B_1C_1$ 和 $\triangle A_2B_2C_2$ 都是钝角三角形}}
+\choice{{$\triangle A_1B_1C_1$ 是钝角三角形，$\triangle A_2B_2C_2$ 是锐角三角形}}
+\choice{{$\triangle A_1B_1C_1$ 是锐角三角形，$\triangle A_2B_2C_2$ 是钝角三角形}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+D
+\end{answer}
+
+\begin{solutions}
+由条件，设 $\cos A_1=\sin A_2$，$\cos B_1=\sin B_2$，$\cos C_1=\sin C_2$.
+
+因为 $\sin A_2>0$，$\sin B_2>0$，$\sin C_2>0$，所以 $\cos A_1>0$，$\cos B_1>0$，$\cos C_1>0$，从而 $\triangle A_1B_1C_1$ 是锐角三角形。
+
+思路 1：在 $\triangle A_2B_2C_2$ 中，至少有两个锐角，不妨设 $B_2$，$C_2$ 是锐角。
+
+因为 $\sin\left(B_2+\dfrac{\pi}{2}\right)=\sin B_2$，所以 $B_2+\dfrac{\pi}{2}=\pi-B_2$，即 $B_1+B_2=\dfrac{\pi}{2}$；
+
+因为 $\sin\left(C_2+\dfrac{\pi}{2}\right)=\sin C_2$，同理得 $C_1+C_2=\dfrac{\pi}{2}$.
+
+所以 $A_1+A_2=(\pi-B_1-C_1)+(\pi-B_2-C_2)=\pi$.但是 $A_1$ 是锐角，所以 $A_2$ 必为钝角。故 $\triangle A_2B_2C_2$ 是钝角三角形。
+
+思路 2：若 $\triangle A_2B_2C_2$ 是锐角三角形，由
+$$
+\begin{cases}
+\sin A_2=\cos A_1=\sin\left(\dfrac{\pi}{2}-A_1\right),\\
+\sin B_2=\cos B_1=\sin\left(\dfrac{\pi}{2}-B_2\right),\\
+\sin C_2=\cos C_1=\sin\left(\dfrac{\pi}{2}-C_2\right),
+\end{cases}
+$$
+则
+$$
+\begin{cases}
+A_2=\dfrac{\pi}{2}-A_1,\\
+B_2=\dfrac{\pi}{2}-B_1,\\
+C_2=\dfrac{\pi}{2}-C_1,
+\end{cases}
+$$
+从而 $A_2+B_2+C_2=\dfrac{\pi}{2}$，矛盾。故 $\triangle A_2B_2C_2$ 是钝角三角形。
+\end{solutions}

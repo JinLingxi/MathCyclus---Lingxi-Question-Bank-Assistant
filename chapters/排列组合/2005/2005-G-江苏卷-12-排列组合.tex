@@ -1,0 +1,41 @@
+% === Begin Label Data ===
+% ID: 828
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2005}{G}{江苏卷}{12}{排列组合}
+四棱锥的 $8$ 条棱代表 $8$ 种不同的化工产品，有公共点的两条棱所代表的化工产品放在同一仓库是危险的，没有公共顶点的两条棱所代表的化工产品放在同一仓库是安全的，现打算用编号为 \circled{1}、\circled{2}、\circled{3}、\circled{4} 的 $4$ 个仓库放这 $8$ 种化工产品，那么安全存放的不同种数为 (\hspace{1cm})
+\begin{choices}
+\choice{{$96$}}
+\choice{{$48$}}
+\choice{{$24$}}
+\choice{{$0$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+$B$
+\end{answer}
+
+\begin{solutions}
+四棱锥共有 $8$ 条棱，分为 $4$ 条侧棱与 $4$ 条底边。
+
+因为顶点 $P$ 处的 $4$ 条侧棱两两共点，所以它们必须放入不同的仓库。
+
+因为共有 $4$ 个仓库且每条棱必入一仓，所以每个仓库恰好存放 $2$ 条棱，且必为 $1$ 条侧棱搭配 $1$ 条底边。
+
+因为侧棱 $PA$ 仅与底边 $BC$、$CD$ 无公共顶点，同理可推得仅存在两种互斥的配对分组方式。
+
+分组方式一：$\left\{ PA, BC \right\}$、$\left\{ PB, CD \right\}$、$\left\{ PC, DA \right\}$、$\left\{ PD, AB \right\}$.
+
+分组方式二：$\left\{ PA, CD \right\}$、$\left\{ PB, DA \right\}$、$\left\{ PC, AB \right\}$、$\left\{ PD, BC \right\}$.
+
+因为每组包含 $4$ 个独立仓库对，将其全排列分配至编号仓库的方法数为 $A_4^4 = 24$.
+
+所以安全存放的不同种数为 $2 \times 24 = 48$.
+
+\boxed{B}
+\end{solutions}

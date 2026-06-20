@@ -27,8 +27,25 @@ ocr的备份.txt
 SolaireEPDA-master/
 
 # LaTeX 编译输出
-main.synctex.gz
-main.log
-main.aux
-main.out
-main.toc
+*.synctex.gz
+*.log
+*.aux
+*.out
+*.toc
+
+# 历史备份文件（非正式代码）
+question_bank_app000.py
+old_app.py
+
+# 与项目无关的文档
+高中数学建模15课时课程设计.md
+
+# 虚拟环境
+.venv/
+
+# Python 编译缓存
+*.pyc
+
+MathCyclus_demo.html
+
+

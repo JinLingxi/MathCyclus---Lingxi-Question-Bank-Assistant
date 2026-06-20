@@ -1,0 +1,25 @@
+% === Begin Label Data ===
+% ID: 749
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2010}{G}{江苏卷}{14}{不等式}
+将边长为 $1\,\mathrm{m}$ 的正三角形薄铁皮沿一条平行于某边的直线剪成两块，其中一块是梯形，记 $ s = \dfrac{(\text{梯形的周长})^2}{\text{梯形的面积}} $，则 $ s $ 的最小值是 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+$\dfrac{32\sqrt{3}}{3}$
+\end{answer}
+
+\begin{solutions}
+设梯形的上底长为 $ x $ ($ 0 < x < 1 $)，则梯形的腰长为 $ 1 - x $，高为 $ \dfrac{\sqrt{3}}{2}(1 - x) $
+
+$ s = \dfrac{[1 + x + 2(1 - x)]^2}{\dfrac{\sqrt{3}}{4}(1 + x)(1 - x)} = \dfrac{x^2 - 6x + 9}{\dfrac{\sqrt{3}}{4}(1 - x^2)} $，即 $ \left( \dfrac{\sqrt{3}}{4}s + 1 \right)x^2 - 6x + 9 - \dfrac{\sqrt{3}}{4}s = 0 $
+
+$ \Delta = 36 - 4\left(9 - \dfrac{\sqrt{3}}{4}s\right)\left(\dfrac{\sqrt{3}}{4}s + 1\right) \geqslant 0 \Rightarrow \dfrac{3}{4}s^2 - 8\sqrt{3}s \geqslant 0 \Rightarrow s \geqslant \dfrac{32\sqrt{3}}{3} $
+
+当 $ s = \dfrac{32\sqrt{3}}{3} $ 时，$ 9x^2 - 6x + 1 = 0 $，$ x = \dfrac{1}{3} $，满足题意，综上 $ s $ 的最小值是 $ \dfrac{32\sqrt{3}}{3} $.
+\end{solutions}

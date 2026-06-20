@@ -1,0 +1,36 @@
+% === Begin Label Data ===
+% ID: 745
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2005}{G}{辽宁卷}{16}{三角函数}
+$\omega$ 是正实数，设 $ S_\omega = \left\{ \theta \,\middle|\, f(x) = \cos[\omega(x + \theta)] \text{ 是奇函数} \right\} $，若对于每个实数 $ a $，$ S_\omega \cap (a, a+1) $ 的元素不超过 2 个，且有 $ a $ 使 $ S_\omega \cap (a, a+1) $ 含 2 个元素，则 $ \omega $ 的取值范围是 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+$\omega \in (\pi, 2\pi]$
+\end{answer}
+
+\begin{solutions}
+$f(x) = \cos[\omega(x + \theta)]$ 是奇函数意味着 $ f(0) = 0 $，也即 $ \omega\theta = \left(k + \dfrac{1}{2}\right)\pi $，$ k \in \mathbb{Z} $.  
+
+$ S_\omega = \left\{ \dots, -\dfrac{(2k+1)\pi}{2\omega}, \dots, -\dfrac{3\pi}{2\omega}, -\dfrac{\pi}{2\omega}, \dfrac{\pi}{2\omega}, \dfrac{3\pi}{2\omega}, \dots, \dfrac{(2k+1)\pi}{2\omega}, \dots \right\} $，  
+
+即 $ S_\omega $ 是数轴上间隔为 $ \dfrac{\pi}{\omega} $ 的点列.  
+
+$ S_\omega \cap (a, a+1) $ 的元素不超过 2 个，且有 $ a $ 使 $ S_\omega \cap (a, a+1) $ 含 2 个元素意味着 $ S_\omega $ 元素间的最小距离小于 1 且大于等于 $ \dfrac{1}{2} $，即 $ \dfrac{1}{2} \leqslant \dfrac{\pi}{\omega} < 1 $ 也即 $ \omega \in (\pi, 2\pi] $；  
+
+充分性在直观上是显然的，严格证明如下：  
+
+当 $ \omega \in (\pi, 2\pi] $ 时，假设存在 $ x_1, x_2, x_3 \in S_\omega \cap (a, a+1) $，令 $ a < x_1 < x_2 < x_3 < a+1 $，则  
+$ x_3 \geqslant x_2 + \dfrac{\pi}{\omega} \geqslant x_1 + \dfrac{2\pi}{\omega} \geqslant x_1 + 1 > a + 1 $，这与 $ x_3 < a+1 $ 矛盾，即 $ S_\omega \cap (a, a+1) $ 中的元素不超过两个；  
+
+令 $ a = \dfrac{2\pi - \omega}{2\omega} $，则 $ a = \dfrac{2\pi - \omega}{2\omega} < \dfrac{\pi}{2\omega} < \dfrac{3\pi}{2\omega} < \dfrac{2\pi + \omega}{2\omega} = a + 1 $  
+
+即 $ \dfrac{\pi}{2\omega}, \dfrac{3\pi}{2\omega} \in S_\omega \cap (a, a+1) $ 成立；  
+
+综上 $ \omega \in (\pi, 2\pi] $.
+\end{solutions}

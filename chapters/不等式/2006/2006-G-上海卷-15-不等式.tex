@@ -1,0 +1,34 @@
+% === Begin Label Data ===
+% ID: 759
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2006}{G}{上海卷}{15}{不等式}
+若关于 $ x $ 的不等式 $ (1+k^2)x\leqslant k^4+4 $ 的解集是 $ M $，则对任意实常数 $ k $，总有 (\hspace{1cm})
+\begin{choices}
+\choice{{$2\in M$，$0\in M$}}
+\choice{{$2\notin M$，$0\notin M$}}
+\choice{{$2\in M$，$0\notin M$}}
+\choice{{$2\notin M$，$0\in M$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A.
+\end{answer}
+
+\begin{solutions}
+解法 1：因为 $ 1+k^2>0 $，所以
+$$
+(1+k^2)x\leqslant k^2+4 \Leftrightarrow x\leqslant \frac{k^4+4}{1+k^2} \Leftrightarrow x\leqslant (k^2+1)+\frac{5}{k^2+1}-2,
+$$
+而 $ f(k)=(k^2+1)+\dfrac{5}{k^2+1}-2\geqslant 2\sqrt{5}-2 $，即 $ f(k) $ 的最小值为 $ 2\sqrt{5}-2 $，这说明只要不大于 $ 2\sqrt{5}-2 $ 的实数 $ x $ 必是不等式 $ x\leqslant f(k) $ 的解。  
+因为 $ 2<2\sqrt{5}-2 $，$ 0<2\sqrt{5}-2 $，所以 $ 2\in M $，$ 0\in M $.  
+
+解法 2：将 $ x=0 $ 代入已知不等式，得 $ 0\leqslant k^4+4 $，对任意实数 $ k $ 恒成立，说明 $ x=0 $ 是已知不等式的一个解，即 $ 0\in M $.  
+将 $ x=2 $ 代入已知不等式，得 $ (1+k^2)\cdot 2\leqslant k^4+4 $，即 $ k^4-2k^2+2\geqslant 0 $，$ (k^2-1)^2+1\geqslant 0 $.  
+而 $ (k^2-1)^2+1\geqslant 0 $ 对任意实数 $ k $ 都成立，说明 $ x=2 $ 是已知不等式的一个解，即 $ 2\in M $.
+\end{solutions}

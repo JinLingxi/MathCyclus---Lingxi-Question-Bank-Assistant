@@ -1,0 +1,29 @@
+% === Begin Label Data ===
+% ID: 825
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2007}{G}{湖北卷（文）}{7}{概率}
+将 5 本不同的书全发给 4 位同学，每名同学至少有一本书的概率是 (\hspace{1cm})
+\begin{choices}
+\choice{{$\dfrac{15}{64}$}}
+\choice{{$\dfrac{15}{128}$}}
+\choice{{$\dfrac{24}{125}$}}
+\choice{{$\dfrac{48}{125}$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+不考虑任何条件限制，将 5 本不同的书全发给 4 名同学，每本书的发放均有 4 种不同选择，故共有 $ 4\times4\times4\times4\times4=4^5 $ 种分法．在 “每名同学至少有一本书” 这一条件的限制下，先考虑将 5 本书分成 4 组，故有 $ \mathrm{C}_5^2 $ 种分组方式，然后考虑这 4 组的全排列有 $ \mathrm{A}_4^4 $ 种．
+
+故在限制条件下 5 本书分给 4 名同学，且每名同学都有至少一本书的分法有 $ \mathrm{C}_5^2\cdot\mathrm{A}_4^4 $ 种．
+
+从而所求概率为 $ \dfrac{\mathrm{C}_5^2\mathrm{A}_4^4}{4^5}=\dfrac{15}{4^3}=\dfrac{15}{64} $．故选 A 为正确答案．
+\end{solutions}

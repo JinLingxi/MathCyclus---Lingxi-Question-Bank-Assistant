@@ -1,0 +1,62 @@
+% === Begin Label Data ===
+% ID: 804
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2006}{G}{四川卷（理）}{11}{解三角形}
+设 $ a $，$ b $，$ c $ 分别是 $ \triangle ABC $ 的三个内角 $ A $，$ B $，$ C $ 所对的边，则 $ a^{2}=b(b+c) $ 是 $ A=2B $ 的 (\hspace{1cm})
+\begin{choices}
+\choice{{充要条件}}
+\choice{{充分而不必要条件}}
+\choice{{必要而不充分条件}}
+\choice{{既不充分也不必要条件}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+先判断充分性。因为
+$$
+\cos A=\frac{b^{2}+c^{2}-a^{2}}{2bc}=\frac{b^{2}+c^{2}-(b^{2}+bc)}{2bc}=\frac{c^{2}-bc}{2bc}=\frac{c-b}{2b},
+$$
+$$
+\cos B=\frac{a^{2}+c^{2}-b^{2}}{2ac}=\frac{b^{2}+bc+c^{2}-b^{2}}{2ac}=\frac{b+c}{2a},
+$$
+$$
+\cos 2B=2\cos^{2}B-1=2\cdot\frac{(b+c)^{2}}{4a^{2}}-1=\frac{(b+c)^{2}}{2b(b+c)}-1=\frac{b+c}{2b}-1=\frac{c-b}{2b},
+$$
+所以 $ \cos A=\cos 2B $.
+
+又因为 $ y=\cos x $ 在 $ (0,\pi) $ 内单调，所以 $ A=2B $.
+
+再判断必要性。由 $ A=2B $，得 $ \sin A=\sin 2B=2\sin B\cos B $.
+
+因为 $ \sin B\neq 0 $，所以 $ \dfrac{\sin A}{\sin B}=2\cos B $.
+
+分别使用正弦、余弦定理，得
+$$
+\frac{a}{b}=2\cdot\frac{a^{2}+c^{2}-b^{2}}{2ac},
+$$
+$$
+a^{2}c=b(a^{2}+c^{2}-b^{2}),
+$$
+$$
+a^{2}c=a^{2}b+b(c^{2}-b^{2}),
+$$
+$$
+a^{2}(c-b)=b(c-b)(c+b).
+$$
+则 $ c=b $ 或 $ a^{2}=b(c+b) $.
+
+因为 $ c=b $ 时，有 $ A=90^{\circ} $，$ B=C=45^{\circ} $，
+
+此时 $ a $，$ b $，$ c $ 仍满足 $ a^{2}=b^{2}+c^{2}=b(b+c) $，
+
+所以 $ a^{2}=b(b+c) $.
+\end{solutions}

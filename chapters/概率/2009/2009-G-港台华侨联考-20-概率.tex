@@ -1,0 +1,29 @@
+% === Begin Label Data ===
+% ID: 843
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2009}{G}{港台华侨联考}{20}{概率}
+某质检员检验一件产品时，把正品误判为次品的概率为 $ 0.1 $，把次品误判为正品的概率为 $ 0.05 $．如果一箱产品中含有 $ 8 $ 件正品，$ 2 $ 件次品，现从中任取 $ 1 $ 件让该质检员质检，那么出现误判的概率为 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+$ 0.09 $
+\end{answer}
+
+\begin{solutions}
+设事件 $ A $：产品为正品，事件 $ B $：质检员检验一件产品为正品．  
+由题意，$ P(\overline{B}\mid A)=0.1 $，$ P(B\mid \overline{A})=0.05 $，$ P(A)=0.8 $，$ P(\overline{A})=0.2 $．则误判的概率为  
+$$
+P(\overline{B}A + B\overline{A}) = P(\overline{B}A) + P(B\overline{A})
+$$
+$$
+= P(\overline{B}\mid A)P(A) + P(B\mid \overline{A})P(\overline{A})
+$$
+$$
+= 0.1 \times 0.8 + 0.05 \times 0.2 = 0.09.
+$$
+\end{solutions}

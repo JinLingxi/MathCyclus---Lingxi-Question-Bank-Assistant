@@ -1,0 +1,25 @@
+% === Begin Label Data ===
+% ID: 743
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2009}{G}{江西卷}{3}{集合}
+已知全集 $ U = A \cup B $ 中有 $ m $ 个元素，$ (\complement_U A) \cup (\complement_U B) $ 中有 $ n $ 个元素．若 $ A \cap B $ 非空，则 $ A \cap B $ 的元素个数为 (\hspace{1cm})
+\begin{choices}
+\choice{{$mn$}}
+\choice{{$m+n$}}
+\choice{{$n-m$}}
+\choice{{$m-n$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+$ m - n $
+\end{answer}
+
+\begin{solutions}
+由德摩根律，$ (\complement_U A) \cup (\complement_U B) = \complement_U (A \cap B) $，故 $ |\complement_U (A \cap B)| = n $．又 $ |U| = m $，所以 $ |A \cap B| = |U| - |\complement_U (A \cap B)| = m - n $．
+\end{solutions}

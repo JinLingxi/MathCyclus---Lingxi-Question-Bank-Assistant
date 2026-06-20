@@ -6,10 +6,20 @@
 % 组卷引用次数: 0
 % === End  Label Data ===
 
-\begin{problem}{2024}{G}{新课标II卷}{16}{导数}
+\begin{problem}{2024}{G}{新课标II卷}{16}{导数}{2024}{G}{新课标II卷}{16}{导数}
 已知函数 $f(x)=e^x-ax-a^3$.
 
 (1) 当 $a=1$ 时，求曲线 $y=f(x)$ 在点 $(1,f(1))$ 处的切线方程;
 
 (2) 若 $f(x)$ 有极小值，且极小值小于 0，求 $a$ 的取值范围.
 \end{problem}
+
+\begin{answer}
+$(1) y=(e-1)x-1;\quad (2) (1,+\infty)$
+\end{answer}
+
+\begin{solutions}
+(1) 当 $a=1$ 时，$f(x)=e^x-x-1$,则 $f(1)=e-2$．求导得 $f'(x)=e^x-1$,故切线斜率 $k=f'(1)=e-1$．所求切线方程为 $y-(e-2)=(e-1)(x-1)$,整理得 $y=(e-1)x-1$．
+
+ (2) $f'(x)=e^x-a$．若 $a\le 0$,则 $f'(x)>0$,$f(x)$ 在 $\mathbb{R}$ 上单调递增，无极值，舍去．若 $a>0$,令 $f'(x)=0$,得 $x=\ln a$．当 $x\in(-\infty,\ln a)$ 时，$f'(x)<0$;当 $x\in(\ln a,+\infty)$ 时，$f'(x)>0$．故 $f(x)$ 在 $x=\ln a$ 处取得极小值，且极小值为 $f(\ln a)=a-a\ln a-a^3$．由题意 $a-a\ln a-a^3<0$,因 $a>0$,化简得 $\ln a+a^2-1>0$．设 $g(a)=\ln a+a^2-1(a>0)$,则 $g'(a)=\frac{1}{a}+2a>0$,故 $g(a)$ 单调递增．又 $g(1)=0$,所以 $a>1$．综上，$a$ 的取值范围是 $(1,+\infty)$．
+\end{solutions}

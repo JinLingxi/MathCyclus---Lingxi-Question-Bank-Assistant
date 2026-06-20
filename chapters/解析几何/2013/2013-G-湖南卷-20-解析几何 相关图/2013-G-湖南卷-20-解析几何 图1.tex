@@ -1,0 +1,25 @@
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.75]
+% axes
+\draw[->] (-0.8,0) -- (7.6,0) node[below] {$x$};
+\draw[->] (0,-0.5) -- (0,5.2) node[left] {$y$};
+\node[below left] at (0,0) {$O$};
+
+% polyline path: M -> M1 -> M2 -> M3 -> N -> N1 -> back to M (as in the sketch)
+\coordinate (M)  at (1.6,3.6);
+\coordinate (M1) at (5.6,3.6);
+\coordinate (M2) at (5.6,2.4);
+\coordinate (M3) at (4.4,2.4);
+\coordinate (N)  at (4.4,1.6);
+\coordinate (N1) at (1.6,1.6);
+
+\draw[thick] (M) -- (M1) -- (M2) -- (M3) -- (N) -- (N1) -- cycle;
+
+% labels
+\node[above left] at (M) {$M$};
+\node[above right] at (M1) {$M_1$};
+\node[right] at (M2) {$M_2$};
+\node[left] at (M3) {$M_3$};
+\node[below] at (N) {$N$};
+\node[left] at (N1) {$N_1$};
+
+\end{tikzpicture}

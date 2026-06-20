@@ -1,0 +1,27 @@
+% === Begin Label Data ===
+% ID: 842
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2022}{G}{全国乙卷（理）}{16}{导数}
+已知 $ x = x_1 $ 和 $ x = x_2 $ 分别是函数 $ f(x) = 2a^x - ex^2 $ ($ a > 0 $, $ a \ne 1 $) 的极小值点和极大值点. 若 $ x_1 < x_2 $, 则 $ a $ 的取值范围是 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+$ a \in \left( \dfrac{1}{e}, 1 \right) $.
+\end{answer}
+
+\begin{solutions}
+$ f'(x) = 2\ln a \cdot a^x - 2ex = 2e \left( \dfrac{\ln a}{e} \cdot a^x - x \right) $
+
+令 $ g(x) = \dfrac{\ln a}{e} \cdot a^x - x $, $ g'(x) = \dfrac{\ln^2 a}{e} a^x - 1 $.
+
+若 $ 0 < a < 1 $, $ g'(x) $ 单调递减, $ g(x) $ 在 $ \left( -\infty, \log_a \dfrac{e}{\ln^2 a} \right) $ 单调增, 在 $ \left( \log_a \dfrac{e}{\ln^2 a}, +\infty \right) $ 单调减, 结合 $ x \to \infty $ 时 $ g(x) \to -\infty $ 可知 $ f(x) $ 有两个极值点当且仅当 $ g(x)_{\max} = g\left( \log_a \dfrac{e}{\ln^2 a} \right) = \dfrac{1}{\ln a} - \log_a \dfrac{e}{\ln^2 a} = \dfrac{\ln(\ln^2 a)}{\ln a} > 0 $, 于是 $ \ln^2 a < 1 $ 即 $ \dfrac{1}{e} < a < 1 $;
+
+若 $ a > 1 $, $ g'(x) $ 单调递增, 结合 $ x \to +\infty $ 时 $ g(x) \to +\infty $ 可知 $ g(x) $ 单调增或先减后增, 于是 $ g(x) $ 要么仅有一个变号零点, 要么 $ g(x) $ 有两个变号零点且左侧零点为左正右负零点, 右侧零点为左负右正零点, 即 $ f(x) $ 要么仅有一个极值点, 要么极大值点在极小值点左侧, 不满足题意.
+
+综上, $ a \in \left( \dfrac{1}{e}, 1 \right) $.
+\end{solutions}

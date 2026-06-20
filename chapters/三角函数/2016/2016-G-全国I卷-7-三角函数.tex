@@ -1,0 +1,71 @@
+% === Begin Label Data ===
+% ID: 792
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2016}{G}{全国I卷}{7}{三角函数}
+已知函数 $ f(x)=\sin(\omega x+\varphi) $ ($ \omega>0 $, $ |\varphi|\leqslant\dfrac{\pi}{2} $), $ x=-\dfrac{\pi}{4} $ 为 $ f(x) $ 的零点, $ x=\dfrac{\pi}{4} $ 为函数 $ y=f(x) $ 图像的对称轴, 且 $ f(x) $ 在 $ \left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $ 单调, 则 $ \omega $ 的最大值为 (\hspace{1cm})
+\begin{choices}
+\choice{{$11$}}
+\choice{{$9$}}
+\choice{{$7$}}
+\choice{{$5$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+B
+\end{answer}
+
+\begin{solutions}
+思路1：由正弦型三角函数的单调性推出 $ \omega $ 满足的关系.  
+
+因为 $ f(x) $ 在 $ \left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $ 单调, 所以区间 $ \left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $ 不能包含函数 $ f(x) $ 的最值点, 即  
+$$
+\dfrac{5\pi}{36}-\dfrac{\pi}{18}\leqslant\dfrac{\pi}{\omega},\quad\text{化简得}\omega\leqslant12.
+$$  
+
+因为 $ x=-\dfrac{\pi}{4} $ 为 $ f(x) $ 的零点, $ x=\dfrac{\pi}{4} $ 为 $ y=f(x) $ 图像的对称轴, 所以  
+$$
+\begin{cases}
+-\dfrac{\pi}{4}\omega+\varphi=m\pi\,(m\in\mathbb{Z}),\\[1em]
+\dfrac{\pi}{4}\omega+\varphi=n\pi+\dfrac{\pi}{2}\,(m\in\mathbb{Z}),
+\end{cases}
+$$  
+由此可得 $ \varphi=\dfrac{k\pi}{2}+\dfrac{\pi}{4}\,(k\in\mathbb{Z}) $.  
+
+又 $ |\varphi|\leqslant\dfrac{\pi}{2} $, 故 $ \omega=\dfrac{\pi}{4} $ 或 $ \varphi=-\dfrac{\pi}{4} $.  
+
+当 $ \varphi=\dfrac{\pi}{4} $ 时, $ \omega=1-4m\,(m\in\mathbb{Z}) $, 而 $ \omega>0 $ 且 $ \omega\leqslant12 $, 可得 $ \omega $ 的可能值为 $ 1,5,9 $;  
+
+当 $ \varphi=-\dfrac{\pi}{4} $ 时, $ \omega=-1-4m\,(m\in\mathbb{Z}) $, 而 $ \omega>0 $ 且 $ \omega\leqslant12 $, 可得 $ \omega $ 的可能值为 $ 3,7,11 $;  
+
+验证 $ f(x)=\sin\left(11x-\dfrac{\pi}{4}\right) $ 有一个最值点 $ x=\dfrac{3\pi}{44}\in\left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $, 不满足题设.  
+
+验证 $ f(x)=\sin\left(9x+\dfrac{\pi}{4}\right) $ 满足题设, 故选 B.  
+
+思路2：由正弦型三角函数的零点及对称轴分析 $ \omega $ 与 $ \varphi $ 满足的条件.  
+
+因为 $ x=-\dfrac{\pi}{4} $ 为 $ f(x) $ 的零点, $ x=\dfrac{\pi}{4} $ 为 $ y=f(x) $ 图像的对称轴, 所以  
+$$
+\begin{cases}
+-\dfrac{\pi}{4}\omega+\varphi=m\pi\,(m\in\mathbb{Z}),\\[1em]
+\dfrac{\pi}{4}\omega+\varphi=n\pi+\dfrac{\pi}{2}\,(m\in\mathbb{Z}),
+\end{cases}
+$$  
+由此可得 $ \omega=1-4m\,(m\in\mathbb{Z}) $, $ \omega=1+4n\,(n\in\mathbb{Z}) $, $ \varphi=\dfrac{t\pi}{2}+\dfrac{\pi}{4}\,(t\in\mathbb{Z}) $.  
+
+又 $ \omega>0 $, $ |\varphi|\leqslant\dfrac{\pi}{2} $, 故 $ \omega=\dfrac{\pi}{4} $ 或 $ \varphi=-\dfrac{\pi}{4} $.  
+
+因为 $ f(x) $ 在 $ \left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $ 单调, 所以区间 $ \left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $ 不能包含函数 $ f(x) $ 的最值点, 即  
+$$
+\dfrac{5\pi}{36}-\dfrac{\pi}{18}\leqslant\dfrac{\pi}{\omega},\quad\text{化简得}\omega\leqslant12.
+$$  
+
+验证 $ f(x)=\sin\left(11x-\dfrac{\pi}{4}\right) $ 有一个最值点 $ x=\dfrac{3\pi}{44}\in\left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $, $ f(x)=\sin\left(7x-\dfrac{\pi}{4}\right) $ 有一个最值点 $ x=\dfrac{3\pi}{28}\in\left(\dfrac{\pi}{18},\dfrac{5\pi}{36}\right) $, $ f(x)=\sin\left(3x-\dfrac{\pi}{4}\right) $ 满足题设.  
+
+验证 $ f(x)=\sin\left(9x+\dfrac{\pi}{4}\right) $, $ f(x)=\sin\left(5x+\dfrac{\pi}{4}\right) $, $ f(x)=\sin\left(x+\dfrac{\pi}{4}\right) $ 满足题设.
+\end{solutions}

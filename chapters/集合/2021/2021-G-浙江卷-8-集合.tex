@@ -1,0 +1,44 @@
+% === Begin Label Data ===
+% ID: 448
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2021}{G}{浙江卷}{8}{集合}
+已知 $ \alpha $, $ \beta $, $ \gamma $ 是互不相同的锐角，则在 $ \sin\alpha\cos\beta $, $ \sin\beta\cos\gamma $, $ \sin\gamma\cos\alpha $ 三个值中，大于 $ \dfrac{1}{2} $ 的个数的最大值是 (\hspace{1cm})
+\begin{choices}
+\choice{{$0$}}
+\choice{{$1$}}
+\choice{{$2$}}
+\choice{{$3$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+C
+\end{answer}
+
+\begin{solutions}
+\circled{1} 先说明个数不可以为 $3$：由基本不等式，
+$$
+\sin\alpha\cos\beta + \sin\beta\cos\gamma + \sin\gamma\cos\alpha
+\leq \dfrac{1}{2}(\sin^2\alpha + \cos^2\beta + \sin^2\beta + \cos^2\gamma + \sin^2\gamma + \cos^2\alpha)
+= \dfrac{3}{2}.
+$$
+所以不可能三个值都大于 $ \dfrac{1}{2} $.
+
+\circled{2} 再说明个数可以为 $2$：取 $ \alpha $, $ \beta $, $ \gamma $ 使得 $ \sin\alpha = \dfrac{1}{8} $, $ \beta = \dfrac{\pi}{4} $, $ \cos\gamma = \dfrac{1}{8} $，
+
+则
+$\sin\alpha\cos\beta = \dfrac{\sqrt{2}}{16} < \dfrac{1}{2}$,
+
+$\sin\beta\cos\gamma = \dfrac{\sqrt{2}}{2} \times \dfrac{3\sqrt 7}{8} > \dfrac{9}{16} > \dfrac{1}{2}$,
+
+$\sin\gamma\cos\alpha = \dfrac{63}{64} > \dfrac{1}{2}$.
+
+三个值中有两个值大于 $ \dfrac{1}{2} $.
+
+因此最大值为 $2$.
+\end{solutions}

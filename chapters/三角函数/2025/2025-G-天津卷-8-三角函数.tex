@@ -1,0 +1,39 @@
+% === Begin Label Data ===
+% ID: 793
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2025}{G}{天津卷}{8}{三角函数}
+已知函数 $ f(x)=\sin(\omega x+\varphi) $（$ \omega>0 $，$ -\pi<\varphi<\pi $）在区间 $ \left[-\dfrac{5\pi}{12},\dfrac{\pi}{12}\right] $ 上单调递增，直线 $ x=\dfrac{\pi}{12} $ 为曲线 $ y=f(x) $ 的一条对称轴，点 $ \left(\dfrac{\pi}{3},0\right) $ 为曲线 $ y=f(x) $ 的一个对称中心，则 $ f(x) $ 在区间 $ \left[0,\dfrac{\pi}{2}\right] $ 上的最小值为 (\hspace{1cm})
+\begin{choices}
+\choice{{$-\dfrac{\sqrt{3}}{2}$}}
+\choice{{$-\dfrac{1}{2}$}}
+\choice{{$-1$}}
+\choice{{$0$}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+由已知条件确定函数 $ f(x) $ 的最小正周期，从而求出 $ \omega $ 的值，进而确定 $ \varphi $ 的值，然后利用三角函数的单调性求出 $ f(x) $ 在区间 $ \left[0,\dfrac{\pi}{2}\right] $ 上的最小值.
+
+解：设函数 $ f(x) $ 的最小正周期为 $ T $.
+
+由函数 $ f(x)=\sin(\omega x+\varphi) $ 在区间 $ \left[-\dfrac{5\pi}{12},\dfrac{\pi}{12}\right] $ 上单调递增，得 $ \dfrac{\pi}{12}-\left(-\dfrac{5\pi}{12}\right)=\dfrac{\pi}{2}<\dfrac{T}{2} $，即 $ T>\pi $；
+
+又由直线 $ x=\dfrac{\pi}{12} $ 为曲线 $ y=f(x) $ 的一条对称轴，点 $ \left(\dfrac{\pi}{3},0\right) $ 为曲线 $ y=f(x) $ 的一个对称中心，得 $ \dfrac{\pi}{3}-\dfrac{\pi}{12}=\dfrac{\pi}{4}=\dfrac{kT}{2}+\dfrac{T}{4} $（$ k\in\mathbb{N} $），即 $ T=\dfrac{\pi}{2k+1} $（$ k\in\mathbb{N} $）.
+
+所以，$ T=\pi $. 由 $ T=\dfrac{2\pi}{\omega} $，得 $ \omega=2 $.
+
+由函数 $ f(x)=\sin(\omega x+\varphi) $ 在区间 $ \left[-\dfrac{5\pi}{12},\dfrac{\pi}{12}\right] $ 上单调递增，且直线 $ x=\dfrac{\pi}{12} $ 为曲线 $ y=f(x) $ 的一条对称轴，得 $ f\left(\dfrac{\pi}{12}\right)=1 $，即 $ \sin\left(\dfrac{\pi}{6}+\varphi\right)=1 $，
+
+结合 $ -\pi<\varphi<\pi $，得 $ \varphi=\dfrac{\pi}{3} $，于是，$ f(x)=\sin\left(2x+\dfrac{\pi}{3}\right) $.
+
+令 $ z=2x+\dfrac{\pi}{3} $，则当 $ x\in\left[0,\dfrac{\pi}{2}\right] $ 时，$ z\in\left[\dfrac{\pi}{3},\dfrac{4\pi}{3}\right] $. 因为函数 $ g(z)=\sin z $ 在区间 $ \left[\dfrac{\pi}{3},\dfrac{\pi}{2}\right] $ 上单调递增，在区间 $ \left[\dfrac{\pi}{2},\dfrac{4\pi}{3}\right] $ 上单调递减，$ g\left(\dfrac{\pi}{3}\right)=\dfrac{\sqrt{3}}{2} $，$ g\left(\dfrac{4\pi}{3}\right)=-\dfrac{\sqrt{3}}{2} $，故 $ g(z) $ 的最小值为 $ -\dfrac{\sqrt{3}}{2} $. 所以，$ f(x) $ 在区间 $ \left[0,\dfrac{\pi}{2}\right] $ 上的最小值为 $ -\dfrac{\sqrt{3}}{2} $.
+\end{solutions}

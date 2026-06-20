@@ -1,0 +1,48 @@
+% === Begin Label Data ===
+% ID: 639
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2020}{G}{浙江卷}{10}{集合}
+设集合 $ S,T\subseteq\mathbb{N}^* $, $ T\subseteq\mathbb{N}^* $, $ S,T $ 中至少有两个元素, 且 $ S,T $ 满足:  
+① 对于任意 $ x,y\in S $, 若 $ x\neq y $, 都有 $ xy\in T $;  
+② 对于任意 $ x,y\in T $, 若 $ x<y $, 则 $ \dfrac{y}{x}\in S $.  
+
+下列命题正确的是 (\hspace{1cm})
+
+\begin{choices}
+\choice{{若 $ S $ 有 4 个元素, 则 $ S\cup T $ 有 7 个元素}}
+\choice{{若 $ S $ 有 4 个元素, 则 $ S\cup T $ 有 6 个元素}}
+\choice{{若 $ S $ 有 3 个元素, 则 $ S\cup T $ 有 4 个元素}}
+\choice{{若 $ S $ 有 3 个元素, 则 $ S\cup T $ 有 5 个元素}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+$A$
+\end{answer}
+
+\begin{solutions}
+解法一 
+
+\circled{1}当$S$中有3个元素时，设$S=\{a,b,c\},a<b<c$,则$\{ab,bc,ac\}\subseteq T$,
+
+ 所以$\frac{b}{a}\in S,\frac{c}{b}\in S,\frac{c}{a}\in S$,当$\frac{c}{a}=c$时，$a=1$, 所以$\frac{c}{b}=b$,即$c=b^{2}$, 此时$S=\{1,b,b^{2}\},T=\{b,b^{2},b^{3}\}$,
+
+所以$S\cup T=\{1,b,b^{2},b^{3}\}$, 有4个元素；
+
+当$\frac{c}{a}=b$时，$c=ab$,
+
+所以$\frac{b}{a}=a$,即$b=a^{2}(a\neq1)$,此时$S=\{a,a^{2},a^{3}\},T=\{a^{3},a^{4},a^{5}\}$或$\{a^{2},a^{3},a^{4},a^{5}\}$或$\{a^{3},a^{4},a^{5},a^{6}\}$或$\{a,a^{2},a^{3},a^{4},a^{5},a^{6}\}$,有5个或6个元素．故排除C,D.
+
+\circled{2} 当$S$中有4个元素时，设$S=\{a,b,c,d\},a<b<c<d$,
+
+所以$ab<ac<ad<bd<cd$,且$\{ab,ac,ad,bd,cd\}\subseteq T$, 所以$\frac{ac}{ab}<\frac{ad}{ab}<\frac{bd}{ab}<\frac{cd}{ab}$,且$\{\frac{ac}{ab},\frac{ad}{ab},\frac{bd}{ab},\frac{cd}{ab}\}\subseteq S$,
+
+所以$\frac{ac}{ab}=a,\frac{ad}{ab}=b,\frac{bd}{ab}=c,\frac{cd}{ab}=d$,所以$b=a^{2},c=a^{3},d=a^{4}(a\neq1)$,此时$S=\{a,a^{2},a^{3},a^{4}\},T=\{a^{3},a^{4},a^{5},a^{6},a^{7}\}$,所以$S\cup T=\{a,a^{2},a^{3},a^{4},a^{5},a^{6},a^{7}\}$,有7个元素，故选A．
+
+解法二 特殊值法．当$S=\{1,2,4\},T=\{2,4,8\}$时，$S\cup T=\{1,2,4,8\}$,故C错误；当$S=\{2,4,8\},T=\{8,16,32\}$时，$S\cup T=\{2,4,8,16,32\}$,故D错误；当$S=\{2,4,8,16\},T=\{8,16,32,64,128\}$时，$S\cup T=\{2,4,8,16,32,64,128\}$,故B错误．故选A．
+\end{solutions}

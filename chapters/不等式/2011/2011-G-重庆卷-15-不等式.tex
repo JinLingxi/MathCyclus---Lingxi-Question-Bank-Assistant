@@ -1,0 +1,23 @@
+% === Begin Label Data ===
+% ID: 748
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2011}{G}{重庆卷}{15}{不等式}
+若实数 $ a,b,c $ 满足 $ 2^a+2^b=2^{a+b} $，$ 2^a+2^b+2^c=2^{a+b+c} $，则 $ c $ 的最大值是 \underline{\hspace{4em}}.
+\end{problem}
+
+\begin{answer}
+$ 2-\log_2 3 $
+\end{answer}
+
+\begin{solutions}
+$ 2^{a+b}=2^a+2^b\geqslant 2\sqrt{2^{a+b}} \Rightarrow 2^{a+b}\geqslant 4 $
+
+$ 2^a+2^b+2^c=2^{a+b+c} \Rightarrow 2^{a+b}+2^c=2^{a+b}\cdot 2^c \Rightarrow 2^c=\dfrac{2^{a+b}}{2^{a+b}-1}=1+\dfrac{1}{2^{a+b}-1}\leqslant \dfrac{4}{3} $
+
+$ c\leqslant \log_2 \dfrac{4}{3}=2-\log_2 3 $，取等条件为 $ a=b=1 $，即 $ c $ 的最大值是 $ 2-\log_2 3 $.
+\end{solutions}

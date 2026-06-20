@@ -1,0 +1,70 @@
+% === Begin Label Data ===
+% ID: 452
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2021}{G}{全国甲卷}{2}{统计}{2021}{G}{全国甲卷}{2}{统计}
+为了解某地农村经济情况，对该地农户家庭年收入进行抽样调查，将农户家庭年收入的调查数据整理得到如下频率分布直方图：
+
+\begin{center}
+\begin{tikzpicture}[x=0.75cm,y=18cm,line cap=round,line join=round]
+\def\xoff{1.3}
+\def\xend{13.9}
+\def\ymax{0.225}
+
+\draw[thick] (0,0) -- (\xoff-0.01,0);
+\draw[thick,->] (\xoff,0) -- (\xend,0) node[below right] {收入/万元};
+\draw[thick,->] (0,0) -- (0,\ymax) node[above,align=center] {频率\\组距};
+\node[below left] at (0,0) {$0$};
+
+\draw (\xoff-0.55,0.0) -- (\xoff-0.47,0.01) -- (\xoff-0.39,0.0) -- (\xoff-0.31,0.01) -- (\xoff-0.23,0.0);
+
+\foreach \yy in {0.02,0.04,0.10,0.14,0.20}{
+  \draw (0,\yy) -- (-0.12,\yy);
+  \node[left] at (-0.12,\yy) {\small \yy};
+  \draw[densely dashed] (0,\yy) -- (\xoff+12.0,\yy);
+}
+
+\foreach \k/\val in {0/2.5,1/3.5,2/4.5,3/5.5,4/6.5,5/7.5,6/8.5,7/9.5,8/10.5,9/11.5,10/12.5,11/13.5,12/14.5}{
+  \draw (\xoff+\k,0) -- (\xoff+\k,-0.004);
+  \node[below] at (\xoff+\k,-0.004) {\small \val};
+}
+
+\foreach \k/\h in {
+  0/0.02,
+  1/0.04,
+  2/0.10,
+  3/0.14,
+  4/0.20,
+  5/0.20,
+  6/0.10,
+  7/0.10,
+  8/0.04,
+  9/0.02,
+  10/0.02,
+  11/0.02
+}{
+  \draw[thick,fill=white] (\xoff+\k,0) rectangle ++(1,\h);
+}
+\end{tikzpicture}
+\end{center}
+
+根据此频率分布直方图，下面结论中不正确的是 （\hspace{1cm}） (\hspace{1cm})
+\begin{choices}
+\choice{{该地农户家庭年收入低于 $4.5$ 万元的农户比率估计为 $6\%$}}
+\choice{{该地农户家庭年收入不低于 $10.5$ 万元的农户比率估计为 $10\%$}}
+\choice{{估计该地农户家庭年收入的平均值不超过 $6.5$ 万元}}
+\choice{{估计该地有一半以上的农户，其家庭年收入介于 $4.5$ 万元至 $8.5$ 万元之间}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+
+\end{answer}
+
+\begin{solutions}
+
+\end{solutions}

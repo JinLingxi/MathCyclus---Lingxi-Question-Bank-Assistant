@@ -1,0 +1,47 @@
+% === Begin Label Data ===
+% ID: 814
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2025}{XS}{Fiddie联盟模拟测试}{8}{概率}
+设随机变量 $ X $ 服从正态分布 $ N(0,1) $. 已知部分小概率值和相应的临界值如下表:
+\begin{center}
+\begin{tabular}{|c|c|c|c|c|c|c|}
+  \hline
+$ \alpha $ & $ 2.706 $ & $ 3.841 $ & $ 5.024 $ & $ 6.635 $ & $ 7.879 $ & $ 10.828 $ \\
+\hline
+$ P(X^2 \geqslant \alpha) $ & $ 0.1 $ & $ 0.05 $ & $ 0.025 $ & $ 0.01 $ & $ 0.005 $ & $ 0.001 $ \\\hline
+\end{tabular}
+\end{center}
+若实数 $ m $ 满足 $ P(m \leqslant X < 3) = 0.025 $，则 (\hspace{1cm})
+\begin{choices}
+\choice{{A. $ 2.706 < m^2 < 3.841 $}}
+\choice{{B. $ 3.841 < m^2 < 5.024 $}}
+\choice{{C. $ 5.024 < m^2 < 6.635 $}}
+\choice{{D. $ 6.635 < m^2 < 7.879 $}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+A
+\end{answer}
+
+\begin{solutions}
+ 根据正态分布的对称性，
+$ P(0 \leqslant X < 3) = \dfrac{1}{2}P(-3 \leqslant X < 3) = \dfrac{1}{2}P(X^2 < 9) > \dfrac{1}{2}P(X^2 < 7.879) = 0.4975 $，
+而 $ P(m \leqslant X < 3) < P(0 \leqslant X < 3) $，所以 $ m > 0 $.
+
+再根据正态分布的对称性可知
+\begin{align*}
+P(m^2 \leqslant X^2 < 9) &= P(m \leqslant X < 3) + P(-3 < X \leqslant -m) \\
+&= 2 \times P(m \leqslant X < 3) = 0.05 .
+\end{align*}
+由表可知 $ 0.001 < P(X^2 \geqslant 9) < 0.005 $.
+所以 $ P(X^2 \geqslant m^2) = P(m^2 \leqslant X^2 < 9) + P(X^2 \geqslant 9) \in (0.051, 0.055) $.
+因为 $ P(X^2 \geqslant 2.706) = 0.1 > P(X^2 \geqslant m^2) > 0.05 = P(X^2 \geqslant 3.841) $，而函数 $ f(\alpha) = P(X^2 \geqslant \alpha) $ 单调递减，所以 $ 2.706 < m^2 < 3.841 $. 故选 A.
+
+【易错警示】 如果误认为 $ P(m^2 \leqslant X^2 < 9) = 0.025 $，就会得到 $ P(X^2 \geqslant m^2) \in (0.026, 0.03) $，从而错选 B. 也有可能因为得到 $ P(X^2 \geqslant m^2) \in (0.02, 0.024) $ 从而错选 C；因为得到 $ P(X^2 \geqslant m^2) \in (0.045, 0.049) $ 从而错选 B. 预计本题错选 B 的占 $ 40\% $，错选 C 的占 $ 20\% $.
+\end{solutions}

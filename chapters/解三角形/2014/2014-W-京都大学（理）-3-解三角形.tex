@@ -1,0 +1,49 @@
+% === Begin Label Data ===
+% ID: 834
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2014}{W}{京都大学（理）}{3}{解三角形}
+设三角形 $ ABC $ 满足 $ \angle B = 2\angle A $，$ BC = 1 $．当三角形 $ ABC $ 的面积最大时，求 $ \cos\angle B $ 的大小．
+\end{problem}
+
+\begin{answer}
+$ \dfrac{\sqrt{33}-1}{8} $
+\end{answer}
+
+\begin{solutions}
+利用正弦定理求出 $ AB $，接着求面积
+
+$$
+\dfrac{\sin A}{BC} = \dfrac{\sin C}{AB}
+$$
+
+带入角的关系，以及 $ BC = 1 $，有$\sin A = \dfrac{\sin 3A}{AB}$
+
+$$
+AB = \dfrac{\sin 3A}{\sin A} = \dfrac{3\sin A - 4\sin^3 A}{\sin A} = 3 - 4\sin^2 A
+$$
+
+$$
+S_{\triangle ABC} = \dfrac{1}{2} \cdot 1 \cdot (3 - 4\sin^2 A) \cdot \sin 2A
+= \dfrac{1}{2} \cdot (1 + 2\cos 2A) \cdot \sin 2A
+= \dfrac{1}{2}(1 + 2\cos B)\sqrt{1 - \cos^2 B}
+$$
+
+设 $ \cos B = t $，也就是求 $ (1 + 2t)\sqrt{1 - t^2} $ 取最值时的 $ t $ 的大小
+
+求导可得
+
+$$
+\left[(1 + 2t)\sqrt{1 - t^2}\right]' = 2\sqrt{1 - t^2} - \dfrac{t(1 + 2t)}{\sqrt{1 - t^2}} = \dfrac{2 - t^2 - t - 2t^2}{\sqrt{1 - t^2}}
+$$
+
+当这个为 $ 0 $ 时，也就是分子 $ -4t^2 - t + 2 = 0 $.
+
+考虑到三角函数的值域，解得 $ t = \cos B = \dfrac{\sqrt{33} - 1}{8} $.
+
+讨论函数的增减，可以知道 $ \cos B = \dfrac{\sqrt{33} - 1}{8} $ 时取得最大值．
+\end{solutions}

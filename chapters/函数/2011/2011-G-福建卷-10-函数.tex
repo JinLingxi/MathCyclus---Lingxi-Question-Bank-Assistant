@@ -1,0 +1,44 @@
+% === Begin Label Data ===
+% ID: 807
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2011}{G}{福建卷}{10}{函数}
+已知函数 $ f(x)=\mathrm{e}^x+x $. 对于曲线 $ y=f(x) $ 上横坐标成等差数列的三个点 $ A,B,C $, 给出以下判断:
+  
+\circled{1} $ \triangle ABC $ 一定是钝角三角形;  
+
+\circled{2} $ \triangle ABC $ 可能是直角三角形;  
+
+\circled{3} $ \triangle ABC $ 可能是等腰三角形;  
+
+\circled{4} $ \triangle ABC $ 不可能是等腰三角形.  
+
+其中, 正确的判断是 (\hspace{1cm})
+\begin{choices}
+\choice{{\circled{1}\circled{3}}}
+\choice{{\circled{1}\circled{4}}}
+\choice{{\circled{2}\circled{3}}}
+\choice{{ \circled{2}\circled{4}}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+B
+\end{answer}
+
+\begin{solutions}
+
+结合图象分析. 设 $ A(x_1,y_1) $, $ B(x_2,y_2) $, $ C(x_3,y_3) $. 则 $ d=x_2-x_1=x_3-x_2 $ 且 $ y_i=\mathrm{e}^{x_i}+x_i\,(i=1,2,3) $.  
+
+(1) 由于 $ f(x) $ 单调递增, 则 $ y_1<y_2<y_3 $, 从而 $ \overrightarrow{BA}\cdot\overrightarrow{BC}=(x_1-x_2)(x_3-x_2)+(y_1-y_2)(y_3-y_2)<0 $, 所以 $ \angle ABC $ 是钝角, 故\circled{1}对, \circled{2}错.  
+
+(2) 直观上看应该有 $ |BA|<|BC| $, 下面进行严格证明: 注意 $ |BA|^2=(x_2-x_1)^2+(y_2-y_1)^2 $, $ |BC|^2=(x_2-x_3)^2+(y_2-y_3)^2 $, 由于 $ x_2-x_1=x_3-x_2 $, 则只需要验证 $ y_2-y_1<y_3-y_2 $, 即 $ \mathrm{e}^{x_2}-\mathrm{e}^{x_1}<\mathrm{e}^{x_3}-\mathrm{e}^{x_2} $, 即 $ 2\mathrm{e}^{x_2}<\mathrm{e}^{x_1}+\mathrm{e}^{x_3} $. 事实上,  
+$$
+\mathrm{e}^{x_1}+\mathrm{e}^{x_3}\geq 2\sqrt{\mathrm{e}^{x_1}\mathrm{e}^{x_3}}=2\mathrm{e}^{\frac{x_1+x_3}{2}}=2\mathrm{e}^{x_2},
+$$  
+这里等号不可能成立. 综上, $ |BA|<|BC| $, 故\circled{3}错, \circled{4}对.
+\end{solutions}

@@ -1,0 +1,65 @@
+% === Begin Label Data ===
+% ID: 563
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2010}{G}{湖南卷（理）}{16}{解析几何}
+为了考察冰川的融化状况，一支科考队在某冰川上相距 $8\ \mathrm{km}$ 的 $A$，$B$ 两点各建一个考察基地．视冰川面为平面形，以过 $A$，$B$ 两点的直线为 $x$ 轴，线段 $AB$ 的垂直平分线为 $y$ 轴建立平面直角坐标系（如图）．在直线 $x=2$ 的右侧，考察范围为到点 $B$ 的距离不超过 $\dfrac{6\sqrt{5}}{5}\ \mathrm{km}$ 的区域；在直线 $x=2$ 的左侧，考察范围为到 $A$，$B$ 两点的距离之和不超过 $4\sqrt{5}\ \mathrm{km}$ 的区域．
+
+（1）求考察区域边界曲线的方程；
+
+（2）如图所示，设线段 $P_1P_2$，$P_2P_3$ 是冰川的部分边界线（不考虑其他边界），当冰川融化时，边界线沿与其垂直的方向朝考察区域平行移动，第一年移动 $0.2\ \mathrm{km}$，以后每年移动的距离为前一年的 $2$ 倍. 求冰川边界线移动到考察区域所需的最短时间．
+
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.4]
+\usetikzlibrary{calc}
+
+% axes
+\draw[->] (-10,0) -- (10,0) node[below] {$x$};
+\draw[->] (0,-4) -- (0,9) node[left] {$y$};
+\node[below left] at (0,0) {$O$};
+
+% key points
+\coordinate (A)  at (-4,0);
+\coordinate (B)  at (4,0);
+\coordinate (P1) at ({-5*sqrt(3)},-1);
+\coordinate (P2) at ({-8*sqrt(3)/3},6);
+\coordinate (P3) at (8,6);
+
+% dashed line x=2
+\draw[dashed] (2,-3) -- (2,6);
+\node[below] at (2,-3) {$x=2$};
+
+% boundary polyline P1-P2-P3
+\draw[thick] (P1) -- (P2) -- (P3);
+
+% labels
+\fill (A) circle (2pt) node[below] {$A(-4,0)$};
+\fill (B) circle (2pt) node[below] {$B(4,0)$};
+
+\fill (P1) circle (2pt) node[below] {$P_1(-5\sqrt3,-1)$};
+\fill (P2) circle (2pt) node[above] {$P_2\!\left(-\dfrac{8\sqrt3}{3},6\right)$};
+\fill (P3) circle (2pt) node[above] {$P_3(8,6)$};
+
+% region text
+\node at (2,6.9) {区域};
+
+% "冰川" text near slanted segment
+\node at (-3.7,3) {冰};
+\node at (5,-3) {川};
+
+\node at (-6.5,4.4) {化};
+\node at (-7.5,2.7) {融};
+\node at (-8.5,1) {已};
+\end{tikzpicture}
+\end{problem}
+
+\begin{answer}
+
+\end{answer}
+
+\begin{solutions}
+
+\end{solutions}

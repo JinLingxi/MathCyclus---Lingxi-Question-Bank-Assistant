@@ -1,0 +1,42 @@
+% === Begin Label Data ===
+% ID: 723
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2013}{G}{湖南卷（理）}{16}{函数，不等式}
+设函数 $ f(x)=a^x+b^x-c^x $，其中 $ c>a>0 $，$ c>b>0 $．  
+（1）记集合 $ M=\{(a,b,c)\mid a $，$ b $，$ c $ 不能构成一个三角形的三条边长，且 $ a=b\} $，则 $ (a,b,c)\in M $ 所对应的 $ f(x) $ 的零点的取值集合为 \underline{\hspace{4em}}；  
+（2）若 $ a $，$ b $，$ c $ 是 $ \triangle ABC $ 的三条边长，则下列结论正确的是 \underline{\hspace{4em}}（写出所有正确结论的序号）  
+\begin{choices}
+\choice{{\circled{1}  $ \forall x\in(-\infty,1) $，$ f(x)>0 $}}
+\choice{{\circled{2}  $ \exists x\in\mathbb{R} $，使 $ a^x $，$ b^x $，$ c^x $ 不能构成一个三角形的三条边长}}
+\choice{{\circled{3}  若 $ \triangle ABC $ 为钝角三角形，则 $ \exists x\in(1,2) $，使 $ f(x)=0 $}}
+\end{choices}
+\end{problem}
+
+\begin{answer}
+$\{x\mid 0<x\leq 1\}$；\circled{1}\circled{2}\circled{3}.
+\end{answer}
+
+\begin{solutions}
+（1）当 $ x\leq 0 $ 时，由 $ c>a>0 $，$ c>b>0 $ 知，$ f(x)=a^x+b^x-c^x>0 $.故 $ f(x) $ 的零点 $ x>0 $.
+
+由题意知：$ c\geq a+b $，而 $ a=b $，所以 $ c\geq 2a $.设 $ f(x)=0 $，即 $ c^x=2a^x $，从而 $ 2=\left(\dfrac{c}{a}\right)^x\geq 2^x $.解得 $ x\leq 1 $.故 $ f(x) $ 的零点的取值集合为 $ \{x\mid 0<x\leq 1\} $.
+
+（2）由题意有，$ f(1)=a+b-c>0 $，当 $ 0<x<1 $ 时，由 $ 0<\dfrac{a}{c}<1 $，$ 0<\dfrac{b}{c}<1 $ 有
+$$
+f(x)=c^x\left[\left(\dfrac{a}{c}\right)^x+\left(\dfrac{b}{c}\right)^x-1\right]>c^x\left(\dfrac{a}{c}+\dfrac{b}{c}-1\right)>0.
+$$
+而由（1）知，当 $ x\leq 0 $ 时，$ f(x)>0 $，所以\circled{1}正确。
+
+由于函数 $ f(x) $ 的图象连续不断，故存在 $ t>1 $，使 $ \left(\dfrac{a}{c}\right)^t+\left(\dfrac{b}{c}\right)^t<1 $，即 $ f(t)<0 $.又 $ f(1)>0 $，由函数零点的存在性定理知，存在 $ 1<x_0<t $ 满足 $ f(x_0)=0 $.即 $ a^{x_0}+b^{x_0}=c^{x_0} $.此时 $ a^{x_0} $，$ b^{x_0} $，$ c^{x_0} $ 不能构成一个三角形的三条边长，故\circled{2}正确。
+
+由题意有，$ f(1)>0 $.又由于 $ \triangle ABC $ 为钝角三角形，由余弦定理知，$ a^2+b^2<c^2 $.即 $ \left(\dfrac{a}{c}\right)^2+\left(\dfrac{b}{c}\right)^2<1 $.故当 $ x\geq 2 $ 时，
+$$
+f(x)=c^x\left[\left(\dfrac{a}{c}\right)^x+\left(\dfrac{b}{c}\right)^x-1\right]\leq c^x\left[\left(\dfrac{a}{c}\right)^2+\left(\dfrac{b}{c}\right)^2-1\right]<0.
+$$
+由函数零点的存在性定理知，当 $ \triangle ABC $ 为钝角三角形时，必存在 $ x\in(1,2) $，使 $ f(x)=0 $，故\circled{3}正确。
+\end{solutions}

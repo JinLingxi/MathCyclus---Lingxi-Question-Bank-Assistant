@@ -1,0 +1,8 @@
+\begin{tikzpicture}[x=1.2cm,y=0.6cm,line cap=round,line join=round]
+  \draw[->] (-3.3,0) -- (2.2,0) node[below] {$x$};
+  \draw[->] (0,-2.2) -- (0,6.2) node[left] {$y$};
+  \node[below left] at (0,0) {$O$};
+
+  \draw[thick,smooth,samples=220,domain=-3.0:1.2]
+    plot (\x,{exp(\x)*(2*\x-1)});
+\end{tikzpicture}

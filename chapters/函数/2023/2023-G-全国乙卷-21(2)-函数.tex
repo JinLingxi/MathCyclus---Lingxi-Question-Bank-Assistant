@@ -1,0 +1,44 @@
+% === Begin Label Data ===
+% ID: 817
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2023}{G}{全国乙卷}{21(2)}{函数}
+已知函数 $ f(x)=\left(\dfrac{1}{x}+a\right)\ln(1+x) $. 是否存在 $ a $, $ b $, 使得曲线 $ y=f\left(\dfrac{1}{x}\right) $ 关于直线 $ x=b $ 对称? 若存在, 求 $ a $, $ b $; 若不存在, 说明理由.
+\end{problem}
+
+\begin{answer}
+存在, $ a=\dfrac{1}{2} $, $ b=-\dfrac{1}{2} $.
+\end{answer}
+
+\begin{solutions}
+思路 1: 设 $ g(x)=f\left(\dfrac{1}{x}\right) $, 则 $ g(x)=(x+a)\ln\left(1+\dfrac{1}{x}\right) $, $ g(x) $ 的定义域为 $ (-\infty,-1)\cup(0,+\infty) $. 若存在 $ a $, $ b $, 使得曲线 $ y=g(x) $ 关于直线 $ x=b $ 对称, 则 $ (-\infty,-1)\cup(0,+\infty) $ 关于 $ x=b $ 对称, 所以 $ b=-\dfrac{1}{2} $.  
+
+由 $ g(x)=g(-1-x) $ 得 $ (x+a)\ln\left(1+\dfrac{1}{x}\right)=(-1-x+a)\ln\dfrac{x}{1+x} $, 整理得  
+$$
+(x+a)\ln\left(1+\dfrac{1}{x}\right)=(x+1-a)\ln\left(1+\dfrac{1}{x}\right).
+$$  
+所以 $ a=\dfrac{1}{2} $, 故存在 $ a=\dfrac{1}{2} $, $ b=-\dfrac{1}{2} $, 使得曲线 $ y=f\left(\dfrac{1}{x}\right) $ 关于直线 $ x=b $ 对称.  
+
+思路 2: 设函数 $ g(x)=f\left(\dfrac{1}{x}\right) $, 则 $ g(x)=(x+a)\ln\left(1+\dfrac{1}{x}\right) $. 若曲线 $ y=f\left(\dfrac{1}{x}\right) $ 关于直线 $ x=b $ 对称, 则 $ g(x)=g(2b-x) $, 即  
+$$
+(x+a)\ln\left(1+\dfrac{1}{x}\right)=(x-2b-a)\ln\dfrac{x-2b}{x-2b-1},
+$$  
+由此可以得到, 当 $ \begin{cases} -2b=1, \\ -2b-1=0, \text{  } a=\dfrac{1}{2},\ b=-\dfrac{1}{2} \text{ 时}, \\ -2b-a=a, \end{cases} $ 曲线 $ y=f\left(\dfrac{1}{x}\right) $ 关于直线 $ x=b $ 对称.  
+
+思路 3: 存在, 当 $ a=\dfrac{1}{2} $, $ b=-\dfrac{1}{2} $ 时满足题意. 证明如下:  
+$ f(x) $ 的定义域是 $ (-1,0)\cup(0,+\infty) $. 取 $ a=\dfrac{1}{2} $, $ b=-\dfrac{1}{2} $, 则  
+$$
+g(x)=f\left(\dfrac{1}{x}\right)=\left(x+a\right)\ln\left(1+\dfrac{1}{x}\right)=\left(x+\dfrac{1}{2}\right)\ln\dfrac{x+1}{x}.
+$$  
+所以 $ g(x) $ 的定义域是 $ (-\infty,-1)\cup(0,+\infty) $. 因为  
+$$
+g(-1-x)=\left(-1-x+\dfrac{1}{2}\right)\ln\dfrac{-1-x+1}{-1-x} \\
+= -\left(x+\dfrac{1}{2}\right)\ln\dfrac{x}{x+1} \\
+= \left(x+\dfrac{1}{2}\right)\ln\dfrac{x+1}{x}=g(x).
+$$  
+所以曲线 $ y=f\left(\dfrac{1}{x}\right) $ 的图象关于直线 $ x=-\dfrac{1}{2} $ 对称.
+\end{solutions}

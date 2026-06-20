@@ -1,0 +1,40 @@
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.7]
+% cuboid parameters
+\def\w{4}   % width
+\def\h{2.7}   % height
+\def\d{1}   % depth (slant)
+
+% front face corners
+\coordinate (A) at (0,0);
+\coordinate (B) at (\w,0);
+\coordinate (C) at (\w,\h);
+\coordinate (D) at (0,\h);
+
+% back face corners (shifted by depth)
+\coordinate (A') at (\d,0.8);
+\coordinate (B') at ({\w+\d},0.8);
+\coordinate (C') at ({\w+\d},{\h+0.8});
+\coordinate (D') at (\d,{\h+0.8});
+
+% visible edges
+\draw[thick] (A)--(B)--(C)--(D)--cycle;
+\draw[thick] (D)--(D')--(C')--(C);
+\draw[thick] (C')--(B');
+\draw[thick] (B)--(B');
+
+% hidden edges (dashed)
+\draw[dashed] (A)--(A');
+\draw[dashed] (A')--(B');
+\draw[dashed] (A')--(D');
+\draw[dashed] (A)--(D);
+
+% mark the right face as P (parallelogram B-C-C'-B')
+\node[above] at ($(B)!0.6!(C)+(0.4,0)$) {$P$};
+
+% label E near bottom front
+\node[below] at ($(A)!0.5!(B)$) {$E$};
+
+% velocity arrow v to the right
+\draw[->,thick] ($(B)!0.55!(C)+(0.6,1)$) -- ++(2,0) ;
+\node[below] at ($(B)!0.55!(C)+(1.6,1.65)$) {$v$};
+\end{tikzpicture}

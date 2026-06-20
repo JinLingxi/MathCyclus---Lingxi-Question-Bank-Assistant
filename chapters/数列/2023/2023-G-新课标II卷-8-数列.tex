@@ -1,5 +1,5 @@
 % === Begin Label Data ===
-% ID: 108
+% ID: 789
 % 难度星级: 
 % 标签: 
 % 备注: 
@@ -7,12 +7,45 @@
 % === End  Label Data ===
 
 \begin{problem}{2023}{G}{新课标II卷}{8}{数列}
-记 $S_n$ 为等比数列 $\{a_n\}$ 的前 $n$ 项和，若 $S_4=-5, S_6=21S_2$，则 $S_8=$
-(\hspace{1cm})
+记$S_n$为等比数列 $\{a_n\}$ 的前 $n$ 项和，若 $S_4=-5$，$S_6=21S_2$，则 $S_8=$ (\hspace{1cm})
 \begin{choices}
-\choice{{120}}
-\choice{{85}}
-\choice{{-85}}
-\choice{{-120}}
+\choice{{$120$}}
+\choice{{$85$}}
+\choice{{$-85$}}
+\choice{{$-120$}}
 \end{choices}
 \end{problem}
+
+\begin{answer}
+C
+\end{answer}
+
+\begin{solutions}
+设等比数列 $\{a_n\}$ 的首项为 $a_1$，公比为 $q$，则 $S_2=a_1+a_1q$，
+
+$$
+S_4=a_1+a_1q+a_1q^2+a_1q^3=(a_1+a_1q)+q^2(a_1+a_1q)=S_2+S_2q^2=S_2(1+q^2).
+$$
+
+由题设 $S_4=-5$ 得 $S_2(1+q^2)=-5$. 易见
+
+$$
+\begin{aligned}
+S_6&=a_1+a_1q+a_1q^2+a_1q^3+a_1q^4+a_1q^5\\
+&=(a_1+a_1q)+q^2(a_1+a_1q)+q^4(a_1+a_1q)\\
+&=S_2(1+q^2+q^4)
+\end{aligned}
+$$
+
+由题设 $S_6=21S_2$ 得 $S_2(1+q^2+q^4)=21S_2$；由 $S_2(1+q^2)=-5$ 知 $S_2\neq0$，所以 $1+q^2+q^4=21$，解得 $q^2=-5$（舍去），$q^2=4$. 把 $q^2=4$ 代入 $S_4=S_2(1+q^2)=-5$ 得 $S_2=-1$. 所以，
+
+$$
+\begin{aligned}
+S_8&=a_1+a_1q+a_1q^2+a_1q^3+a_1q^4+a_1q^5+a_1q^6+a_1q^7\\
+&=(a_1+a_1q)+q^2(a_1+a_1q)+q^4(a_1+a_1q)+q^6(a_1+a_1q)\\
+&=S_2(1+q^2+q^4+q^6)=-85,
+\end{aligned}
+$$
+
+故正确选项为 C.
+\end{solutions}

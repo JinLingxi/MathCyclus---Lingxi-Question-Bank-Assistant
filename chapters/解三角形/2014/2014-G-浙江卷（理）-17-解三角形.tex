@@ -1,0 +1,28 @@
+% === Begin Label Data ===
+% ID: 844
+% 难度星级: 
+% 标签: 
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2014}{G}{浙江卷（理）}{17}{解三角形}
+如图，某人在垂直于水平地面 $ ABC $ 的墙面前的点 $ A $ 处进行射击训练．已知点 $ A $ 到墙面的距离为 $ AB $，某目标点 $ P $ 沿墙面上的射线 $ CM $ 移动，此人为了准确瞄准目标点 $ P $，需计算由点 $ A $ 观察点 $ P $ 的仰角 $ \theta $ 的大小．若 $ AB=15\ \mathrm{m} $，$ AC=25\ \mathrm{m} $，$ \angle BCM=30^\circ $，则 $ \tan\theta $ 的最大值是\hspace{1cm}．（仰角 $ \theta $ 为直线 $ AP $ 与平面 $ ABC $ 所成角）
+\end{problem}
+
+\begin{answer}
+$\dfrac{5\sqrt{3}}{9}$
+\end{answer}
+
+\begin{solutions}
+易得 $ BC=20 $，过 $ P $ 作 $ PD\perp BC $ 于 $ D $，显然 $ \tan\theta=\dfrac{PD}{AD} $．
+
+设 $ PD=x\,(x>0) $，$ CD=\sqrt{3}x $，$ BD=|BC-CD|=\left|20-\sqrt{3}x\right| $，则
+$$
+\tan\theta=\dfrac{PD}{AD}=\dfrac{PD}{\sqrt{AB^2+BD^2}}=\dfrac{x}{\sqrt{15^2+\left(20-\sqrt{3}x\right)^2}}=\dfrac{1}{\sqrt{\dfrac{625}{x^2}-\dfrac{40\sqrt{3}}{x}+3}}
+$$
+$$
+=\dfrac{1}{\sqrt{\left(\dfrac{25}{x}-\dfrac{4\sqrt{3}}{5}\right)^2+\dfrac{27}{25}}}\leqslant\dfrac{5\sqrt{3}}{9}
+$$
+选 D．
+\end{solutions}
