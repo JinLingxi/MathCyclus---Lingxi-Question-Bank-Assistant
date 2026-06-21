@@ -60,26 +60,48 @@
 
 ## 🚀 快速启动
 
-1. 确保您的电脑已安装 **Python 3.8+**，然后安装项目依赖：
+1. 确保本机已安装 **Python 3.8+**。建议先创建虚拟环境：
+
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
+
+2. 安装 Python 依赖：
 
    ```bash
    pip install -r requirements.txt
    ```
-2. 确保本地已安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），且 `xelatex` 命令已加入系统环境变量中。
-3. 在项目根目录创建 `.env` 文件并配置 AI 模型密钥。可参考 `.env.example` 模板：
+
+3. 复制 `.env.example` 为 `.env`，并填入 AI 模型配置：
 
    ```env
    AI_API_KEY=your_api_key_here
    AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
    AI_MODEL_NAME=qwen-vl-plus
    ```
-4. 双击运行 `启动程序.bat`，或者在终端执行：
+
+4. 如需使用 TikZ 几何图预览，请安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），并确认 `xelatex` 已加入系统环境变量。项目会通过 `PyMuPDF` 将编译结果转为 PNG 预览。
+
+5. 首次使用或批量导入题目后，建议重建题库索引：
+
+   ```bash
+   python utils/init_csv_index.py
+   ```
+
+6. 双击运行 `启动程序.bat`，或者在终端执行：
 
    ```bash
    python 启动程序.py
    ```
 
    即可自动在浏览器中打开工作台。
+
+也可以直接运行 Streamlit：
+
+```bash
+streamlit run question_bank_app.py
+```
 
 ## 💡 创新亮点
 
@@ -103,6 +125,12 @@
 ├── requirements.txt       # Python 依赖清单
 └── .env.example           # 环境变量配置模板
 ```
+
+## 🧹 仓库维护说明
+
+- `utils/题库索引表.csv` 是可重建的高速索引，题库内容变化后可运行 `python utils/init_csv_index.py` 刷新。
+- `log.csv` 是批量导入脚本的运行日志输出；`old_app.py`、`question_bank_app000.py` 和 `SolaireEPDA-master/` 属于历史产物或外部参考内容。当前 `.gitignore` 已将同类文件排除，后续如需清理 Git 跟踪记录，建议单独开 PR 处理。
+- TikZ 预览依赖本机 `xelatex`，若未安装 LaTeX，题库浏览与普通组卷仍可使用，但几何图实时预览会受限。
 
 ## 📄 开源协议
 
