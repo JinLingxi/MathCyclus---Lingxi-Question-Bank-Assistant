@@ -20,6 +20,7 @@ import time
 import subprocess
 import csv
 import datetime
+from services.file_service import atomic_write_text
 
 # 基础路径配置
 # 项目根目录：脚本运行的工作目录
@@ -134,8 +135,7 @@ def update_chapter_contents():
         if not tex_files:
             output_file = os.path.join(topic_dir, f'content_{topic}.tex')
             try:
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write('')
+                atomic_write_text(output_file, '')
                 print(f"板块 {topic}: 未找到 .tex 题目文件，已生成空索引：{output_file}")
             except Exception as e:
                 print(f"板块 {topic}: 写入空索引失败：{e}")
@@ -165,8 +165,7 @@ def update_chapter_contents():
         output_file = os.path.join(topic_dir, f'content_{topic}.tex')
         
         try:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines))
+            atomic_write_text(output_file, '\n'.join(lines))
             print(f"  -> 已生成：{output_file}")
         except Exception as e:
             print(f"  -> 写入失败：{e}")
@@ -295,8 +294,7 @@ def main():
             file_content = re.sub(r'_{4,}', r'\\underline{\\hspace{4em}}', file_content)
 
             # 写入文件
-            with open(target_path, 'w', encoding='utf-8') as f:
-                f.write(file_content)
+            atomic_write_text(target_path, file_content)
             
             print(f"[{status}] {target_path}")
             

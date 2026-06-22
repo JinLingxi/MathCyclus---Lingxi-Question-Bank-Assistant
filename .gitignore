@@ -50,3 +50,6 @@ MathCyclus_demo.html
 
 *-G-*.tex
 
+# 本地自动备份
+.backups/
+

@@ -16,6 +16,8 @@ except ImportError:
 
 import streamlit.components.v1 as components
 import io
+from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
+from services.file_service import atomic_write_text, backup_existing_file
 
 # 加载环境变量
 load_dotenv()
@@ -42,8 +44,145 @@ def inject_custom_css():
             overflow-y: scroll;
             scrollbar-gutter: stable;
         }
+        header[data-testid="stHeader"],
+        div[data-testid="stToolbar"],
+        div[data-testid="stDecoration"],
+        #MainMenu {
+            visibility: hidden !important;
+            height: 0 !important;
+        }
         .stApp {
             overflow-x: hidden;
+            background: linear-gradient(180deg, #f7f8fb 0%, #f2f3f6 100%);
+            color: #1d1d1f;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+        :root {
+            --mc-bg: #f5f5f7;
+            --mc-surface: rgba(255, 255, 255, 0.78);
+            --mc-surface-solid: #ffffff;
+            --mc-border: rgba(0, 0, 0, 0.09);
+            --mc-border-strong: rgba(0, 0, 0, 0.16);
+            --mc-text: #1d1d1f;
+            --mc-text-muted: #6e6e73;
+            --mc-blue: #007aff;
+            --mc-blue-hover: #0066d6;
+            --mc-shadow: 0 10px 30px rgba(0, 0, 0, 0.07);
+            --mc-control-radius: 8px;
+        }
+        .block-container {
+            padding-top: 1.35rem !important;
+            padding-bottom: 2rem !important;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--mc-text) !important;
+            letter-spacing: 0 !important;
+            font-weight: 650 !important;
+        }
+        p, li, label, span {
+            letter-spacing: 0 !important;
+        }
+        hr {
+            border-color: rgba(0, 0, 0, 0.08) !important;
+        }
+        section[data-testid="stSidebar"] {
+            background: rgba(245, 243, 255, 0.92) !important;
+            border-right: 1px solid rgba(109, 40, 217, 0.14) !important;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+        div[data-testid="stExpander"],
+        div[data-testid="stForm"],
+        div[data-testid="stPopover"] > div {
+            border: 1px solid var(--mc-border) !important;
+            border-radius: 8px !important;
+            background: var(--mc-surface) !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+        }
+        div[data-testid="stMetric"],
+        div[data-testid="stAlert"] {
+            border-radius: 8px !important;
+            border: 1px solid var(--mc-border) !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stTextArea"] textarea,
+        div[data-baseweb="select"] > div {
+            border-radius: var(--mc-control-radius) !important;
+            border-color: var(--mc-border) !important;
+            background: rgba(255, 255, 255, 0.9) !important;
+            box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.02) !important;
+            transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease !important;
+        }
+        div[data-testid="stTextInput"] input:focus,
+        div[data-testid="stNumberInput"] input:focus,
+        div[data-testid="stTextArea"] textarea:focus,
+        div[data-baseweb="select"] > div:focus-within {
+            border-color: rgba(0, 122, 255, 0.72) !important;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.14) !important;
+            background: #ffffff !important;
+        }
+        div[data-testid="stButton"] > button,
+        div[data-testid="stDownloadButton"] > button,
+        div[data-testid="stPopover"] > button {
+            min-height: 2.32rem !important;
+            border-radius: var(--mc-control-radius) !important;
+            border: 1px solid var(--mc-border) !important;
+            background: rgba(255, 255, 255, 0.86) !important;
+            color: var(--mc-text) !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+            transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease !important;
+        }
+        div[data-testid="stButton"] > button:hover,
+        div[data-testid="stDownloadButton"] > button:hover,
+        div[data-testid="stPopover"] > button:hover {
+            border-color: var(--mc-border-strong) !important;
+            background: #ffffff !important;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07) !important;
+            transform: translateY(-1px);
+        }
+        div[data-testid="stButton"] > button:active,
+        div[data-testid="stDownloadButton"] > button:active,
+        div[data-testid="stPopover"] > button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+        }
+        button[kind="primary"],
+        div[data-testid="stButton"] > button[kind="primary"] {
+            border-color: var(--mc-blue) !important;
+            background: linear-gradient(180deg, #1388ff 0%, var(--mc-blue) 100%) !important;
+            color: #ffffff !important;
+            box-shadow: 0 5px 14px rgba(0, 122, 255, 0.22) !important;
+        }
+        button[kind="primary"]:hover,
+        div[data-testid="stButton"] > button[kind="primary"]:hover {
+            background: linear-gradient(180deg, #0b7df0 0%, var(--mc-blue-hover) 100%) !important;
+            box-shadow: 0 7px 18px rgba(0, 122, 255, 0.28) !important;
+        }
+        div[data-testid="stTabs"] button {
+            border-radius: 8px 8px 0 0 !important;
+            color: var(--mc-text-muted) !important;
+        }
+        div[data-testid="stTabs"] button[aria-selected="true"] {
+            color: var(--mc-blue) !important;
+            font-weight: 650 !important;
+        }
+        div[data-testid="stDataFrame"],
+        div[data-testid="stTable"] {
+            border-radius: 8px !important;
+            overflow: hidden !important;
+            border: 1px solid var(--mc-border) !important;
+            background: var(--mc-surface-solid) !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+        }
+        div[data-testid="stToast"] {
+            border-radius: 8px !important;
+            border: 1px solid var(--mc-border) !important;
+            box-shadow: var(--mc-shadow) !important;
+        }
+        ::selection {
+            background: rgba(0, 122, 255, 0.18);
         }
         .katex .boxed {
             border: 1px solid #c9d1d9 !important;
@@ -142,14 +281,15 @@ def apply_meta_rename_and_update(old_path: str, new_year: str, new_type: str, ne
         old_content = f.read()
 
     new_content = replace_problem_header(old_content, str(new_year), new_type, new_name, new_num, new_subject_str)
-    with open(new_path, "w", encoding="utf-8") as f:
-        f.write(new_content)
+    atomic_write_text(new_path, new_content, backup=os.path.exists(new_path))
 
     if os.path.abspath(new_path) != os.path.abspath(old_path):
+        backup_existing_file(old_path)
         os.remove(old_path)
 
     update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, new_num, new_subject_str)
     clear_statistics_cache()
+    _clear_advanced_search_result_cache()
     return new_path, new_content
 
 @st.dialog("🔍 查看大图", width="large")
@@ -257,6 +397,10 @@ def _adv_search_has_query():
     q1, q2, q3 = _adv_search_queries_from_session()
     return bool(str(q1).strip() or str(q2).strip() or str(q3).strip())
 
+def _clear_advanced_search_result_cache():
+    st.session_state.pop("adv_last_query", None)
+    st.session_state.pop("adv_last_results", None)
+
 def save_modified_tex_file(file_path, new_content):
     """
     保存修改后的 tex 文件：
@@ -269,8 +413,7 @@ def save_modified_tex_file(file_path, new_content):
     final_content = extract_and_replace_tikz(new_content, filename, save_dir)
     
     # 直接写入包含原生 TikZ 的内容
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(final_content)
+    atomic_write_text(file_path, final_content, backup=True)
         
     return final_content
 
@@ -351,16 +494,7 @@ def ocr_image_to_latex(images=None):
         
         with st.spinner("🤖 AI 正在识别中，请稍候..."):
             # 处理 URL: 兼容不同的 Base URL 写法
-            url = base_url.rstrip('/')
-            
-            # 如果 Base URL 是 http://host:port，通常需要加上 /v1/chat/completions
-            # 如果 Base URL 是 http://host:port/v1，通常需要加上 /chat/completions
-            # 简单的启发式判断：如果没有 /v1 且没有 /chat/completions，尝试加上 /v1
-            if "/v1" not in url and "/chat/completions" not in url:
-                url += "/v1"
-            
-            if "/chat/completions" not in url:
-                url += "/chat/completions"
+            url = normalize_chat_completions_url(base_url)
             
             st.toast(f"正在请求: {url}")
             print(f"Requesting URL: {url}") # 控制台打印
@@ -428,12 +562,6 @@ def ocr_solution_images_to_answer_solutions(images=None) -> dict:
             content_parts.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}})
 
         headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-        url = base_url.rstrip("/")
-        if "/v1" not in url and "/chat/completions" not in url:
-            url += "/v1"
-        if "/chat/completions" not in url:
-            url += "/chat/completions"
-
         payload = {
             "model": model_name,
             "messages": [{"role": "user", "content": content_parts}],
@@ -442,7 +570,7 @@ def ocr_solution_images_to_answer_solutions(images=None) -> dict:
             "response_format": {"type": "json_object"} if "gpt" in model_name.lower() or "qwen" in model_name.lower() else None,
         }
 
-        response = requests.post(url, headers=headers, json=payload, timeout=180)
+        response, _ = post_chat_completion(base_url, headers, payload, timeout=180)
         if response.status_code != 200:
             return {"error": f"识别失败 (HTTP {response.status_code}):\n{response.text[:500]}"}
 
@@ -471,12 +599,6 @@ def call_ai_for_tags(content: str) -> dict:
     
     if not api_key or not base_url or not model_name:
         return {"error": "AI 配置不完整，请检查 .env 文件"}
-        
-    url = base_url.rstrip('/')
-    if "/v1" not in url and "/chat/completions" not in url:
-        url += "/v1"
-    if "/chat/completions" not in url:
-        url += "/chat/completions"
         
     prompt = f"""你是一个专业的高中数学教研专家。请分析以下 LaTeX 格式的数学题目，并为其打上合适的“难度星级”和“知识标签”。
 
@@ -508,7 +630,7 @@ def call_ai_for_tags(content: str) -> dict:
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response, _ = post_chat_completion(base_url, headers, payload, timeout=30)
         if response.status_code == 200:
             result = response.json()
             if 'choices' in result and len(result['choices']) > 0:
@@ -531,17 +653,7 @@ def call_ai_for_tags(content: str) -> dict:
         return {"error": f"请求发生异常: {str(e)}"}
 
 def _extract_json_obj_from_text(text: str):
-    import json
-    if text is None:
-        raise ValueError("empty response")
-    cleaned = str(text).replace("```json", "").replace("```", "").strip()
-    try:
-        return json.loads(cleaned)
-    except Exception:
-        m = re.search(r"\{[\s\S]*\}", cleaned)
-        if not m:
-            raise
-        return json.loads(m.group(0))
+    return extract_json_obj_from_text(text)
 
 def _extract_problem_env(tex: str) -> str:
     if not tex:
@@ -748,12 +860,6 @@ def call_ai_for_answer_solutions(problem_tex: str, fast: bool = True) -> dict:
     if not api_key or not base_url or not model_name:
         return {"error": "AI 配置不完整，请检查 .env 文件"}
 
-    url = base_url.rstrip("/")
-    if "/v1" not in url and "/chat/completions" not in url:
-        url += "/v1"
-    if "/chat/completions" not in url:
-        url += "/chat/completions"
-
     problem_tex = (problem_tex or "").strip()
     if not problem_tex:
         return {"error": "未识别到 \\begin{problem}...\\end{problem}，无法生成解答"}
@@ -806,7 +912,7 @@ problem_tex：
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=(10, 90 if fast else 150))
+        response, _ = post_chat_completion(base_url, headers, payload, timeout=(10, 90 if fast else 150))
         if response.status_code != 200:
             return {"error": f"API 请求失败: {response.status_code}\n{response.text[:500]}"}
         result = response.json()
@@ -848,6 +954,7 @@ def _save_tex_from_widget(fpath: str, widget_key: str, edit_mode_key: str = "", 
     raw = st.session_state.get(widget_key, "")
     final_content = save_modified_tex_file(fpath, raw)
     _update_csv_index_for_content_change(fpath, final_content)
+    _clear_advanced_search_result_cache()
     st.session_state[widget_key] = final_content
     if edit_mode_key:
         st.session_state[edit_mode_key] = False
@@ -876,6 +983,7 @@ def _apply_generated_answer_solutions_to_file(fpath: str, new_answer: str, new_s
 
     final_content = save_modified_tex_file(fpath, updated)
     _update_csv_index_for_content_change(fpath, final_content)
+    _clear_advanced_search_result_cache()
     clear_statistics_cache()
     return final_content
 
@@ -1088,12 +1196,6 @@ def call_ai_for_polish(intent_text: str) -> str:
     if not api_key or not base_url or not model_name:
         return "❌ AI 配置不完整，请检查 .env 文件"
         
-    url = base_url.rstrip('/')
-    if "/v1" not in url and "/chat/completions" not in url:
-        url += "/v1"
-    if "/chat/completions" not in url:
-        url += "/chat/completions"
-        
     prompt = f"""你是一个资深的高中数学教研专家。请帮我润色以下组卷意图，使其更加专业、明确、富有条理。
 润色后的文本将用于指导后续的 AI 抽题算法。
 要求：
@@ -1115,7 +1217,7 @@ def call_ai_for_polish(intent_text: str) -> str:
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response, _ = post_chat_completion(base_url, headers, payload, timeout=20)
         if response.status_code == 200:
             result = response.json()
             if 'choices' in result and len(result['choices']) > 0:
@@ -2134,8 +2236,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     meta_dict = {"ID": q_id, "难度星级": existing_meta.get("难度星级", ""), "标签": existing_meta.get("标签", ""), "备注": existing_meta.get("备注", ""), "组卷引用次数": existing_meta.get("组卷引用次数", "0")}
                                     file_content = inject_meta_data(file_content, meta_dict)
                                     try:
-                                        with open(file_path, "w", encoding="utf-8") as f:
-                                            f.write(file_content)
+                                        atomic_write_text(file_path, file_content, backup=os.path.exists(file_path))
                                         add_to_csv_index(file_path, file_content, str(u_year), u_type, u_paper, q_num, q_subj)
                                         count += 1
                                         ai_str = ""
@@ -2221,8 +2322,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     meta_dict = {"ID": q_id, "难度星级": existing_meta.get("难度星级", ""), "标签": existing_meta.get("标签", ""), "备注": existing_meta.get("备注", ""), "组卷引用次数": existing_meta.get("组卷引用次数", "0")}
                                     file_content = inject_meta_data(file_content, meta_dict)
                                     try:
-                                        with open(file_path, "w", encoding="utf-8") as f:
-                                            f.write(file_content)
+                                        atomic_write_text(file_path, file_content, backup=os.path.exists(file_path))
                                         add_to_csv_index(file_path, file_content, segments[0], segments[1], segments[2], segments[3], segments[4])
                                         count += 1
                                         ai_str = ""
@@ -4295,8 +4395,7 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
                 ensure_dir(final_export_dir)
                 
                 output_file = os.path.join(final_export_dir, f"{export_filename}.tex")
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(final_content)
+                atomic_write_text(output_file, final_content)
                 return output_file
             
     return None
@@ -4888,8 +4987,7 @@ def batch_fix_choice_formats():
                     new_content = r'\begin{choices}'.join(parts)
                 
                 if new_content != content:
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        f.write(new_content)
+                    atomic_write_text(file_path, new_content)
                     updated_files.append(file)
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")
@@ -4916,8 +5014,7 @@ def batch_extract_tikz_all():
                     # 复用核心抽取函数
                     new_content = extract_and_replace_tikz(content, filename, save_dir)
                     if new_content != content:
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(new_content)
+                        atomic_write_text(file_path, new_content)
                         # 触发一次预渲染生成PNG
                         latex_to_markdown(new_content)
                         updated_files.append(file_path)
@@ -4996,8 +5093,7 @@ def add_blank_lines_to_all():
                 if modified:
                     new_content = "\n".join(new_lines)
                     if new_content != content:
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(new_content)
+                        atomic_write_text(file_path, new_content)
                         count += 1
             except Exception as e:
                 print(f"Error processing {file}: {e}")
@@ -5059,8 +5155,7 @@ def standardize_national_papers():
                     new_tag = f"{{{new_paper_name}}}"
                     content = content.replace(old_tag, new_tag, 1) # 只替换第一个匹配（通常是标签）
                     
-                    with open(old_path, 'w', encoding='utf-8') as f:
-                        f.write(content)
+                    atomic_write_text(old_path, content)
                         
                     os.rename(old_path, new_path)
                     st.write(f"已重命名: {file} -> {new_filename}")
@@ -5311,8 +5406,7 @@ def page_tag_edit():
                     new_content = re.sub(r"\\begin\{problem\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}", lambda _m: new_header, old_content, count=1)
                     if new_content == old_content and "\\begin{problem}" in old_content:
                         new_content = re.sub(r"\\begin\{problem\}", lambda _m: new_header, old_content, count=1)
-                    with open(new_path, "w", encoding="utf-8") as f:
-                        f.write(new_content)
+                    atomic_write_text(new_path, new_content)
                     if os.path.abspath(new_path) != os.path.abspath(old_path):
                         os.remove(old_path)
                     update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, old_pnum, old_subj)
@@ -5424,8 +5518,7 @@ def update_question_meta(fpath, key, value):
     fm, _ = parse_meta_data(fc)
     fm[key] = value
     new_fc = inject_meta_data(fc, fm)
-    with open(fpath, "w", encoding="utf-8") as f:
-        f.write(new_fc)
+    atomic_write_text(fpath, new_fc, backup=True)
     try:
         from utils.csv_ops import update_csv_index_for_edit
         # 从文件名解析基础信息
@@ -5438,6 +5531,7 @@ def update_question_meta(fpath, key, value):
             new_pnum = parts[3]
             new_subj = parts[4]
             update_csv_index_for_edit(fpath, fpath, new_fc, new_year, new_ptype, new_pname, new_pnum, new_subj)
+            _clear_advanced_search_result_cache()
         else:
             print("Update CSV failed: Invalid filename format.")
     except Exception as e:
@@ -5664,6 +5758,39 @@ def _csv_index_cached(csv_mtime: int):
     from utils.csv_ops import read_csv_index
     return read_csv_index()
 
+@st.cache_data(show_spinner=False)
+def _advanced_search_index_cached(csv_mtime: int):
+    from utils.csv_ops import read_csv_index
+
+    index_rows = []
+    for row in read_csv_index():
+        rel_path = (row.get("相对文件路径", "") or "").strip()
+        abs_path = os.path.join(CHAPTERS_DIR, rel_path) if rel_path else ""
+        filename = (row.get("文件名称", "") or "").strip()
+        if filename and not filename.lower().endswith(".tex"):
+            filename = filename + ".tex"
+
+        stem = row.get("题干", "") or ""
+        answer = row.get("答案", "") or ""
+        solution = row.get("解析", "") or ""
+        tags = row.get("标签", "") or ""
+        remark = row.get("备注", "") or ""
+
+        index_rows.append({
+            "row": row,
+            "file": filename,
+            "path": abs_path,
+            "type": (row.get("题型", "") or "").strip(),
+            "stem": stem,
+            "answer": answer,
+            "solution": solution,
+            "difficulty": row.get("难度星级", "") or "",
+            "tags": tags,
+            "remark": remark,
+            "full_text": "\n".join([stem, answer, solution, tags, remark]),
+        })
+    return index_rows
+
 @st.cache_data(ttl=10)
 def get_statistics():
     stats = {
@@ -5839,18 +5966,83 @@ def render_statistics_dashboard():
     
     st.markdown("### 📊 数据统计")
     
-    # 添加指标卡片的自定义 CSS
+    # 统计页视觉层：只调整展示质感，不改统计数据。
     st.markdown("""
     <style>
+    @keyframes statsFadeUp {
+        from {
+            opacity: 0;
+            transform: translateY(8px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    div[data-testid="stMetric"],
+    .stats-chart-title {
+        animation: statsFadeUp 0.38s ease both;
+    }
     div[data-testid="stMetric"] {
-        background-color: rgba(128, 128, 128, 0.05);
-        border: 1px solid rgba(128, 128, 128, 0.4);
-        padding: 10px 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        position: relative;
+        min-height: 112px;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.86), rgba(255,255,255,0.68)),
+            rgba(255,255,255,0.72);
+        border: 1px solid rgba(109, 40, 217, 0.10);
+        padding: 14px 18px 14px 20px;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(31, 35, 48, 0.055);
         display: flex;
         flex-direction: column;
         justify-content: center;
+        overflow: hidden;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+    }
+    div[data-testid="stMetric"]::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 14px;
+        bottom: 14px;
+        width: 3px;
+        border-radius: 0 999px 999px 0;
+        background: linear-gradient(180deg, #a78bfa, #007aff);
+        opacity: 0.82;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        border-color: rgba(109, 40, 217, 0.18);
+        box-shadow: 0 14px 34px rgba(31, 35, 48, 0.09);
+        background: rgba(255,255,255,0.9);
+    }
+    div[data-testid="stMetric"] label,
+    div[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+        color: #5f6472 !important;
+        font-size: 0.9rem !important;
+        font-weight: 650 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #242733 !important;
+        font-weight: 680 !important;
+        letter-spacing: 0 !important;
+    }
+    .stats-chart-title {
+        margin: 20px 0 10px 4px;
+        color: #20232d;
+        font-size: 1.05rem;
+        font-weight: 720;
+        letter-spacing: 0;
+    }
+    div[data-testid="stVerticalBlock"]:has(.stats-chart-title) iframe {
+        border-radius: 12px !important;
+        box-shadow: 0 10px 30px rgba(31, 35, 48, 0.065) !important;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+    }
+    div[data-testid="stVerticalBlock"]:has(.stats-chart-title) iframe:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 40px rgba(31, 35, 48, 0.10) !important;
+        filter: saturate(1.03);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -5889,19 +6081,19 @@ def render_statistics_dashboard():
     with r2_c2:
         import streamlit.components.v1 as components
         hourly_activity_by_day = stats.get("hourly_activity_by_day", {})
-        components.html(generate_activity_curve_html(hourly_activity_by_day), height=270)
+        components.html(generate_activity_curve_html(hourly_activity_by_day), height=300)
 
     st.write("")
     
     # 更多有趣的数据统计：图表区
     r3_c1, r3_c2 = st.columns([1, 1])
     with r3_c1:
-        st.markdown("##### 📈 各知识板块题目分布")
+        st.markdown('<div class="stats-chart-title">📈 各知识板块题目分布</div>', unsafe_allow_html=True)
         subj_counts = stats.get("subject_counts", {})
         components.html(generate_echarts_bar_html(subj_counts, "各知识板块题目分布"), height=370)
             
     with r3_c2:
-        st.markdown("##### 🍰 题型占比分布 & 难度分布")
+        st.markdown('<div class="stats-chart-title">🍰 题型占比分布 & 难度分布</div>', unsafe_allow_html=True)
         type_counts = stats.get("type_counts", {})
         diff_counts = stats.get("difficulty_dist", {})
         components.html(generate_echarts_pie_html(type_counts, diff_counts, "题型与难度分布"), height=370)
@@ -6225,32 +6417,25 @@ def render_advanced_search_results():
     q2 = st.session_state.get("adv_q2_sel" if t2 == "题目类型" else "adv_q2", "")
     q3 = st.session_state.get("adv_q3_sel" if t3 == "题目类型" else "adv_q3", "")
     
-    def _row_match(row, s_type, s_query):
+    def _row_match(item, s_type, s_query):
         s_query = (s_query or "").strip()
         if not s_query:
             return True
         if s_type == "题目类型":
-            return s_query == (row.get("题型", "") or "").strip()
+            return s_query == item["type"]
         if s_type == "题目内容":
-            return s_query in (row.get("题干", "") or "")
+            return s_query in item["stem"]
         if s_type == "解答内容":
-            return s_query in (row.get("解析", "") or "")
+            return s_query in item["solution"]
         if s_type == "难度星级":
-            return s_query in (row.get("难度星级", "") or "")
+            return s_query in item["difficulty"]
         if s_type == "标签":
-            return s_query in (row.get("标签", "") or "")
+            return s_query in item["tags"]
         if s_type == "备注":
-            return s_query in (row.get("备注", "") or "")
+            return s_query in item["remark"]
         if s_type == "全文内容":
-            hay = (row.get("题干", "") or "") + "\n" + (row.get("答案", "") or "") + "\n" + (row.get("解析", "") or "") + "\n" + (row.get("标签", "") or "") + "\n" + (row.get("备注", "") or "")
-            return s_query in hay
+            return s_query in item["full_text"]
         return False
-
-    def _abs_path_from_row(row):
-        relp = (row.get("相对文件路径", "") or "").strip()
-        if not relp:
-            return ""
-        return os.path.join(CHAPTERS_DIR, relp)
 
     query_key = (t1, q1, t2, q2, t3, q3)
     if st.session_state.get("adv_last_query") == query_key and st.session_state.get("adv_last_results") is not None:
@@ -6258,28 +6443,21 @@ def render_advanced_search_results():
     else:
         from utils.core_config import CSV_INDEX_PATH
         csv_mtime = int(os.path.getmtime(CSV_INDEX_PATH)) if os.path.exists(CSV_INDEX_PATH) else 0
-        try:
-            csv_rows = _csv_index_cached(csv_mtime)
-        except Exception:
-            from utils.csv_ops import read_csv_index
-            csv_rows = read_csv_index()
+        search_rows = _advanced_search_index_cached(csv_mtime)
 
         results = []
         with st.spinner("正在全库检索中..."):
-            for row in csv_rows:
-                if q1 and not _row_match(row, t1, q1): 
+            for item in search_rows:
+                if q1 and not _row_match(item, t1, q1): 
                     continue
-                if q2 and not _row_match(row, t2, q2): 
+                if q2 and not _row_match(item, t2, q2): 
                     continue
-                if q3 and not _row_match(row, t3, q3): 
+                if q3 and not _row_match(item, t3, q3): 
                     continue
-                fpath = _abs_path_from_row(row)
+                fpath = item["path"]
                 if not fpath or not os.path.exists(fpath):
                     continue
-                fname = (row.get("文件名称", "") or "").strip()
-                if fname and not fname.lower().endswith(".tex"):
-                    fname = fname + ".tex"
-                results.append({"file": fname or os.path.basename(fpath), "path": fpath})
+                results.append({"file": item["file"] or os.path.basename(fpath), "path": fpath})
 
         st.session_state["adv_last_query"] = query_key
         st.session_state["adv_last_results"] = results
@@ -6425,7 +6603,7 @@ def main():
         /* ================= 侧边栏重构 (SolEdu / 暗紫色居中极简风格) ================= */
         /* 侧边栏整体背景 - 暗紫色主题 */
         [data-testid="stSidebar"] {
-            background-color: #4c1d95 !important; /* 暗紫色背景 */
+            background-color: #ede9fe !important;
             min-width: 110px !important;
             max-width: 110px !important;
         }
@@ -6446,7 +6624,7 @@ def main():
         /* 强力覆盖折叠按钮颜色 */
         [data-testid="stSidebarCollapseButton"],
         [data-testid="stSidebarCollapseButton"]:hover {
-            color: #ffffff !important;
+            color: #5b21b6 !important;
         }
         [data-testid="stSidebarCollapseButton"] svg,
         [data-testid="stSidebarCollapseButton"] svg path,
@@ -6454,14 +6632,14 @@ def main():
         [data-testid="stSidebar"] button svg path,
         [data-testid="collapsedControl"] svg,
         [data-testid="collapsedControl"] svg path {
-            fill: #ffffff !important;
-            color: #ffffff !important;
-            stroke: #ffffff !important;
+            fill: #5b21b6 !important;
+            color: #5b21b6 !important;
+            stroke: #5b21b6 !important;
         }
         
         /* Logo 样式：白色居中 */
         .sol-logo {
-            color: #ffffff;
+            color: #5b21b6;
             font-size: 18px;
             font-weight: 800;
             text-align: center;
@@ -6474,7 +6652,7 @@ def main():
             width: 100%;
         }
         .sol-logo span {
-            color: #fde68a; /* 金色点缀，与紫色背景形成高对比 */
+            color: #c084fc;
         }
         
         /* 隐藏 Radio 默认的圆形按钮 */
@@ -6528,22 +6706,47 @@ def main():
             max-width: 90px !important; /* 固定宽度，居中 */
             border-radius: 12px !important;
             background-color: transparent !important;
-            color: #ffffff !important;
+            color: #5b21b6 !important;
             transition: all 0.2s ease !important;
             cursor: pointer !important;
         }
 
         /* 悬停状态：亮紫色 */
         [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+            background-color: rgba(109, 40, 217, 0.16) !important;
+            color: #4c1d95 !important;
+        }
+
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:hover p,
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:hover span {
+            color: #4c1d95 !important;
+        }
+
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:hover svg,
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:hover svg path {
+            fill: #4c1d95 !important;
+            color: #4c1d95 !important;
+            stroke: #4c1d95 !important;
+        }
+
+        /* 选中状态：深紫色高亮 */
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
             background-color: #6d28d9 !important;
+            color: #ffffff !important;
+            border-radius: 8px !important;
+            box-shadow: 0 10px 22px rgba(109, 40, 217, 0.22) !important;
+        }
+
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p,
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) span {
             color: #ffffff !important;
         }
 
-        /* 选中状态：更深的紫色高亮 (兼容 Streamlit DOM 结构) */
-        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
-            background-color: #6d28d9 !important; /* 和悬停状态一样的亮紫色，恒保持 */
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) svg,
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) svg path {
+            fill: #ffffff !important;
             color: #ffffff !important;
-            border-radius: 8px !important; /* 恢复原有的全圆角 */
+            stroke: #ffffff !important;
         }
 
         /* 图标与文字的排版 */
@@ -6556,13 +6759,13 @@ def main():
             line-height: 1.6 !important;
             white-space: pre-wrap !important;
             width: 100% !important;
-            color: #ffffff !important;
+            color: #5b21b6 !important;
         }
 
         /* 针对 Streamlit 在亮色模式下覆盖 label 颜色的特殊处理 */
         [data-testid="stSidebar"] div[role="radiogroup"] p,
         [data-testid="stSidebar"] div[role="radiogroup"] span {
-            color: #ffffff !important;
+            color: #5b21b6 !important;
         }
         </style>
     """, unsafe_allow_html=True)

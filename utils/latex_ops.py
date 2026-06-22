@@ -4,6 +4,7 @@ import html
 from .core_config import CHAPTERS_DIR, BASE_DIR
 from .file_ops import ensure_dir
 from .tikz_ops import get_tikz_image_b64
+from services.file_service import atomic_write_text, backup_existing_file
 
 # ================= Meta Data 处理 =================
 def parse_meta_data(content):
@@ -362,11 +363,11 @@ def update_file_tags(old_fpath, new_tags_list):
     
     final_content = extract_and_replace_tikz(content, new_filename, new_save_dir)
     
-    with open(new_fpath, "w", encoding="utf-8") as f:
-        f.write(final_content)
+    atomic_write_text(new_fpath, final_content, backup=os.path.exists(new_fpath))
         
     if os.path.abspath(old_fpath) != os.path.abspath(new_fpath):
         try:
+            backup_existing_file(old_fpath)
             os.remove(old_fpath)
         except:
             pass
@@ -428,8 +429,7 @@ def extract_and_replace_tikz(content, filename, save_dir):
             
         tikz_filename = f"{base_name} 图{match_count}.tex"
         tikz_file_path = os.path.join(tikz_dir_path, tikz_filename)
-        with open(tikz_file_path, "w", encoding="utf-8") as f:
-            f.write(tikz_code)
+        atomic_write_text(tikz_file_path, tikz_code)
             
         new_content += content[last_end:match.start()]
         new_content += tikz_code

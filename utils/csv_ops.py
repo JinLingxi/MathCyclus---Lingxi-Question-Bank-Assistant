@@ -4,6 +4,7 @@ import datetime
 import re
 from .core_config import CSV_INDEX_PATH, CHAPTERS_DIR
 from .latex_ops import parse_meta_data
+from services.file_service import atomic_write_csv_rows
 
 CSV_HEADERS = [
     "题目ID", "文件名称", "相对文件路径", "年份", "试卷类型", "试卷名称", "原卷题号", "知识板块",
@@ -24,10 +25,38 @@ def read_csv_index():
 
 def write_csv_index(data):
     """将数据全量写回CSV"""
-    with open(CSV_INDEX_PATH, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        writer.writeheader()
-        writer.writerows(data)
+    atomic_write_csv_rows(CSV_INDEX_PATH, CSV_HEADERS, data, backup=True)
+
+def find_duplicate_ids(data):
+    """只读检查：返回重复的题目ID及其行号，不修改CSV数据。"""
+    id_field = CSV_HEADERS[0]
+    seen = {}
+    duplicates = []
+    for row_num, row in enumerate(data, start=2):
+        qid = str(row.get(id_field, "")).strip()
+        if not qid:
+            continue
+        if qid in seen:
+            duplicates.append({"题目ID": qid, "首次行号": seen[qid], "重复行号": row_num})
+        else:
+            seen[qid] = row_num
+    return duplicates
+
+def validate_csv_rows(data, required_fields=None):
+    """只读检查：返回缺少关键字段或重复ID的问题列表，不修改CSV数据。"""
+    if required_fields is None:
+        required_fields = CSV_HEADERS[:3]
+
+    issues = []
+    for row_num, row in enumerate(data, start=2):
+        for field in required_fields:
+            if not str(row.get(field, "")).strip():
+                issues.append({"行号": row_num, "字段": field, "问题": "缺少必填值"})
+
+    for duplicate in find_duplicate_ids(data):
+        issues.append({"行号": duplicate["重复行号"], "字段": CSV_HEADERS[0], "问题": f"重复ID：{duplicate['题目ID']}"})
+
+    return issues
 
 def get_next_id():
     """获取下一个可用的全局ID"""

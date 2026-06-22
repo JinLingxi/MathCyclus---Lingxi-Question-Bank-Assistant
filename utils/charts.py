@@ -65,15 +65,30 @@ def generate_heatmap_html(daily_activity):
         display: flex;
         flex-direction: column;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-        background-color: #0d1117;
-        color: #c9d1d9;
+        background:
+            radial-gradient(circle at 92% 8%, rgba(124, 58, 237, 0.10), transparent 12rem),
+            linear-gradient(180deg, rgba(249, 250, 255, 0.96) 0%, rgba(235, 241, 251, 0.94) 100%);
+        color: #263241;
         padding: 20px;
-        border-radius: 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(96, 125, 170, 0.18);
+        box-shadow: 0 14px 34px rgba(31, 35, 48, 0.08);
         width: 100%;
-        height: 270px;
+        height: 300px;
         box-sizing: border-box;
         overflow: hidden;
         margin-bottom: 0px;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+        animation: chartFadeUp 0.4s ease both;
+    }}
+    @keyframes chartFadeUp {{
+        from {{ opacity: 0; transform: translateY(8px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    .heatmap-container:hover {{
+        transform: translateY(-2px);
+        border-color: rgba(96, 125, 170, 0.28);
+        box-shadow: 0 18px 44px rgba(31, 35, 48, 0.12);
     }}
     /* 美化内部滚动条 */
     .heatmap-scroll-area {{
@@ -88,21 +103,21 @@ def generate_heatmap_html(daily_activity):
         height: 8px;
     }}
     .heatmap-scroll-area::-webkit-scrollbar-track {{
-        background: #0d1117;
+        background: rgba(148, 163, 184, 0.16);
         border-radius: 4px;
     }}
     .heatmap-scroll-area::-webkit-scrollbar-thumb {{
-        background: #444c56; /* 灰色滚动条 */
+        background: rgba(100, 116, 139, 0.46);
         border-radius: 4px;
     }}
     .heatmap-scroll-area::-webkit-scrollbar-thumb:hover {{
-        background: #768390;
+        background: rgba(71, 85, 105, 0.62);
     }}
     .heatmap-title {{
         font-size: 18px;
         font-weight: 600;
         margin-bottom: -10px; /* 减小标题自带的底部边距，依靠 scroll-area 的 padding-top 撑开 */
-        color: #c9d1d9;
+        color: #263241;
     }}
     .heatmap-grid {{
         display: flex;
@@ -117,13 +132,18 @@ def generate_heatmap_html(daily_activity):
         width: 14px;
         height: 14px;
         border-radius: 3px;
-        background-color: #2d333b;
+        background-color: rgba(148, 163, 184, 0.32);
         position: relative;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
     }}
-    .heatmap-cell[data-level="1"] {{ background-color: #0e4429; }}
-    .heatmap-cell[data-level="2"] {{ background-color: #006d32; }}
-    .heatmap-cell[data-level="3"] {{ background-color: #26a641; }}
-    .heatmap-cell[data-level="4"] {{ background-color: #39d353; }}
+    .heatmap-cell:not(.hidden):hover {{
+        transform: scale(1.18);
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.18);
+    }}
+    .heatmap-cell[data-level="1"] {{ background-color: #86efac; }}
+    .heatmap-cell[data-level="2"] {{ background-color: #4ade80; }}
+    .heatmap-cell[data-level="3"] {{ background-color: #22c55e; }}
+    .heatmap-cell[data-level="4"] {{ background-color: #16a34a; }}
     .heatmap-cell.hidden {{ background-color: transparent; pointer-events: none; }}
     
     .heatmap-footer {{
@@ -132,7 +152,7 @@ def generate_heatmap_html(daily_activity):
         width: 100%;
         margin-top: 10px;
         font-size: 14px;
-        color: #8b949e;
+        color: #64748b;
         align-items: center;
     }}
     .legend {{
@@ -165,7 +185,7 @@ def generate_heatmap_html(daily_activity):
     <div class="heatmap-container">
         <div class="heatmap-title">🗓️ 活跃指标 (Active Days)</div>
         <div class="heatmap-scroll-area">
-            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #8b949e; margin-right: 8px; margin-top: 20px; position: sticky; left: 0; background-color: #0d1117; z-index: 2;">
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #64748b; margin-right: 8px; margin-top: 20px; position: sticky; left: 0; background-color: rgba(249,250,255,0.96); z-index: 2;">
                 <div style="height: 14px;"></div>
                 <div style="height: 14px; line-height: 14px;">M</div>
                 <div style="height: 14px;"></div>
@@ -182,11 +202,11 @@ def generate_heatmap_html(daily_activity):
         <div class="heatmap-footer">
             <div class="legend">
                 Less
-                <div class="legend-cell" style="background-color: #2d333b;"></div>
-                <div class="legend-cell" style="background-color: #0e4429;"></div>
-                <div class="legend-cell" style="background-color: #006d32;"></div>
-                <div class="legend-cell" style="background-color: #26a641;"></div>
-                <div class="legend-cell" style="background-color: #39d353;"></div>
+                <div class="legend-cell" style="background-color: rgba(148, 163, 184, 0.32);"></div>
+                <div class="legend-cell" style="background-color: #86efac;"></div>
+                <div class="legend-cell" style="background-color: #4ade80;"></div>
+                <div class="legend-cell" style="background-color: #22c55e;"></div>
+                <div class="legend-cell" style="background-color: #16a34a;"></div>
                 More
             </div>
         </div>
@@ -194,7 +214,7 @@ def generate_heatmap_html(daily_activity):
     """
     return html
 
-def generate_activity_curve_html(hourly_activity_by_day):
+def _generate_activity_curve_html_legacy(hourly_activity_by_day):
     today = datetime.date.today()
     days_data = []
     for i in range(7):
@@ -217,30 +237,205 @@ def generate_activity_curve_html(hourly_activity_by_day):
     days_data_json = json.dumps(days_data)
     
     html = f"""
-    <div style="position: relative; width: 100%; height: 260px; background-color: #0d1117; border-radius: 10px; padding: 10px; box-sizing: border-box;">
+    <style>
+        @keyframes activityFadeUp {{
+            from {{ opacity: 0; transform: translateY(8px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        .activity-card {{
+            position: relative;
+            width: 100%;
+            height: 260px;
+            background:
+                radial-gradient(circle at 88% 10%, rgba(0, 122, 255, 0.18), transparent 12rem),
+                linear-gradient(180deg, #111722 0%, #0d1117 100%);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 10px;
+            box-sizing: border-box;
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+            transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+            animation: activityFadeUp 0.4s ease both;
+        }}
+        .activity-card:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(96, 165, 250, 0.34);
+            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
+        }}
+        .activity-header {{
+            position: absolute;
+            top: 10px;
+            left: 20px;
+            right: 18px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }}
+        .activity-title {{
+            flex: 0 0 auto;
+            color: #c9d1d9;
+            font-size: 16px;
+            font-weight: 700;
+            white-space: nowrap;
+        }}
+        .day-selector-shell {{
+            position: relative;
+            flex: 1 1 auto;
+            min-width: 160px;
+            max-width: 460px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            background-color: rgba(255,255,255,0.055);
+            padding: 3px;
+            border-radius: 8px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+        }}
+        .day-selector-shell::-webkit-scrollbar {{
+            height: 5px;
+        }}
+        .day-selector-shell::-webkit-scrollbar-track {{
+            background: transparent;
+        }}
+        .day-selector-shell::-webkit-scrollbar-thumb {{
+            background: rgba(148, 163, 184, 0.45);
+            border-radius: 999px;
+        }}
+        #day-selector {{
+            position: relative;
+            display: flex;
+            gap: 6px;
+            width: max-content;
+            min-width: 100%;
+        }}
+        .day-selector-indicator {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0;
+            border-radius: 6px;
+            background: linear-gradient(180deg, #2f3745 0%, #202733 100%);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+            transform: translateX(0);
+            transition: transform 0.24s cubic-bezier(.2,.8,.2,1), width 0.24s cubic-bezier(.2,.8,.2,1);
+            z-index: 0;
+            pointer-events: none;
+        }}
+        .day-selector-btn {{
+            position: relative;
+            z-index: 1;
+            flex: 0 0 auto;
+            padding: 3px 10px;
+            min-width: 48px;
+            border-radius: 6px;
+            color: #8b949e;
+            font-size: 12px;
+            line-height: 18px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.18s ease, transform 0.18s ease;
+        }}
+        .day-selector-btn:hover {{
+            color: #dbeafe;
+        }}
+        .day-selector-btn.active {{
+            color: #ffffff;
+            transform: translateY(-1px);
+        }}
+        #activity-chart {{
+            width: 100%;
+            height: 100%;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }}
+    </style>
+    <div class="activity-card">
         <!-- 自定义图表头部与选项卡 -->
-        <div style="position: absolute; top: 10px; left: 20px; z-index: 10; display: flex; align-items: center; gap: 15px;">
-            <div style="color: #c9d1d9; font-size: 16px; font-weight: bold;">
+        <div class="activity-header">
+            <div class="activity-title">
                 ⏱️ 时段活动曲线 ⓘ
             </div>
-            <div id="day-selector" style="display: flex; gap: 6px; background-color: rgba(255,255,255,0.05); padding: 3px; border-radius: 6px;">
-                <!-- 按钮由 JS 动态生成 -->
+            <div id="day-selector-shell" class="day-selector-shell" title="在这里滚动鼠标滚轮可左右切换日期条">
+                <div id="day-selector">
+                    <div id="day-selector-indicator" class="day-selector-indicator"></div>
+                    <!-- 按钮由 JS 动态生成 -->
+                </div>
             </div>
         </div>
         
-        <div id="activity-chart" style="width: 100%; height: 100%;"></div>
+        <div id="activity-chart"></div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script>
         var daysData = {days_data_json};
         var chartDom = document.getElementById('activity-chart');
-        var myChart = echarts.init(chartDom, 'dark');
+        var myChart = echarts.init(chartDom);
+        var currentDayIndex = 0;
+        var hasRenderedActivityChart = false;
+        var selectorShell = document.getElementById('day-selector-shell');
+        var selector = document.getElementById('day-selector');
+        var indicator = document.getElementById('day-selector-indicator');
+        
+        selectorShell.addEventListener('wheel', function(e) {{
+            if (Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {{
+                selectorShell.scrollLeft += e.deltaY;
+                e.preventDefault();
+            }}
+        }}, {{ passive: false }});
+        
+        function moveDayIndicator(activeBtn) {{
+            if (!activeBtn) return;
+            indicator.style.width = activeBtn.offsetWidth + 'px';
+            indicator.style.transform = 'translateX(' + activeBtn.offsetLeft + 'px)';
+            var leftEdge = activeBtn.offsetLeft;
+            var rightEdge = leftEdge + activeBtn.offsetWidth;
+            if (leftEdge < selectorShell.scrollLeft) {{
+                selectorShell.scrollTo({{ left: leftEdge - 8, behavior: 'smooth' }});
+            }} else if (rightEdge > selectorShell.scrollLeft + selectorShell.clientWidth) {{
+                selectorShell.scrollTo({{ left: rightEdge - selectorShell.clientWidth + 8, behavior: 'smooth' }});
+            }}
+        }}
+        
+        function refreshDayButtons(dayIndex) {{
+            selector.querySelectorAll('.day-selector-btn').forEach(function(btn) {{
+                var isActive = Number(btn.dataset.index) === dayIndex;
+                btn.classList.toggle('active', isActive);
+                if (isActive) {{
+                    moveDayIndicator(btn);
+                }}
+            }});
+        }}
+        
+        function buildDaySelector() {{
+            daysData.forEach(function(day, index) {{
+                var btn = document.createElement('div');
+                btn.className = 'day-selector-btn';
+                btn.dataset.index = index;
+                btn.innerText = day.label;
+                btn.onclick = function() {{
+                    renderChart(index);
+                }};
+                selector.appendChild(btn);
+            }});
+            requestAnimationFrame(function() {{
+                refreshDayButtons(currentDayIndex);
+            }});
+        }}
         
         function renderChart(dayIndex) {{
+            currentDayIndex = dayIndex;
             var dayInfo = daysData[dayIndex];
             var hourly_counts = dayInfo.counts;
             var max_val = Math.max(...hourly_counts);
             if (max_val === 0) max_val = 1;
+            
+            if (hasRenderedActivityChart) {{
+                chartDom.style.opacity = '0.72';
+                chartDom.style.transform = 'translateX(14px)';
+            }}
             
             var data = [];
             for (var i = 0; i <= 23; i++) {{
@@ -359,39 +554,502 @@ def generate_activity_curve_html(hourly_activity_by_day):
                     }}
                 }}
             }};
-            myChart.setOption(option);
-            
-            // 更新选项卡 UI
-            var selector = document.getElementById('day-selector');
-            selector.innerHTML = '';
-            daysData.forEach(function(day, index) {{
-                var btn = document.createElement('div');
-                btn.innerText = day.label;
-                btn.style.padding = '2px 8px';
-                btn.style.fontSize = '12px';
-                btn.style.borderRadius = '4px';
-                btn.style.cursor = 'pointer';
-                btn.style.color = index === dayIndex ? '#ffffff' : '#8b949e';
-                btn.style.backgroundColor = index === dayIndex ? '#21262d' : 'transparent';
-                btn.style.transition = 'all 0.2s';
-                
-                btn.onmouseover = function() {{
-                    if (index !== dayIndex) btn.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                }};
-                btn.onmouseout = function() {{
-                    if (index !== dayIndex) btn.style.backgroundColor = 'transparent';
-                }};
-                
-                btn.onclick = function() {{
-                    renderChart(index);
-                }};
-                selector.appendChild(btn);
+            myChart.setOption(option, true);
+            refreshDayButtons(dayIndex);
+            requestAnimationFrame(function() {{
+                chartDom.style.opacity = '1';
+                chartDom.style.transform = 'translateX(0)';
             }});
+            hasRenderedActivityChart = true;
         }}
         
         // 初始渲染今天
+        buildDaySelector();
         renderChart(0);
-        window.addEventListener('resize', function() {{ myChart.resize(); }});
+        window.addEventListener('resize', function() {{
+            myChart.resize();
+            refreshDayButtons(currentDayIndex);
+        }});
+    </script>
+    """
+    return html
+
+def generate_activity_curve_html(hourly_activity_by_day):
+    today = datetime.date.today()
+    days_data = []
+    for i in range(6, -1, -1):
+        d = today - datetime.timedelta(days=i)
+        date_str = d.isoformat()
+        if i == 0:
+            label = "今天"
+        elif i == 1:
+            label = "昨天"
+        else:
+            label = d.strftime("%m-%d")
+
+        hourly_counts = [hourly_activity_by_day.get(date_str, {}).get(str(h).zfill(2), 0) for h in range(24)]
+        days_data.append({
+            "label": label,
+            "date": date_str,
+            "counts": hourly_counts
+        })
+
+    timeline = []
+    for day_index, day in enumerate(days_data):
+        for hour, count in enumerate(day["counts"]):
+            timeline.append({
+                "dayIndex": day_index,
+                "dayLabel": day["label"],
+                "date": day["date"],
+                "hour": hour,
+                "count": count
+            })
+
+    days_data_json = json.dumps(days_data)
+    timeline_json = json.dumps(timeline)
+    default_start = max(0, len(timeline) - 24)
+    default_end = max(23, len(timeline) - 1)
+
+    html = f"""
+    <style>
+        @keyframes activityFadeUp {{
+            from {{ opacity: 0; transform: translateY(8px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        .activity-card {{
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background:
+                radial-gradient(circle at 88% 10%, rgba(0, 122, 255, 0.10), transparent 12rem),
+                linear-gradient(180deg, rgba(249, 250, 255, 0.96) 0%, rgba(235, 241, 251, 0.94) 100%);
+            border-radius: 12px;
+            border: 1px solid rgba(96, 125, 170, 0.18);
+            padding: 10px;
+            box-sizing: border-box;
+            box-shadow: 0 14px 34px rgba(31, 35, 48, 0.08);
+            transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+            animation: activityFadeUp 0.4s ease both;
+        }}
+        .activity-card:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(96, 125, 170, 0.28);
+            box-shadow: 0 18px 44px rgba(31, 35, 48, 0.12);
+        }}
+        .activity-header {{
+            position: absolute;
+            top: 10px;
+            left: 20px;
+            right: 18px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+        }}
+        .activity-title {{
+            flex: 0 0 auto;
+            color: #263241;
+            font-size: 16px;
+            font-weight: 700;
+            white-space: nowrap;
+            padding-right: 2px;
+        }}
+        .day-selector-shell {{
+            position: relative;
+            flex: 0 1 560px;
+            min-width: 430px;
+            max-width: 560px;
+            overflow: hidden;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.92), rgba(241,245,249,0.78));
+            padding: 4px;
+            border-radius: 999px;
+            border: 1px solid rgba(96, 125, 170, 0.16);
+            box-shadow: inset 0 1px 1px rgba(255,255,255,0.72);
+        }}
+        #day-selector {{
+            position: relative;
+            display: flex;
+            gap: 3px;
+            min-width: 100%;
+        }}
+        .day-selector-indicator {{
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0;
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(59, 130, 246, 0.94), rgba(37, 99, 235, 0.78));
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.20), inset 0 1px 0 rgba(255,255,255,0.28);
+            transform: translateX(0);
+            transition: transform 0.24s cubic-bezier(.2,.8,.2,1), width 0.24s cubic-bezier(.2,.8,.2,1);
+            z-index: 0;
+            pointer-events: none;
+        }}
+        .day-selector-btn {{
+            position: relative;
+            z-index: 1;
+            flex: 1 1 0;
+            padding: 4px 10px;
+            min-width: 54px;
+            border-radius: 999px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 18px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.18s ease, transform 0.18s ease;
+        }}
+        .day-selector-btn:hover {{
+            color: #1d4ed8;
+        }}
+        .day-selector-btn.active {{
+            color: #ffffff;
+            transform: translateY(-0.5px);
+            text-shadow: 0 1px 8px rgba(219, 234, 254, 0.32);
+        }}
+        .day-selector-btn.today {{
+            min-width: 62px;
+            font-weight: 700;
+        }}
+        @media (max-width: 760px) {{
+            .activity-header {{
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 8px;
+            }}
+            .day-selector-shell {{
+                flex-basis: auto;
+                width: calc(100% - 2px);
+                min-width: 0;
+                max-width: none;
+            }}
+        }}
+        #activity-chart {{
+            width: 100%;
+            height: 100%;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }}
+    </style>
+    <div class="activity-card">
+        <div class="activity-header">
+            <div class="activity-title">⏱️ 时段活动曲线 ⓘ</div>
+            <div class="day-selector-shell" title="点击日期可快速跳转，拖动下方时间滚条可连续查看">
+                <div id="day-selector">
+                    <div id="day-selector-indicator" class="day-selector-indicator"></div>
+                </div>
+            </div>
+        </div>
+        <div id="activity-chart"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script>
+        var daysData = {days_data_json};
+        var timelineData = {timeline_json};
+        var defaultStart = {default_start};
+        var defaultEnd = {default_end};
+        var chartDom = document.getElementById('activity-chart');
+        var myChart = echarts.init(chartDom, 'dark');
+        var currentDayIndex = daysData.length - 1;
+        var hasRenderedActivityChart = false;
+        var selector = document.getElementById('day-selector');
+        var indicator = document.getElementById('day-selector-indicator');
+
+        function moveDayIndicator(activeBtn) {{
+            if (!activeBtn) return;
+            indicator.style.width = activeBtn.offsetWidth + 'px';
+            indicator.style.transform = 'translateX(' + activeBtn.offsetLeft + 'px)';
+        }}
+
+        function refreshDayButtons(dayIndex) {{
+            selector.querySelectorAll('.day-selector-btn').forEach(function(btn) {{
+                var isActive = Number(btn.dataset.index) === dayIndex;
+                btn.classList.toggle('active', isActive);
+                if (isActive) moveDayIndicator(btn);
+            }});
+        }}
+
+        function buildDaySelector() {{
+            daysData.forEach(function(day, index) {{
+                var btn = document.createElement('div');
+                btn.className = 'day-selector-btn';
+                if (index === daysData.length - 1) btn.classList.add('today');
+                btn.dataset.index = index;
+                btn.innerText = day.label;
+                btn.onclick = function() {{ jumpToDay(index); }};
+                selector.appendChild(btn);
+            }});
+            requestAnimationFrame(function() {{ refreshDayButtons(currentDayIndex); }});
+        }}
+
+        function getVisibleDayIndexFromRange(startValue, endValue) {{
+            var center = Math.round((Number(startValue) + Number(endValue)) / 2);
+            center = Math.max(0, Math.min(timelineData.length - 1, center));
+            return timelineData[center].dayIndex;
+        }}
+
+        function getZoomRange(dataZoomOption) {{
+            var startValue = Number(dataZoomOption.startValue);
+            var endValue = Number(dataZoomOption.endValue);
+            if (Number.isFinite(startValue) && Number.isFinite(endValue)) {{
+                return [startValue, endValue];
+            }}
+            var maxIndex = Math.max(0, timelineData.length - 1);
+            var startPercent = Number.isFinite(Number(dataZoomOption.start)) ? Number(dataZoomOption.start) : 0;
+            var endPercent = Number.isFinite(Number(dataZoomOption.end)) ? Number(dataZoomOption.end) : 100;
+            return [
+                Math.round(maxIndex * startPercent / 100),
+                Math.round(maxIndex * endPercent / 100)
+            ];
+        }}
+
+        function getVisibleSpan() {{
+            var opt = myChart.getOption();
+            if (!opt || !opt.dataZoom || !opt.dataZoom[0]) {{
+                return defaultEnd - defaultStart + 1;
+            }}
+            var range = getZoomRange(opt.dataZoom[0]);
+            return Math.max(1, range[1] - range[0] + 1);
+        }}
+
+        function getTimeLabelStep(visibleSpan) {{
+            if (visibleSpan <= 18) return 1;
+            if (visibleSpan <= 30) return 2;
+            if (visibleSpan <= 48) return 3;
+            if (visibleSpan <= 84) return 6;
+            return 12;
+        }}
+
+        function jumpToDay(dayIndex) {{
+            currentDayIndex = dayIndex;
+            refreshDayButtons(dayIndex);
+            var startValue = dayIndex * 24;
+            var endValue = Math.min(startValue + 23, timelineData.length - 1);
+            myChart.dispatchAction({{
+                type: 'dataZoom',
+                startValue: startValue,
+                endValue: endValue
+            }});
+        }}
+
+        function renderChart() {{
+            var maxVal = Math.max.apply(null, timelineData.map(function(item) {{ return item.count; }}));
+            if (maxVal === 0) maxVal = 1;
+
+            if (hasRenderedActivityChart) {{
+                chartDom.style.opacity = '0.72';
+                chartDom.style.transform = 'translateX(10px)';
+            }}
+
+            var lineData = timelineData.map(function(item, index) {{
+                var y = Math.sin((item.hour - 6) / 24 * Math.PI * 2);
+                return [index, y, item.count, item.dayLabel, item.date, item.hour];
+            }});
+
+            var iconData = [];
+            var dayBoundaryData = [];
+            timelineData.forEach(function(item, index) {{
+                if (item.hour === 0) {{
+                    dayBoundaryData.push({{
+                        xAxis: index,
+                        label: {{
+                            show: true,
+                            formatter: item.dayLabel,
+                            position: 'insideStartTop',
+                            distance: 18,
+                            color: '#2563eb',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            backgroundColor: 'rgba(219, 234, 254, 0.88)',
+                            borderRadius: 4,
+                            padding: [2, 6]
+                        }},
+                        lineStyle: {{
+                            color: 'rgba(37, 99, 235, 0.22)',
+                            type: 'dashed',
+                            width: 1
+                        }}
+                    }});
+                }}
+                if (item.hour === 6) iconData.push([index, 0, 0, item.dayLabel, item.date, item.hour, '🌅']);
+                if (item.hour === 12) iconData.push([index, 1.2, 0, item.dayLabel, item.date, item.hour, '☀️']);
+                if (item.hour === 18) iconData.push([index, 0, 0, item.dayLabel, item.date, item.hour, '🌆']);
+                if (item.hour === 21) iconData.push([index, -0.7, 0, item.dayLabel, item.date, item.hour, '🌙']);
+            }});
+
+            var option = {{
+                backgroundColor: 'transparent',
+                animationDurationUpdate: 280,
+                animationEasingUpdate: 'cubicOut',
+                grid: {{ top: 50, bottom: 54, left: 20, right: 20, containLabel: true }},
+                xAxis: {{
+                    type: 'value',
+                    min: 0,
+                    max: timelineData.length - 1,
+                    axisLine: {{ show: false }},
+                    splitLine: {{ show: false }},
+                    axisTick: {{ show: false }},
+                    axisLabel: {{
+                        formatter: function(value) {{
+                            var idx = Math.round(value);
+                            var item = timelineData[idx];
+                            if (!item) return '';
+                            if (Math.abs(value - idx) > 0.12) return '';
+                            var step = getTimeLabelStep(getVisibleSpan());
+                            if (idx % step !== 0) return '';
+                            if (item.hour === 0 && step > 3) return '';
+                            return (item.hour < 10 ? '0' + item.hour : item.hour) + ':00';
+                        }},
+                        hideOverlap: true,
+                        showMinLabel: false,
+                        showMaxLabel: false,
+                        color: '#64748b',
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        margin: 8
+                    }}
+                }},
+                yAxis: {{
+                    type: 'value',
+                    min: -1.2,
+                    max: 1.5,
+                    show: false
+                }},
+                dataZoom: [
+                    {{
+                        type: 'inside',
+                        xAxisIndex: 0,
+                        filterMode: 'none',
+                        zoomOnMouseWheel: false,
+                        moveOnMouseWheel: true,
+                        moveOnMouseMove: true,
+                        preventDefaultMouseMove: true,
+                        startValue: defaultStart,
+                        endValue: defaultEnd
+                    }},
+                    {{
+                        type: 'slider',
+                        xAxisIndex: 0,
+                        filterMode: 'none',
+                        height: 18,
+                        bottom: 8,
+                        startValue: defaultStart,
+                        endValue: defaultEnd,
+                        borderColor: 'rgba(96, 125, 170, 0.22)',
+                        backgroundColor: 'rgba(148, 163, 184, 0.14)',
+                        fillerColor: 'rgba(59, 130, 246, 0.22)',
+                        dataBackground: {{
+                            lineStyle: {{ color: 'rgba(100, 116, 139, 0.30)' }},
+                            areaStyle: {{ color: 'rgba(148, 163, 184, 0.12)' }}
+                        }},
+                        selectedDataBackground: {{
+                            lineStyle: {{ color: 'rgba(37, 99, 235, 0.55)' }},
+                            areaStyle: {{ color: 'rgba(59, 130, 246, 0.18)' }}
+                        }},
+                        handleSize: '110%',
+                        handleStyle: {{
+                            color: '#2563eb',
+                            borderColor: 'rgba(37, 99, 235, 0.72)',
+                            shadowBlur: 8,
+                            shadowColor: 'rgba(37, 99, 235, 0.24)'
+                        }},
+                        moveHandleSize: 6,
+                        textStyle: {{ color: '#64748b', fontSize: 10 }}
+                    }}
+                ],
+                series: [
+                    {{
+                        type: 'line',
+                        data: lineData.map(function(item) {{ return [item[0], item[1]]; }}),
+                        smooth: true,
+                        symbol: 'none',
+                        lineStyle: {{ color: 'rgba(71, 85, 105, 0.44)', width: 2 }},
+                        z: 2,
+                        markLine: {{
+                            symbol: ['none', 'none'],
+                            label: {{ show: false }},
+                            data: [
+                                {{ yAxis: 0, lineStyle: {{ type: 'dashed', color: 'rgba(71, 85, 105, 0.32)', width: 1 }} }}
+                            ].concat(dayBoundaryData)
+                        }}
+                    }},
+                    {{
+                        type: 'scatter',
+                        data: lineData,
+                        z: 4,
+                        symbolSize: function(data) {{
+                            return 12 + (data[2] / maxVal) * 16;
+                        }},
+                        itemStyle: {{
+                            color: function(params) {{
+                                if (params.data[2] === 0) return 'rgba(71, 85, 105, 0.22)';
+                                var opacity = 0.4 + (params.data[2] / maxVal) * 0.6;
+                                return 'rgba(37, 99, 235, ' + opacity + ')';
+                            }}
+                        }}
+                    }},
+                    {{
+                        type: 'scatter',
+                        data: iconData,
+                        symbol: 'circle',
+                        symbolSize: 0,
+                        z: 3,
+                        label: {{
+                            show: true,
+                            formatter: function(params) {{ return params.data[6] || ''; }},
+                            position: 'top',
+                            distance: 14,
+                            fontSize: 16
+                        }}
+                    }}
+                ],
+                tooltip: {{
+                    trigger: 'item',
+                    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+                    borderColor: 'rgba(96, 125, 170, 0.22)',
+                    textStyle: {{ color: '#263241' }},
+                    formatter: function(params) {{
+                        if (params.componentType === 'series' && params.seriesIndex === 1) {{
+                            var h = params.value[5];
+                            var hStr1 = (h < 10 ? '0' + h : h) + ':00';
+                            var hStr2 = (h < 10 ? '0' + h : h) + ':59';
+                            return params.value[3] + ' ' + hStr1 + ' ~ ' + hStr2 + '<br/>录入/修改了 ' + params.value[2] + ' 次题目';
+                        }}
+                        return '';
+                    }}
+                }}
+            }};
+
+            myChart.setOption(option, true);
+            requestAnimationFrame(function() {{
+                chartDom.style.opacity = '1';
+                chartDom.style.transform = 'translateX(0)';
+            }});
+            hasRenderedActivityChart = true;
+        }}
+
+        myChart.on('dataZoom', function() {{
+            var dz = myChart.getOption().dataZoom[0];
+            if (!dz) return;
+            var range = getZoomRange(dz);
+            var dayIndex = getVisibleDayIndexFromRange(range[0], range[1]);
+            if (dayIndex !== currentDayIndex) {{
+                currentDayIndex = dayIndex;
+                refreshDayButtons(dayIndex);
+            }}
+            myChart.setOption({{ xAxis: {{ axisLabel: {{}} }} }});
+        }});
+
+        buildDaySelector();
+        renderChart();
+        refreshDayButtons(currentDayIndex);
+        window.addEventListener('resize', function() {{
+            myChart.resize();
+            refreshDayButtons(currentDayIndex);
+        }});
     </script>
     """
     return html
@@ -406,13 +1064,44 @@ def generate_echarts_bar_html(data_dict, title):
     values = [x[1] for x in sorted_items]
     
     html = f"""
-    <div id="bar-chart" style="width: 100%; height: 350px;"></div>
+    <style>
+        @keyframes chartPanelFadeUp {{
+            from {{ opacity: 0; transform: translateY(8px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        .echarts-panel {{
+            width: 100%;
+            height: 350px;
+            padding: 10px 12px 6px;
+            box-sizing: border-box;
+            border-radius: 12px;
+            border: 1px solid rgba(109, 40, 217, 0.10);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.90), rgba(255,255,255,0.72)),
+                rgba(255,255,255,0.82);
+            box-shadow: 0 10px 30px rgba(31, 35, 48, 0.06);
+            transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+            animation: chartPanelFadeUp 0.4s ease both;
+        }}
+        .echarts-panel:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(109, 40, 217, 0.18);
+            box-shadow: 0 16px 40px rgba(31, 35, 48, 0.10);
+        }}
+        #bar-chart {{
+            width: 100%;
+            height: 100%;
+        }}
+    </style>
+    <div class="echarts-panel"><div id="bar-chart"></div></div>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script>
         var chartDom = document.getElementById('bar-chart');
         var myChart = echarts.init(chartDom);
         var option = {{
             tooltip: {{ trigger: 'axis', axisPointer: {{ type: 'shadow' }} }},
+            animationDuration: 800,
+            animationEasing: 'cubicOut',
             grid: {{ left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true }},
             xAxis: {{
                 type: 'category',
@@ -463,12 +1152,43 @@ def generate_echarts_pie_html(data_dict, diff_dict, title):
             pie_data_outer.append({"name": k, "value": v})
     
     html = f"""
-    <div id="pie-chart" style="width: 100%; height: 350px;"></div>
+    <style>
+        @keyframes piePanelFadeUp {{
+            from {{ opacity: 0; transform: translateY(8px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        .pie-panel {{
+            width: 100%;
+            height: 350px;
+            padding: 10px 12px 6px;
+            box-sizing: border-box;
+            border-radius: 12px;
+            border: 1px solid rgba(109, 40, 217, 0.10);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.90), rgba(255,255,255,0.72)),
+                rgba(255,255,255,0.82);
+            box-shadow: 0 10px 30px rgba(31, 35, 48, 0.06);
+            transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+            animation: piePanelFadeUp 0.4s ease both;
+        }}
+        .pie-panel:hover {{
+            transform: translateY(-2px);
+            border-color: rgba(109, 40, 217, 0.18);
+            box-shadow: 0 16px 40px rgba(31, 35, 48, 0.10);
+        }}
+        #pie-chart {{
+            width: 100%;
+            height: 100%;
+        }}
+    </style>
+    <div class="pie-panel"><div id="pie-chart"></div></div>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script>
         var chartDom = document.getElementById('pie-chart');
         var myChart = echarts.init(chartDom);
         var option = {{
+            animationDuration: 850,
+            animationEasing: 'cubicOut',
             tooltip: {{ trigger: 'item', formatter: '{{a}} <br/>{{b}}: {{c}} ({{d}}%)' }},
             legend: [
                 {{ top: '0%', left: 'center', textStyle: {{ color: '#31333F', fontWeight: 'bold' }}, data: {json.dumps([item['name'] for item in pie_data_inner])} }},

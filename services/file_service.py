@@ -1,0 +1,76 @@
+import csv
+import datetime
+import os
+import shutil
+import tempfile
+
+
+def _same_filesystem_temp_path(target_path: str) -> str:
+    target_dir = os.path.dirname(os.path.abspath(target_path)) or "."
+    os.makedirs(target_dir, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=".tmp-", suffix=".write", dir=target_dir)
+    os.close(fd)
+    return temp_path
+
+
+def backup_existing_file(path: str, backup_root: str = ".backups") -> str:
+    """Copy the existing file to a timestamped backup path and return it."""
+    if not path or not os.path.isfile(path):
+        return ""
+
+    abs_path = os.path.abspath(path)
+    root_dir = os.getcwd()
+    try:
+        rel_path = os.path.relpath(abs_path, root_dir)
+        if rel_path.startswith(".."):
+            rel_path = os.path.basename(abs_path)
+    except ValueError:
+        rel_path = os.path.basename(abs_path)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    rel_dir = os.path.dirname(rel_path)
+    stem, ext = os.path.splitext(os.path.basename(rel_path))
+    backup_dir = os.path.join(root_dir, backup_root, rel_dir)
+    os.makedirs(backup_dir, exist_ok=True)
+    backup_path = os.path.join(backup_dir, f"{stem}.{timestamp}{ext or '.bak'}")
+    shutil.copy2(abs_path, backup_path)
+    return backup_path
+
+
+def atomic_write_text(path: str, content: str, encoding: str = "utf-8", backup: bool = False) -> None:
+    """Write text by replacing the target only after the temp file is complete."""
+    if backup:
+        backup_existing_file(path)
+    temp_path = _same_filesystem_temp_path(path)
+    try:
+        with open(temp_path, "w", encoding=encoding) as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def atomic_write_csv_rows(path: str, fieldnames, rows, encoding: str = "utf-8-sig", backup: bool = False) -> None:
+    if backup:
+        backup_existing_file(path)
+    temp_path = _same_filesystem_temp_path(path)
+    try:
+        with open(temp_path, "w", encoding=encoding, newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
