@@ -17,7 +17,7 @@ except ImportError:
 import streamlit.components.v1 as components
 import io
 from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
-from services.file_service import atomic_write_text, backup_existing_file
+from services.file_service import atomic_write_text, backup_existing_file, file_change_token
 
 # 加载环境变量
 load_dotenv()
@@ -382,6 +382,16 @@ def zoom_image(img):
     </script>
     """
     components.html(html_code, height=800, scrolling=True)
+
+@st.dialog("MathCyclus 题库介绍", width="large")
+def show_mathcyclus_intro():
+    intro_path = os.path.join(BASE_DIR, "MathCyclus题库介绍.html")
+    if not os.path.exists(intro_path):
+        st.error("未找到 MathCyclus题库介绍.html")
+        return
+    with open(intro_path, "r", encoding="utf-8") as f:
+        demo_html = f.read()
+    components.html(demo_html, height=760, scrolling=True)
 
 def _adv_search_queries_from_session():
     t1 = st.session_state.get("adv_t1", "全文内容")
@@ -1590,50 +1600,49 @@ def page_entry():
                 # 读取剪贴板按钮 - 稍微向下偏移以对齐
                 st.write("") 
                 st.write("")
-                if st.button("📋 粘贴剪贴板图片", use_container_width=True):
-                    if ImageGrab:
-                        try:
-                            clipboard_content = ImageGrab.grabclipboard()
-                            
-                            new_imgs = []
-                            # 情况1: 直接是图片对象
-                            if isinstance(clipboard_content, Image.Image):
-                                new_imgs.append(clipboard_content)
-                            
-                            # 情况2: 文件路径列表 (用户在资源管理器复制了文件)
-                            elif isinstance(clipboard_content, list):
-                                for item in clipboard_content:
-                                    if isinstance(item, str) and os.path.isfile(item):
-                                        try:
-                                            # 尝试作为图片打开
-                                            img = Image.open(item)
-                                            # 强制加载以避免文件句柄问题
-                                            img.load() 
-                                            new_imgs.append(img)
-                                        except:
-                                            pass # 忽略非图片文件
-
-                            if new_imgs:
-                                count_added = 0
-                                for img in new_imgs:
-                                    if len(st.session_state["ocr_queue"]) < 5:
-                                        st.session_state["ocr_queue"].append(img)
-                                        count_added += 1
-                                    else:
-                                        st.warning("队列已满，部分图片未添加")
-                                        break
-                                
-                                if count_added > 0:
-                                    st.toast(f"已从剪贴板添加 {count_added} 张图片", icon="✅")
-                                    st.rerun()
-                                else:
-                                     st.warning("队列已满或没有新图片")
-                            else:
-                                st.warning("剪贴板中没有图片或支持的图片文件")
-                        except Exception as e:
-                            st.error(f"剪贴板读取失败: {e}")
-                    else:
+                def _read_clipboard_image_candidates():
+                    if not ImageGrab:
                         st.error("缺少 PIL 库")
+                        return []
+                    clipboard_content = ImageGrab.grabclipboard()
+                    candidates = []
+                    if isinstance(clipboard_content, Image.Image):
+                        candidates.append({"label": "剪贴板图片 1", "image": clipboard_content.copy()})
+                    elif isinstance(clipboard_content, list):
+                        for item in clipboard_content:
+                            if isinstance(item, str) and os.path.isfile(item):
+                                try:
+                                    img = Image.open(item)
+                                    img.load()
+                                    candidates.append({"label": os.path.basename(item), "image": img.copy()})
+                                except Exception:
+                                    pass
+                    return candidates
+
+                def _append_clipboard_first_image():
+                    try:
+                        candidates = _read_clipboard_image_candidates()
+                    except Exception as e:
+                        st.error(f"剪贴板读取失败: {e}")
+                        return
+                    if not candidates:
+                        st.warning("剪贴板中没有图片或支持的图片文件")
+                        return
+                    item = candidates[0]
+                    count_added = 0
+                    if len(st.session_state["ocr_queue"]) < 5:
+                        st.session_state["ocr_queue"].append(item["image"])
+                        count_added = 1
+                    else:
+                        st.warning("队列已满，无法添加图片")
+                    if count_added > 0:
+                        st.toast(f"已从剪贴板添加 {count_added} 张图片", icon="✅")
+                        st.rerun()
+                    else:
+                        st.warning("队列已满或没有新图片")
+
+                if st.button("📋 粘贴剪贴板首张图片", use_container_width=True):
+                    _append_clipboard_first_image()
 
             # 处理上传的文件 (多文件，增量添加)
             if uploaded_files:
@@ -1976,6 +1985,31 @@ def page_entry():
 
             def _sync_batch_content_from_items():
                 _set_batch_content_and_hash(_join_batch_items(_current_items_from_state()))
+
+            def _apply_same_paper_meta_to_items(items, year, p_type, paper):
+                synced = []
+                for it in items or []:
+                    fname = (it.get("filename") or "").strip()
+                    content = it.get("content") or ""
+                    name_body = fname.replace(".tex", "")
+                    segments = name_body.split("-")
+                    if len(segments) >= 2:
+                        q_num = segments[-2]
+                        q_subj = segments[-1]
+                    else:
+                        q_num = "?"
+                        q_subj = "未分类"
+
+                    synced_name = generate_filename(year, p_type, paper, q_num, q_subj)
+                    if content.strip():
+                        if "\\begin{problem}" in content:
+                            synced_content = replace_problem_header(content, year, p_type, paper, q_num, q_subj)
+                        else:
+                            synced_content = normalize_single_problem_structure(content.strip(), year, p_type, paper, q_num, q_subj)
+                    else:
+                        synced_content = content
+                    synced.append({"filename": synced_name, "content": synced_content})
+                return synced
             
             _ensure_batch_items_state()
             
@@ -2054,27 +2088,15 @@ def page_entry():
                 with c4:
                     st.markdown("<div style='padding-top: 28px;'></div>", unsafe_allow_html=True)
                     def on_sync_click():
-                        s_text = _join_batch_items(_current_items_from_state())
                         s_y = st.session_state.get("u_batch_year", "")
                         s_t = st.session_state.get("u_batch_type", "G")
                         s_p = st.session_state.get("u_batch_paper", "")
                         
-                        if not s_text.strip(): return
-                        
-                        # 1. 更新 \begin{problem} 的参数（年份、类别、试卷名称）
-                        pattern_problem = r'\\begin\{problem\}\{.*?\}\{.*?\}\{.*?\}'
                         if s_y and s_p:
-                            replacement = fr'\\begin{{problem}}{{{s_y}}}{{{s_t}}}{{{s_p}}}'
-                            new_text = re.sub(pattern_problem, replacement, s_text)
+                            items = _apply_same_paper_meta_to_items(_current_items_from_state(), s_y, s_t, s_p)
+                            new_text = _join_batch_items(items)
                             
-                            # 2. 同时更新 ---xxx.tex--- 文件名中的年份、类别、试卷名称
-                            # 格式: ---年份-类别-试卷-题号-板块.tex---
-                            pattern_fname = r'---(.*?)-(.*?)-(.*?)-(.*?)-(.*?)\.tex---'
-                            def replace_fname(m):
-                                return f'---{s_y}-{s_t}-{s_p}-{m.group(4)}-{m.group(5)}.tex---'
-                            new_text = re.sub(pattern_fname, replace_fname, new_text)
-                            
-                            # 3. 自动匹配并分配空的 ID
+                            # 自动匹配并分配空的 ID
                             from utils.csv_ops import get_next_id
                             current_id = get_next_id()
                             def repl_id(m):
@@ -2087,6 +2109,7 @@ def page_entry():
                             # 修复正则：匹配末尾可能的空格或换行符
                             new_text = re.sub(r'% ID:\s*(.*?)(?=\n|$)', repl_id, new_text)
                             _set_batch_content_and_hash(new_text)
+                            _write_batch_items_state(_split_batch_text_to_items(new_text), st.session_state["batch_items_src_hash"])
                             
                     if st.button("🔄 同步更新", help="将上方填写的年份、类别和试卷名称，一键替换下方所有源码中的 problem 标签", on_click=on_sync_click, use_container_width=True, type="secondary"):
                         st.toast("已同步更新所有 problem 标签及预分配ID！", icon="✅")
@@ -2226,6 +2249,10 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     save_dir = os.path.join(CHAPTERS_DIR, primary_subj, str(u_year))
                                     ensure_dir(save_dir)
                                     file_path = os.path.join(save_dir, final_filename)
+                                    if "\\begin{problem}" in file_content:
+                                        file_content = replace_problem_header(file_content, str(u_year), u_type, u_paper, q_num, q_subj)
+                                    else:
+                                        file_content = normalize_single_problem_structure(file_content, str(u_year), u_type, u_paper, q_num, q_subj)
                                     file_content = extract_and_replace_tikz(file_content, final_filename, save_dir)
                                     from utils.latex_ops import parse_meta_data, inject_meta_data
                                     existing_meta, clean_content = parse_meta_data(file_content)
@@ -4395,7 +4422,7 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
                 ensure_dir(final_export_dir)
                 
                 output_file = os.path.join(final_export_dir, f"{export_filename}.tex")
-                atomic_write_text(output_file, final_content)
+                atomic_write_text(output_file, final_content, backup=os.path.exists(output_file))
                 return output_file
             
     return None
@@ -4987,7 +5014,7 @@ def batch_fix_choice_formats():
                     new_content = r'\begin{choices}'.join(parts)
                 
                 if new_content != content:
-                    atomic_write_text(file_path, new_content)
+                    atomic_write_text(file_path, new_content, backup=True)
                     updated_files.append(file)
             except Exception as e:
                 print(f"Error processing {file_path}: {e}")
@@ -5014,7 +5041,7 @@ def batch_extract_tikz_all():
                     # 复用核心抽取函数
                     new_content = extract_and_replace_tikz(content, filename, save_dir)
                     if new_content != content:
-                        atomic_write_text(file_path, new_content)
+                        atomic_write_text(file_path, new_content, backup=True)
                         # 触发一次预渲染生成PNG
                         latex_to_markdown(new_content)
                         updated_files.append(file_path)
@@ -5093,7 +5120,7 @@ def add_blank_lines_to_all():
                 if modified:
                     new_content = "\n".join(new_lines)
                     if new_content != content:
-                        atomic_write_text(file_path, new_content)
+                        atomic_write_text(file_path, new_content, backup=True)
                         count += 1
             except Exception as e:
                 print(f"Error processing {file}: {e}")
@@ -5155,7 +5182,7 @@ def standardize_national_papers():
                     new_tag = f"{{{new_paper_name}}}"
                     content = content.replace(old_tag, new_tag, 1) # 只替换第一个匹配（通常是标签）
                     
-                    atomic_write_text(old_path, content)
+                    atomic_write_text(old_path, content, backup=True)
                         
                     os.rename(old_path, new_path)
                     st.write(f"已重命名: {file} -> {new_filename}")
@@ -5205,10 +5232,9 @@ def page_tag_edit():
 
         paper_name = None
         if year:
-            from utils.core_config import CSV_INDEX_PATH
-            csv_mtime = int(os.path.getmtime(CSV_INDEX_PATH)) if os.path.exists(CSV_INDEX_PATH) else 0
+            csv_token = _csv_index_cache_token()
             try:
-                csv_rows = _csv_index_cached(csv_mtime)
+                csv_rows = _csv_index_cached(csv_token)
             except Exception:
                 from utils.csv_ops import read_csv_index
                 csv_rows = read_csv_index()
@@ -5323,10 +5349,9 @@ def page_tag_edit():
                     return s_query in hay
                 return False
 
-            from utils.core_config import CSV_INDEX_PATH
-            csv_mtime = int(os.path.getmtime(CSV_INDEX_PATH)) if os.path.exists(CSV_INDEX_PATH) else 0
+            csv_token = _csv_index_cache_token()
             try:
-                csv_rows = _csv_index_cached(csv_mtime)
+                csv_rows = _csv_index_cached(csv_token)
             except Exception:
                 from utils.csv_ops import read_csv_index
                 csv_rows = read_csv_index()
@@ -5406,7 +5431,7 @@ def page_tag_edit():
                     new_content = re.sub(r"\\begin\{problem\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}", lambda _m: new_header, old_content, count=1)
                     if new_content == old_content and "\\begin{problem}" in old_content:
                         new_content = re.sub(r"\\begin\{problem\}", lambda _m: new_header, old_content, count=1)
-                    atomic_write_text(new_path, new_content)
+                    atomic_write_text(new_path, new_content, backup=os.path.exists(new_path))
                     if os.path.abspath(new_path) != os.path.abspath(old_path):
                         os.remove(old_path)
                     update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, old_pnum, old_subj)
@@ -5753,13 +5778,17 @@ import datetime
 def clear_statistics_cache():
     get_statistics.clear()
 
+def _csv_index_cache_token():
+    from utils.core_config import CSV_INDEX_PATH
+    return file_change_token(CSV_INDEX_PATH)
+
 @st.cache_data(show_spinner=False)
-def _csv_index_cached(csv_mtime: int):
+def _csv_index_cached(csv_token):
     from utils.csv_ops import read_csv_index
     return read_csv_index()
 
 @st.cache_data(show_spinner=False)
-def _advanced_search_index_cached(csv_mtime: int):
+def _advanced_search_index_cached(csv_token):
     from utils.csv_ops import read_csv_index
 
     index_rows = []
@@ -6228,12 +6257,46 @@ def page_system_intro():
 
 - 🔁 索引可通过扫描全库重新生成（以 `.tex` 为准）
 - ✅ 即便 CSV 丢失，也能依靠 `.tex` 里的 Label Data 重新构建
+- 🚀 浏览、三级查找、统计面板优先读取 CSV，避免每次全量扫描 `.tex`
+- 🧯 CSV 写入前会做基础校验，降低重复 ID、关键字段缺失导致索引损坏的风险
 
 （对应脚本：`utils/init_csv_index.py`）
 
 ---
 
-### 🧭 6) 日常使用工作流（给协作者的最短路径）
+### 🧱 6) 工程模块分工（给开源读者的快速地图）
+
+如果你是第一次阅读这个项目，可以按下面的层次理解代码：
+
+- `question_bank_app.py`：主应用入口，负责 Streamlit 页面、交互状态、业务流程串联
+- `utils/core_config.py`：全局路径、试卷类型、知识板块等基础配置
+- `utils/csv_ops.py`：题库索引的读取、写入、增量更新与字段解析
+- `utils/latex_ops.py`：LaTeX 题目结构处理、TikZ 提取、题目重命名与保存辅助
+- `utils/tikz_ops.py`：TikZ 编译、缓存与预览渲染
+- `utils/charts.py`：数据统计页面的图表渲染
+- `services/file_service.py`：原子写入、覆盖备份等文件安全能力
+- `services/ai_service.py`：AI 接口地址规范化、请求封装与 JSON 提取
+- `Test Paper Group/主题模板/`：组卷导出的 LaTeX 模板来源
+
+整体设计思路是：主应用负责“把流程跑通”，工具层负责“把单个动作做稳”，题目数据始终落回 `.tex` 文件。
+
+---
+
+### 🛡️ 7) 稳定性与数据安全设计
+
+题库项目的核心风险不是页面显示，而是“误覆盖、索引错乱、题目 ID 重复、批量操作难回退”。因此系统内部做了几层保护：
+
+- `.tex` 是最终可信数据源，CSV 只是可重建的高速索引
+- 覆盖保存时使用原子写入，避免写到一半导致文件损坏
+- 修改既有题目或批量处理时，会尽量在 `.backups/` 中保留覆盖前副本
+- CSV 写入前会检查关键字段与重复 ID，发现异常时阻止写入
+- 搜索缓存会跟随 CSV 文件变化自动失效，减少“刚保存但搜索不到”的情况
+
+如果出现搜索结果异常、统计不准确、题目移动后找不到，优先执行“批量工具”中的一键重建/同步题库索引。
+
+---
+
+### 🧭 8) 日常使用工作流（给协作者的最短路径）
 
 **📝 录入新题**
 
@@ -6263,6 +6326,29 @@ def page_system_intro():
 - 读取 `Test Paper Group/主题模板/` 下的主题模板，并在导出目录生成成品
 
 ---
+
+### 🧩 9) 推荐的维护习惯
+
+为了让题库长期可维护，建议按下面的方式协作：
+
+- 新题录入后先检查预览，再补充难度、标签、备注
+- 不手动复制已有题目的 ID；ID 应保持唯一
+- 不直接把 CSV 当主数据库编辑；需要修复时优先重建索引
+- 批量改名、批量修复前，先确认目标范围
+- 导出文件、LaTeX 编译产物、临时缓存不应作为题库核心数据维护
+- 修改规则类代码后，至少检查一次录入、搜索、标签修改和组卷导出主流程
+
+---
+
+### 🔭 10) 适合二次开发的方向
+
+这个项目的后续扩展可以围绕“题库质量”和“教研效率”展开：
+
+- 更细的标签体系：考点、方法、易错点、能力层级
+- 更稳定的批量导入校验：录入前预检文件名、题号、ID、题型
+- 更智能的组卷策略：按难度、知识点覆盖率、近年频次进行约束
+- 更清晰的题目版本记录：记录每道题的修改历史与来源变化
+- 更完整的本地部署方案：后续可再考虑封装为桌面应用或 exe
 
 """, unsafe_allow_html=False)
 
@@ -6441,9 +6527,7 @@ def render_advanced_search_results():
     if st.session_state.get("adv_last_query") == query_key and st.session_state.get("adv_last_results") is not None:
         results = st.session_state.get("adv_last_results") or []
     else:
-        from utils.core_config import CSV_INDEX_PATH
-        csv_mtime = int(os.path.getmtime(CSV_INDEX_PATH)) if os.path.exists(CSV_INDEX_PATH) else 0
-        search_rows = _advanced_search_index_cached(csv_mtime)
+        search_rows = _advanced_search_index_cached(_csv_index_cache_token())
 
         results = []
         with st.spinner("正在全库检索中..."):
@@ -6772,24 +6856,37 @@ def main():
     
     # --- 最左侧：全局导航 (SolEdu / 居中极简风格) ---
     with st.sidebar:
+        logo_img_path = os.path.join(BASE_DIR, "fig", "MathCyclus_logo.png")
+        if os.path.exists(logo_img_path):
+            st.image(logo_img_path, width=96)
         # 使用 <br> 让 MathCyclus 分成两行，避免挤出边框
         st.markdown('<div class="sol-logo" style="margin-bottom:0; padding-bottom: 10px;">Math<br><span>Cyclus</span></div>', unsafe_allow_html=True)
-        if st.button("logo", key="logo_btn", help="点击查看体系介绍"):
-            st.session_state["main_sidebar_radio"] = "📘\n体系介绍"
-            st.rerun()
+        if st.button("打开 MathCyclus 题库介绍", key="mathcyclus_demo_btn", help="打开 MathCyclus 题库介绍"):
+            show_mathcyclus_intro()
             
         st.markdown("""
         <style>
-        /* 覆盖在 Logo 上的透明按钮 */
+        [data-testid="stSidebar"] div[data-testid="stImage"] {
+            display: flex !important;
+            justify-content: center !important;
+            margin: 0 auto 4px auto !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stImage"] img {
+            width: 96px !important;
+            max-width: 96px !important;
+            height: auto !important;
+        }
+        /* 覆盖在 Math / Cyclus 文字上的透明点击层 */
         [data-testid="stSidebar"] div.stButton:first-of-type {
-            margin-top: -65px;
-            margin-bottom: 25px;
-            z-index: 10;
+            margin-top: -54px !important;
+            margin-bottom: 6px !important;
+            height: 48px !important;
+            z-index: 10 !important;
         }
         [data-testid="stSidebar"] div.stButton:first-of-type button {
-            opacity: 0;
-            height: 60px;
-            cursor: pointer;
+            opacity: 0 !important;
+            height: 48px !important;
+            cursor: pointer !important;
         }
         /* 隐藏侧边栏的规范说明菜单项 */
         [data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(8) {

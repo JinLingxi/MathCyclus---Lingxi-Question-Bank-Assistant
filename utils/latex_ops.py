@@ -429,7 +429,7 @@ def extract_and_replace_tikz(content, filename, save_dir):
             
         tikz_filename = f"{base_name} 图{match_count}.tex"
         tikz_file_path = os.path.join(tikz_dir_path, tikz_filename)
-        atomic_write_text(tikz_file_path, tikz_code)
+        atomic_write_text(tikz_file_path, tikz_code, backup=os.path.exists(tikz_file_path))
             
         new_content += content[last_end:match.start()]
         new_content += tikz_code

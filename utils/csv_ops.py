@@ -25,7 +25,22 @@ def read_csv_index():
 
 def write_csv_index(data):
     """将数据全量写回CSV"""
-    atomic_write_csv_rows(CSV_INDEX_PATH, CSV_HEADERS, data, backup=True)
+    rows = normalize_csv_rows(data)
+    issues = validate_csv_rows(rows)
+    if issues:
+        preview = "; ".join(
+            f"row {issue.get('行号')}: {issue.get('字段')} {issue.get('问题')}"
+            for issue in issues[:5]
+        )
+        raise ValueError(f"CSV index validation failed before write: {preview}")
+    atomic_write_csv_rows(CSV_INDEX_PATH, CSV_HEADERS, rows, backup=True)
+
+def normalize_csv_rows(data):
+    """Return rows containing exactly the managed CSV headers."""
+    normalized = []
+    for row in data:
+        normalized.append({field: row.get(field, "") for field in CSV_HEADERS})
+    return normalized
 
 def find_duplicate_ids(data):
     """只读检查：返回重复的题目ID及其行号，不修改CSV数据。"""

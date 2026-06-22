@@ -37,6 +37,14 @@ def backup_existing_file(path: str, backup_root: str = ".backups") -> str:
     return backup_path
 
 
+def file_change_token(path: str):
+    """Return a cache token that changes when file content changes."""
+    if not path or not os.path.exists(path):
+        return (0, 0)
+    stat = os.stat(path)
+    return (getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)), stat.st_size)
+
+
 def atomic_write_text(path: str, content: str, encoding: str = "utf-8", backup: bool = False) -> None:
     """Write text by replacing the target only after the temp file is complete."""
     if backup:

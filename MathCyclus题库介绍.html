@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MathCyclus 题库介绍 — LaTeX 高中数学题库管理与智能组卷系统</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+  :root {
+    --primary: #1a1a2e;
+    --accent: #4361ee;
+    --accent-light: #6c8cff;
+    --bg: #f8f9fc;
+    --card-bg: #ffffff;
+    --text: #2d3436;
+    --text-light: #636e72;
+    --border: #e0e6ed;
+    --success: #00b894;
+    --warning: #fdcb6e;
+    --danger: #e17055;
+    --radius: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 40px rgba(0,0,0,0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+
+  .hero { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: #fff; padding: 80px 40px 60px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 50%, rgba(67,97,238,0.15) 0%, transparent 50%); }
+  .hero h1 { font-size: 42px; font-weight: 800; letter-spacing: -1px; position: relative; }
+  .hero h1 span { background: linear-gradient(90deg, #6c8cff, #a29bfe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero .subtitle { font-size: 18px; color: rgba(255,255,255,0.7); margin-top: 16px; position: relative; max-width: 700px; margin-left: auto; margin-right: auto; }
+  .hero .badge { display: inline-block; background: rgba(67,97,238,0.3); border: 1px solid rgba(67,97,238,0.5); padding: 6px 18px; border-radius: 20px; font-size: 13px; margin-bottom: 20px; position: relative; }
+  .hero .stats { display: flex; justify-content: center; gap: 48px; margin-top: 40px; position: relative; }
+  .hero .stat-item { text-align: center; }
+  .hero .stat-num { font-size: 36px; font-weight: 800; color: #6c8cff; }
+  .hero .stat-label { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+  .section { padding: 60px 0; }
+  .section-title { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 12px; }
+  .section-desc { text-align: center; color: var(--text-light); max-width: 600px; margin: 0 auto 40px; font-size: 15px; }
+
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+  .feature-card { background: var(--card-bg); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); transition: transform 0.2s; }
+  .feature-card:hover { transform: translateY(-4px); }
+  .feature-card .icon { font-size: 36px; margin-bottom: 16px; }
+  .feature-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .feature-card p { font-size: 14px; color: var(--text-light); line-height: 1.7; }
+
+  .problem-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; }
+  .problem-card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
+  .problem-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+  .problem-card .card-header { background: linear-gradient(135deg, #4361ee, #6c8cff); color: #fff; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; }
+  .problem-card .card-header .fname { font-size: 13px; opacity: 0.85; }
+  .problem-card .card-header .tag { background: rgba(255,255,255,0.2); padding: 3px 10px; border-radius: 12px; font-size: 12px; }
+  .problem-card .card-body { padding: 20px; }
+  .problem-card .card-body .q-text { font-size: 15px; line-height: 1.8; margin-bottom: 16px; }
+  .problem-card .card-body .choices { list-style: none; }
+  .problem-card .card-body .choices li { padding: 8px 12px; margin: 4px 0; border-radius: 8px; border: 1px solid var(--border); font-size: 14px; cursor: pointer; transition: all 0.15s; }
+  .problem-card .card-body .choices li:hover { background: #f0f4ff; border-color: var(--accent); }
+  .problem-card .card-body .choices li .opt { font-weight: 700; color: var(--accent); margin-right: 8px; }
+  .problem-card .card-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; font-size: 12px; color: var(--text-light); }
+  .problem-card .card-footer .meta-tag { background: #f0f4ff; padding: 2px 8px; border-radius: 4px; color: var(--accent); }
+  .answer-blank { display: inline-block; width: 4.8em; height: 1.1em; border-bottom: 1.5px solid currentColor; vertical-align: -0.15em; margin: 0 0.12em; }
+
+  .ui-mockup { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden; margin: 20px 0; }
+  .ui-titlebar { background: #2d2d2d; padding: 12px 16px; display: flex; align-items: center; gap: 8px; }
+  .ui-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .ui-dot.r { background: #ff5f57; }
+  .ui-dot.y { background: #ffbd2e; }
+  .ui-dot.g { background: #28c840; }
+  .ui-titlebar span { color: #aaa; font-size: 13px; margin-left: 12px; }
+  .ui-body { display: flex; min-height: 420px; }
+  .ui-sidebar { width: 220px; background: #f8f9fc; border-right: 1px solid var(--border); padding: 16px; flex-shrink: 0; }
+  .ui-sidebar .sidebar-title { font-size: 11px; font-weight: 700; color: var(--text-light); margin-bottom: 10px; }
+  .ui-sidebar .sidebar-item { padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 4px; cursor: pointer; color: var(--text-light); transition: all 0.15s; }
+  .ui-sidebar .sidebar-item.active { background: var(--accent); color: #fff; }
+  .ui-sidebar .sidebar-item:hover:not(.active) { background: #eef1ff; }
+  .ui-main { flex: 1; padding: 20px; }
+  .ui-main .mock-label { font-size: 12px; font-weight: 600; color: var(--text-light); margin-bottom: 6px; }
+  .ui-main .mock-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: #fff; }
+  .ui-main .mock-textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: 'Consolas', 'Courier New', monospace; background: #fafbfc; min-height: 120px; resize: vertical; }
+  .ui-main .mock-btn { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; }
+  .ui-main .mock-btn.primary { background: var(--accent); color: #fff; }
+  .ui-main .mock-btn.secondary { background: #f0f4ff; color: var(--accent); }
+  .ui-main .mock-btn.danger { background: #ffe0db; color: var(--danger); }
+  .ui-preview { width: 340px; border-left: 1px solid var(--border); padding: 20px; background: #fff; flex-shrink: 0; overflow-y: auto; }
+  .ui-preview .preview-label { font-size: 12px; font-weight: 600; color: var(--text-light); margin-bottom: 10px; }
+  .ui-preview .preview-box { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .ui-preview .preview-box .p-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+  .ui-preview .preview-box .p-text { font-size: 14px; line-height: 1.8; }
+  .ui-preview .preview-box .p-choice { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; margin: 4px 0; font-size: 13px; }
+  .ui-preview .preview-box .p-choice .opt { font-weight: 700; color: var(--accent); margin-right: 6px; }
+
+  .workflow { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap; margin: 30px 0; overflow-x: auto; padding: 0 0 8px; }
+  .workflow-step { background: var(--card-bg); border-radius: var(--radius); padding: 16px 14px; box-shadow: var(--shadow); text-align: center; min-width: 124px; flex: 0 0 124px; }
+  .workflow-step .step-num { width: 28px; height: 28px; background: var(--accent); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; margin: 0 auto 8px; }
+  .workflow-step h4 { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .workflow-step p { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+  .workflow-arrow { font-size: 16px; color: var(--accent); font-weight: 700; flex: 0 0 16px; text-align: center; }
+
+  .data-table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .data-table th { background: var(--primary); color: #fff; padding: 12px 16px; font-size: 13px; text-align: left; }
+  .data-table td { padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .data-table tr:hover td { background: #f8f9ff; }
+
+  .tech-stack { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 24px; }
+  .tech-tag { background: var(--card-bg); border: 1px solid var(--border); padding: 8px 20px; border-radius: 24px; font-size: 14px; font-weight: 500; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+
+  .footer { background: var(--primary); color: rgba(255,255,255,0.6); text-align: center; padding: 30px; font-size: 13px; }
+
+  .highlight-box { background: linear-gradient(135deg, #f0f4ff, #e8ecff); border-left: 4px solid var(--accent); padding: 20px 24px; border-radius: 0 var(--radius) var(--radius) 0; margin: 20px 0; }
+  .highlight-box h4 { color: var(--accent); font-size: 15px; margin-bottom: 8px; }
+  .highlight-box p { font-size: 14px; color: var(--text-light); }
+
+  .code-block { background: #1e1e2e; color: #cdd6f4; padding: 24px; border-radius: var(--radius); font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.8; overflow-x: auto; margin: 16px 0; }
+  .code-block .kw { color: #cba6f7; }
+  .code-block .str { color: #a6e3a1; }
+  .code-block .cmt { color: #6c7086; font-style: italic; }
+
+  .arch-tree { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; margin: 16px 0; }
+  .arch-tree .tree-row { display: flex; align-items: flex-start; padding: 6px 0; font-size: 14px; }
+  .arch-tree .tree-icon { width: 28px; text-align: center; flex-shrink: 0; font-size: 16px; }
+  .arch-tree .tree-label { font-weight: 600; color: var(--text); min-width: 150px; }
+  .arch-tree .tree-desc { color: var(--text-light); font-size: 13px; }
+  .arch-tree .tree-children { margin-left: 28px; padding-left: 16px; border-left: 2px solid var(--border); }
+  .arch-tree .tree-children .tree-row { padding: 4px 0; }
+
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 28px; }
+    .hero .stats { gap: 24px; }
+    .ui-body { flex-direction: column; }
+    .ui-sidebar { width: 100%; }
+    .ui-preview { width: 100%; }
+    .workflow { justify-content: flex-start; }
+    .workflow-arrow { transform: none; }
+    .feature-grid { grid-template-columns: 1fr; }
+    .problem-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="badge">开源项目介绍 · 本地化 LaTeX 题库工作台</div>
+  <h1><span>MathCyclus</span></h1>
+  <p class="subtitle">面向高中数学教学与教研的本地题库管理系统<br>以 LaTeX 题目文件为核心，串联录入、检索、标签维护、统计分析与组卷导出</p>
+  <div class="stats">
+    <div class="stat-item"><div class="stat-num">800+</div><div class="stat-label">已录题目</div></div>
+    <div class="stat-item"><div class="stat-num">25</div><div class="stat-label">知识板块</div></div>
+    <div class="stat-item"><div class="stat-num">20+</div><div class="stat-label">年份跨度</div></div>
+    <div class="stat-item"><div class="stat-num">3</div><div class="stat-label">试卷模板</div></div>
+  </div>
+</div>
+
+<!-- Pain Points — 6 items -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title">项目要解决什么问题？</h2>
+    <p class="section-desc">高中数学题库的难点不只是保存题目，而是让题目长期可查、可改、可组卷、可追溯。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="icon">📂</div>
+        <h3>题目散落各处</h3>
+        <p>题目常散落在 PDF、截图、Word 和 LaTeX 文件中。时间一长，来源、题号、知识点和版本都容易混在一起。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">⌨️</div>
+        <h3>手动录入太慢</h3>
+        <p>数学公式、选项、答案和解析都需要稳定的结构。手动录入不仅慢，也容易出现环境缺失、选项格式不统一等问题。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔍</div>
+        <h3>检索困难</h3>
+        <p>只靠文件名和文件夹很难支持多条件检索。教研场景中经常需要同时按年份、题型、知识点、难度和标签筛题。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📐</div>
+        <h3>排版不专业</h3>
+        <p>高中数学题目依赖复杂公式和几何图。系统保留 LaTeX 源码，避免在录入、预览和导出之间反复丢格式。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🏷️</div>
+        <h3>分类标注繁琐</h3>
+        <p>每道题都需要题型、难度、标签、备注、引用次数等元数据。没有稳定机制时，后续维护会越来越困难。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🧾</div>
+        <h3>组卷流程低效</h3>
+        <p>从找题、选题、排版到导出，经常要跨多个工具操作。MathCyclus 将这些步骤放进同一个本地工作流。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Workflow -->
+<div class="section" style="background: #fff;">
+  <div class="container">
+    <h2 class="section-title">完整工作流</h2>
+    <p class="section-desc">从图片录入到模板导出，围绕真实教学工作组织功能。</p>
+    <div class="workflow">
+      <div class="workflow-step"><div class="step-num">1</div><h4>📷 拍照/截图</h4><p>手机拍题或截图</p></div>
+      <div class="workflow-arrow">→</div>
+      <div class="workflow-step"><div class="step-num">2</div><h4>🤖 AI OCR 识别</h4><p>自动转 LaTeX 代码</p></div>
+      <div class="workflow-arrow">→</div>
+      <div class="workflow-step"><div class="step-num">3</div><h4>🏷️ AI 自动标签</h4><p>知识点+难度评级</p></div>
+      <div class="workflow-arrow">→</div>
+      <div class="workflow-step"><div class="step-num">4</div><h4>📁 智能归档</h4><p>按板块/年份分类</p></div>
+      <div class="workflow-arrow">→</div>
+      <div class="workflow-step"><div class="step-num">5</div><h4>🧪 解答审核</h4><p>辅助检查答案与解析</p></div>
+      <div class="workflow-arrow">→</div>
+      <div class="workflow-step"><div class="step-num">6</div><h4>📄 智能组卷</h4><p>一键生成试卷</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- 界面示意：交互式侧栏与公式预览 -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title">界面预览</h2>
+    <p class="section-desc">左侧组织题库，中央编辑源码，右侧实时预览。页面示意展示了同卷录入时的同步、替换和预览流程。</p>
+
+    <div class="ui-mockup">
+      <div class="ui-titlebar">
+        <div class="ui-dot r"></div><div class="ui-dot y"></div><div class="ui-dot g"></div>
+        <span>MathCyclus — 同卷试题录入</span>
+      </div>
+      <div class="ui-body">
+        <div class="ui-sidebar">
+          <div class="sidebar-title"> 知识板块</div>
+          <div class="sidebar-item active" data-topic="三角函数" onclick="switchTopic(this)">三角函数</div>
+          <div class="sidebar-item" data-topic="函数" onclick="switchTopic(this)">函数</div>
+          <div class="sidebar-item" data-topic="导数" onclick="switchTopic(this)">导数</div>
+          <div class="sidebar-item" data-topic="立体几何" onclick="switchTopic(this)">立体几何</div>
+          <div class="sidebar-item" data-topic="解析几何" onclick="switchTopic(this)">解析几何</div>
+          <div class="sidebar-item" data-topic="圆锥曲线" onclick="switchTopic(this)">圆锥曲线</div>
+          <div class="sidebar-item" data-topic="数列" onclick="switchTopic(this)">数列</div>
+          <div class="sidebar-item" data-topic="向量" onclick="switchTopic(this)">向量</div>
+          <div class="sidebar-item" data-topic="概率统计" onclick="switchTopic(this)">概率统计</div>
+          <div class="sidebar-item" data-topic="排列组合" onclick="switchTopic(this)">排列组合</div>
+          <div class="sidebar-item" data-topic="不等式" onclick="switchTopic(this)">不等式</div>
+          <div class="sidebar-item" data-topic="复数" onclick="switchTopic(this)">复数</div>
+        </div>
+        <div class="ui-main">
+          <div style="display:flex;gap:12px;margin-bottom:16px;">
+            <div style="flex:1;"><div class="mock-label">统一年份</div><div class="mock-input" style="padding:8px 12px;font-size:13px;">2025</div></div>
+            <div style="flex:2;"><div class="mock-label">统一试卷名称</div><div class="mock-input" style="padding:8px 12px;font-size:13px;">全国I卷</div></div>
+            <div style="flex:1;"><div class="mock-label">试卷类别</div><div class="mock-input" style="padding:8px 12px;font-size:13px;">G (高考题)</div></div>
+            <div style="flex:1;"><div class="mock-label">&nbsp;</div><button class="mock-btn secondary" style="width:100%;padding:8px;font-size:13px;">🔄 同步更新</button></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <div class="mock-input" style="flex:2;padding:8px 12px;font-size:13px;color:var(--text-light);">🔍 查找...</div>
+            <div class="mock-input" style="flex:2;padding:8px 12px;font-size:13px;color:var(--text-light);">替换为...</div>
+            <button class="mock-btn secondary" style="padding:8px 16px;font-size:13px;">替换</button>
+          </div>
+          <div style="display:flex;gap:16px;">
+            <div style="flex:1;">
+              <div class="mock-label">📝 题目源码 (LaTeX)</div>
+              <textarea class="mock-textarea" style="min-height:180px;font-size:12px;line-height:1.6;" id="sourceArea" readonly>---2025-G-全国I卷-4-三角函数.tex---
+
+% === Begin Label Data ===
+% ID: 52
+% 难度星级: ★★★
+% 标签: 三角函数，对称中心
+% 备注: 
+% 组卷引用次数: 0
+% === End  Label Data ===
+
+\begin{problem}{2025}{G}{全国I卷}{4}{三角函数}
+若点 $(a,0)(a>0)$ 是函数
+$y=2\tan\!\left(x-\frac{\pi}{3}\right)$
+的图像的对称中心，则 $a$ 的
+最小值为 (\hspace{1cm})
+\begin{choices}
+\choice{$\frac{\pi}{6}$}
+\choice{$\frac{\pi}{3}$}
+\choice{$\frac{\pi}{2}$}
+\choice{$\frac{4\pi}{3}$}
+\end{choices}
+\end{problem}</textarea>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="mock-btn primary" style="padding:6px 16px;font-size:12px;">应用标题</button>
+                <button class="mock-btn danger" style="padding:6px 16px;font-size:12px;">放弃本题×</button>
+              </div>
+            </div>
+            <div class="ui-preview">
+              <div class="preview-label">👁️ 实时预览</div>
+              <div class="preview-box" id="previewBox">
+                <div class="p-title">📄 2025-G-全国I卷-4-三角函数.tex</div>
+                <div class="p-text">
+                  若点 $(a,0)\,(a>0)$ 是函数 $y=2\tan\!\left(x-\dfrac{\pi}{3}\right)$ 的图像的对称中心，则 $a$ 的最小值为
+                  <div style="margin:10px 0 6px 0;">
+                    <div class="p-choice"><span class="opt">A.</span> $\dfrac{\pi}{6}$</div>
+                    <div class="p-choice"><span class="opt">B.</span> $\dfrac{\pi}{3}$</div>
+                    <div class="p-choice"><span class="opt">C.</span> $\dfrac{\pi}{2}$</div>
+                    <div class="p-choice"><span class="opt">D.</span> $\dfrac{4\pi}{3}$</div>
+                  </div>
+                  <div style="font-weight:700;margin-top:10px;font-size:13px;">【答案】</div>
+                  <div style="font-size:13px;">B</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sample Problems — 6 cards with rendered formulas -->
+<div class="section" style="background: #fff;">
+  <div class="container">
+    <h2 class="section-title">题库样例</h2>
+    <p class="section-desc">以下示例展示题库中常见的选择题、填空题和解答题结构，以及 LaTeX 公式的预览效果。</p>
+    <div class="problem-grid">
+
+      <div class="problem-card">
+        <div class="card-header"><span class="fname">2025-G-全国I卷-4-三角函数.tex</span><span class="tag">选择题</span></div>
+        <div class="card-body">
+          <div class="q-text">若点 $(a,0)\,(a>0)$ 是函数 $y=2\tan\!\left(x-\dfrac{\pi}{3}\right)$ 的图像的对称中心，则 $a$ 的最小值为</div>
+          <ul class="choices">
+            <li><span class="opt">A.</span> $\dfrac{\pi}{6}$</li>
+            <li><span class="opt">B.</span> $\dfrac{\pi}{3}$</li>
+            <li><span class="opt">C.</span> $\dfrac{\pi}{2}$</li>
+            <li><span class="opt">D.</span> $\dfrac{4\pi}{3}$</li>
+          </ul>
+        </div>
+        <div class="card-footer"><span class="meta-tag">三角函数</span><span class="meta-tag">对称中心</span><span>难度: ★★★</span></div>
+      </div>
+
+      <div class="problem-card">
+        <div class="card-header" style="background: linear-gradient(135deg, #0f3460, #16213e);"><span class="fname">2025-G-全国I卷-8-函数.tex</span><span class="tag">选择题</span></div>
+        <div class="card-body">
+          <div class="q-text">若实数 $x,y,z$ 满足 $2+\log_2 x = 3+\log_3 y = 5+\log_5 z$，则 $x,y,z$ 的大小关系<b>不可能</b>的是</div>
+          <ul class="choices">
+            <li><span class="opt">A.</span> $x>y>z$</li>
+            <li><span class="opt">B.</span> $x>z>y$</li>
+            <li><span class="opt">C.</span> $y>x>z$</li>
+            <li><span class="opt">D.</span> $y>z>x$</li>
+          </ul>
+        </div>
+        <div class="card-footer"><span class="meta-tag">函数</span><span class="meta-tag">对数</span><span>难度: ★★★★</span></div>
+      </div>
+
+      <div class="problem-card">
+        <div class="card-header" style="background: linear-gradient(135deg, #00b894, #00cec9);"><span class="fname">2024-G-新课标I卷-7-导数.tex</span><span class="tag">解答题</span></div>
+        <div class="card-body">
+          <div class="q-text">已知函数 $f(x)=x\ln x - ax$ 有两个极值点 $x_1, x_2$（$x_1 < x_2$）。</div>
+          <div class="q-text">(1) 求 $a$ 的取值范围；</div>
+          <div class="q-text">(2) 证明：$x_1 \cdot x_2 > e^2$。</div>
+        </div>
+        <div class="card-footer"><span class="meta-tag">导数</span><span class="meta-tag">极值点</span><span>难度: ★★★★★</span></div>
+      </div>
+
+      <div class="problem-card">
+        <div class="card-header" style="background: linear-gradient(135deg, #e17055, #fdcb6e);"><span class="fname">2025-G-全国II卷-4-不等式.tex</span><span class="tag">选择题</span></div>
+        <div class="card-body">
+          <div class="q-text">已知 $a > b > 0$，则下列不等式一定成立的是</div>
+          <ul class="choices">
+            <li><span class="opt">A.</span> $\dfrac{1}{a} > \dfrac{1}{b}$</li>
+            <li><span class="opt">B.</span> $a^2 < b^2$</li>
+            <li><span class="opt">C.</span> $\sqrt{a} > \sqrt{b}$</li>
+            <li><span class="opt">D.</span> $a - b < 0$</li>
+          </ul>
+        </div>
+        <div class="card-footer"><span class="meta-tag">不等式</span><span class="meta-tag">基本性质</span><span>难度: ★★</span></div>
+      </div>
+
+      <div class="problem-card">
+        <div class="card-header" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe);"><span class="fname">2025-G-全国I卷-6-向量.tex</span><span class="tag">选择题</span></div>
+        <div class="card-body">
+          <div class="q-text">已知向量 $\vec{a}=(1,2)$，$\vec{b}=(3,-1)$，则 $\vec{a} \cdot \vec{b}$ 的值为</div>
+          <ul class="choices">
+            <li><span class="opt">A.</span> $1$</li>
+            <li><span class="opt">B.</span> $5$</li>
+            <li><span class="opt">C.</span> $-1$</li>
+            <li><span class="opt">D.</span> $7$</li>
+          </ul>
+        </div>
+        <div class="card-footer"><span class="meta-tag">向量</span><span class="meta-tag">数量积</span><span>难度: ★★</span></div>
+      </div>
+
+      <div class="problem-card">
+        <div class="card-header" style="background: linear-gradient(135deg, #fd79a8, #e84393);"><span class="fname">2024-G-新课标I卷-10-数列.tex</span><span class="tag">填空题</span></div>
+        <div class="card-body">
+          <div class="q-text">已知等差数列 $\{a_n\}$ 的前 $n$ 项和为 $S_n$，若 $a_3 = 7$，$S_6 = 66$，则 $a_1 =$ <span class="answer-blank"></span>。</div>
+        </div>
+        <div class="card-footer"><span class="meta-tag">数列</span><span class="meta-tag">等差数列</span><span>难度: ★★★</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- AI Features -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title">AI 核心能力</h2>
+    <p class="section-desc">AI 能力作为辅助层接入，用于提高录入、标注和审核效率；题目数据仍保存在本地 LaTeX 文件中。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="icon">📷</div>
+        <h3>AI OCR 识别</h3>
+        <p>将题目截图或拍照内容转写为 LaTeX 源码，并尽量保持题干、选项、答案、解析的结构清晰，方便后续人工校对。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔬</div>
+        <h3>解答审核辅助</h3>
+        <p>在生成或录入解析时，可以让 AI 辅助检查推理链条、计算步骤和答案一致性。发现疑点时，以 <code>【AI 纠错】</code> 的形式保留提示，便于教师复核。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🏷️</div>
+        <h3>AI 自动打标签</h3>
+        <p>录入题目时可自动分析 LaTeX 内容，给出知识点标签和难度建议。教师仍可在保存前人工调整，保证标签体系符合自己的教研习惯。</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🧠</div>
+        <h3>命题意图整理</h3>
+        <p>组卷时可以把自然语言需求整理成更清晰的选题方向，例如知识点覆盖、难度倾向、题型比例和复习阶段。</p>
+      </div>
+    </div>
+
+    <div class="highlight-box" style="margin-top:32px;">
+      <h4>💡 解答审核示例</h4>
+      <p>当解析中存在可疑步骤时，系统可以保留原内容，并附加一段待教师确认的纠错说明：</p>
+    </div>
+    <div class="code-block">
+<span class="cmt">% 以下为 AI 识别的原图解答（含错误）</span>
+<span class="kw">\begin</span>{solutions}
+由 $f'(x) = 2x - 3 = 0$，得 $x = \dfrac{3}{2}$。
+<span class="cmt">% （【AI 纠错】：此处求导有误，正确应为 $f'(x) = 2x - 3$，
+%   令 $f'(x)=0$ 得 $x = \dfrac{3}{2}$，但需验证是否为极值点。
+%   正确解答：$f''(x) = 2 > 0$，故 $x=\frac{3}{2}$ 为极小值点。）</span>
+<span class="kw">\end</span>{solutions}
+    </div>
+  </div>
+</div>
+
+<!-- Smart Paper Assembly -->
+<div class="section" style="background: #fff;">
+  <div class="container">
+    <h2 class="section-title">智能组卷引擎</h2>
+    <p class="section-desc">组卷服务围绕模板、题型、知识点和难度分布工作，适合生成试卷、练习和讲义类材料。</p>
+
+    <div class="ui-mockup">
+      <div class="ui-titlebar">
+        <div class="ui-dot r"></div><div class="ui-dot y"></div><div class="ui-dot g"></div>
+        <span>MathCyclus — 智能组卷</span>
+      </div>
+      <div style="padding:24px;">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
+          <div><div class="mock-label">知识板块</div><div class="mock-input" style="padding:8px 12px;font-size:13px;">三角函数，导数</div></div>
+          <div><div class="mock-label">题目数量</div><div class="mock-input" style="padding:8px 12px;font-size:13px;">选择题 12 / 填空题 4 / 解答题 6</div></div>
+          <div><div class="mock-label">难度分布</div><div class="mock-input" style="padding:8px 12px;font-size:13px;">简单 30% / 中等 50% / 困难 20%</div></div>
+        </div>
+        <div style="margin-bottom:20px;">
+          <div class="mock-label">🤖 AI 命题意图（自然语言）</div>
+          <div class="mock-input" style="padding:10px 14px;font-size:13px;">出一份高三一轮复习的三角函数单元测试卷，侧重图像变换和性质应用，难度适中偏上</div>
+        </div>
+        <div style="display:flex;gap:12px;">
+          <button class="mock-btn primary" style="padding:10px 24px;font-size:14px;"> AI 润色并组卷</button>
+          <button class="mock-btn secondary" style="padding:10px 24px;font-size:14px;">📄 导出 LaTeX 试卷</button>
+        </div>
+        <div style="margin-top:24px;">
+          <div class="mock-label" style="font-size:14px;margin-bottom:12px;">📊 组卷预览 — 题目分布</div>
+          <table class="data-table">
+            <thead><tr><th>题型</th><th>数量</th><th>知识板块</th><th>难度分布</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>选择题</td><td>12</td><td>三角函数 ×8, 导数 ×4</td><td>易 4 / 中 5 / 难 3</td><td style="color:var(--success);">✅ 已抽题</td></tr>
+              <tr><td>填空题</td><td>4</td><td>三角函数 ×2, 导数 ×2</td><td>易 1 / 中 2 / 难 1</td><td style="color:var(--success);">✅ 已抽题</td></tr>
+              <tr><td>解答题</td><td>6</td><td>三角函数 ×3, 导数 ×3</td><td>易 0 / 中 3 / 难 3</td><td style="color:var(--success);">✅ 已抽题</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tech Architecture — organized tree -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title">技术架构</h2>
+    <p class="section-desc">项目以 Streamlit 为交互层，以 LaTeX 文件和 CSV 索引为数据层，适合本地部署与二次开发。</p>
+
+    <div class="arch-tree">
+      <div class="tree-row">
+        <div class="tree-icon">📁</div>
+        <div class="tree-label" style="font-size:16px;color:var(--accent);">MathCyclus/</div>
+        <div class="tree-desc">项目根目录</div>
+      </div>
+      <div class="tree-children">
+        <div class="tree-row">
+          <div class="tree-icon">📚</div>
+          <div class="tree-label">chapters/</div>
+          <div class="tree-desc">25 个知识板块，按年份分类的 LaTeX 题库（当前 800+ 道题，持续扩充）</div>
+        </div>
+        <div class="tree-children">
+          <div class="tree-row"><div class="tree-icon">📐</div><div class="tree-label">三角函数/2025/</div><div class="tree-desc">2025-G-全国I卷-4-三角函数.tex …</div></div>
+          <div class="tree-row"><div class="tree-icon"></div><div class="tree-label">函数/2025/</div><div class="tree-desc">2025-G-全国I卷-8-函数.tex …</div></div>
+          <div class="tree-row"><div class="tree-icon">📉</div><div class="tree-label">导数/2024/</div><div class="tree-desc">2024-G-新课标I卷-7-导数.tex …</div></div>
+          <div class="tree-row"><div class="tree-icon">📦</div><div class="tree-label">… (25 个板块)</div><div class="tree-desc"></div></div>
+        </div>
+        <div class="tree-row">
+          <div class="tree-icon">🔧</div>
+          <div class="tree-label">utils/</div>
+          <div class="tree-desc">核心工具库</div>
+        </div>
+        <div class="tree-children">
+          <div class="tree-row"><div class="tree-icon">⚙️</div><div class="tree-label">core_config.py</div><div class="tree-desc">全局配置与常量（API、板块、试卷类型）</div></div>
+          <div class="tree-row"><div class="tree-icon">📄</div><div class="tree-label">file_ops.py</div><div class="tree-desc">文件读写与归档操作</div></div>
+          <div class="tree-row"><div class="tree-icon">📝</div><div class="tree-label">latex_ops.py</div><div class="tree-desc">LaTeX 解析、渲染与 Meta Data 提取</div></div>
+          <div class="tree-row"><div class="tree-icon"></div><div class="tree-label">tikz_ops.py</div><div class="tree-desc">TikZ 绘图本地编译服务（xelatex + PyMuPDF）</div></div>
+          <div class="tree-row"><div class="tree-icon">📊</div><div class="tree-label">csv_ops.py</div><div class="tree-desc">CSV 索引管理（20 字段：ID、路径、难度、标签、题型、答案、解析等）</div></div>
+          <div class="tree-row"><div class="tree-icon">🔀</div><div class="tree-label">batch_gen.py</div><div class="tree-desc">分层抽样与智能组卷算法</div></div>
+        </div>
+        <div class="tree-row"><div class="tree-icon">🖥️</div><div class="tree-label">question_bank_app.py</div><div class="tree-desc">Streamlit 主程序，负责页面组织、交互状态与业务流程串联</div></div>
+        <div class="tree-row"><div class="tree-icon">🤖</div><div class="tree-label">ocr_prompt.txt</div><div class="tree-desc">AI OCR 系统提示词（热重载，支持实时更新）</div></div>
+        <div class="tree-row"><div class="tree-icon">🚀</div><div class="tree-label">启动程序.py</div><div class="tree-desc">守护进程与服务启动脚本</div></div>
+      </div>
+    </div>
+
+    <div class="tech-stack">
+      <div class="tech-tag">🐍 Python 3.8+</div>
+      <div class="tech-tag">📊 Streamlit</div>
+      <div class="tech-tag">📐 LaTeX (xelatex)</div>
+      <div class="tech-tag">🤖 多模态 AI 接口</div>
+      <div class="tech-tag">🖼️ PyMuPDF (fitz)</div>
+      <div class="tech-tag"> TikZ 实时渲染</div>
+      <div class="tech-tag">🔀 分层抽样算法</div>
+      <div class="tech-tag">📊 CSV 高速索引</div>
+    </div>
+  </div>
+</div>
+
+<!-- Data Overview -->
+<div class="section" style="background: #fff;">
+  <div class="container">
+    <h2 class="section-title">题库数据概览</h2>
+    <p class="section-desc">题库数据持续整理中，覆盖高考、模拟、学考、强基、线上联考和部分拓展来源。</p>
+    <table class="data-table">
+      <thead><tr><th>指标</th><th>数据</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>知识板块</td><td><b>25 个</b></td><td>三角函数、函数、导数、立体几何、解析几何、圆锥曲线、数列、向量等</td></tr>
+        <tr><td>已录题目</td><td><b>800+ 道</b></td><td>持续录入中，题目以 LaTeX 源文件作为长期保存格式</td></tr>
+        <tr><td>年份跨度</td><td><b>2005 - 2026</b></td><td>覆盖 20+ 年全国各地高考真题及模拟题</td></tr>
+        <tr><td>试卷类型</td><td><b>7 类</b></td><td>高考题、模拟题、学考题、线上联考、强基计划题、竞赛题、外国题</td></tr>
+        <tr><td>CSV 索引</td><td><b>20 个字段</b></td><td>题目ID、文件路径、难度星级、标签、题型、TikZ、答案、解析、引用次数等</td></tr>
+        <tr><td>试卷模板</td><td><b>3 套</b></td><td>试卷类、练习类、讲义类，支持一键组卷导出</td></tr>
+        <tr><td>代码规模</td><td><b>持续演进</b></td><td>主程序与工具模块分层维护，覆盖录入、检索、统计、组卷和文件安全</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Innovation Highlights — 6 items -->
+<div class="section">
+  <div class="container">
+    <h2 class="section-title">项目亮点</h2>
+    <div class="feature-grid">
+      <div class="feature-card" style="border-top: 3px solid var(--accent);">
+        <div class="icon">🎯</div>
+        <h3>解答质量检查</h3>
+        <p>在 OCR、录入和生成解析之后，系统可以辅助检查答案与推理过程，帮助教师更快发现需要复核的步骤。</p>
+      </div>
+      <div class="feature-card" style="border-top: 3px solid var(--success);">
+        <div class="icon">📐</div>
+        <h3>LaTeX 原生全流程</h3>
+        <p>从录入到组卷导出都围绕 LaTeX 源码组织。复杂公式、选项结构和 TikZ 图形可以在同一套工作流里维护。</p>
+      </div>
+      <div class="feature-card" style="border-top: 3px solid var(--warning);">
+        <div class="icon">🎨</div>
+        <h3>TikZ 实时渲染</h3>
+        <p>本地 xelatex + PyMuPDF 编译服务，复杂几何图形代码实时转 PNG 预览，无需离开界面即可看到绘图效果。</p>
+      </div>
+      <div class="feature-card" style="border-top: 3px solid var(--danger);">
+        <div class="icon">🔒</div>
+        <h3>本地部署·数据安全</h3>
+        <p>题目文件、索引和模板均保存在本地项目目录中。AI 能力可按需配置，核心题库数据不依赖云端数据库。</p>
+      </div>
+      <div class="feature-card" style="border-top: 3px solid #6c5ce7;">
+        <div class="icon">🧩</div>
+        <h3>三栏式 SaaS 交互</h3>
+        <p>左侧导航，中间源码编辑，右侧实时预览。录入和浏览场景都尽量减少页面跳转，让修改、核对和保存连续完成。</p>
+      </div>
+      <div class="feature-card" style="border-top: 3px solid #00cec9;">
+        <div class="icon">📊</div>
+        <h3>20 字段结构化索引</h3>
+        <p>每道题包含题目ID、路径、年份、试卷类型、知识板块、难度、标签、题干、答案、解析等字段，支撑检索、统计和组卷。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <p><b>MathCyclus</b> — AI 驱动的 LaTeX 高中数学题库管理与智能组卷系统</p>
+  <p style="margin-top:8px;">基于 Python + Streamlit + LaTeX 构建 · 面向高中数学题库整理、检索与组卷</p>
+  <p style="margin-top:12px;font-size:12px;">开源项目介绍页 · 数据本地保存 · 可按个人教研流程继续扩展</p>
+</div>
+
+<script>
+  // KaTeX auto-render on load
+  document.addEventListener("DOMContentLoaded", function() {
+    renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false}
+      ],
+      throwOnError: false
+    });
+  });
+
+  // Interactive sidebar data
+  const topicData = {
+    '三角函数': {
+      fname: '2025-G-全国I卷-4-三角函数.tex',
+      text: '若点 $(a,0)\\,(a>0)$ 是函数 $y=2\\tan\\!\\left(x-\\dfrac{\\pi}{3}\\right)$ 的图像的对称中心，则 $a$ 的最小值为',
+      choices: ['$\\dfrac{\\pi}{6}$','$\\dfrac{\\pi}{3}$','$\\dfrac{\\pi}{2}$','$\\dfrac{4\\pi}{3}$'],
+      answer: 'B',
+      source: '---2025-G-全国I卷-4-三角函数.tex---\n\n% === Begin Label Data ===\n% ID: 52\n% 难度星级: ★★★\n% 标签: 三角函数，对称中心\n% 备注: \n% 组卷引用次数: 0\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国I卷}{4}{三角函数}\n若点 $(a,0)(a>0)$ 是函数\n$y=2\\tan\\left(x-\\frac{\\pi}{3}\\right)$\n的图像的对称中心，则 $a$ 的\n最小值为 (\\hspace{1cm})\n\\begin{choices}\n\\choice{$\\frac{\\pi}{6}$}\n\\choice{$\\frac{\\pi}{3}$}\n\\choice{$\\frac{\\pi}{2}$}\n\\choice{$\\frac{4\\pi}{3}$}\n\\end{choices}\n\\end{problem}'
+    },
+    '函数': {
+      fname: '2025-G-全国I卷-8-函数.tex',
+      text: '若实数 $x,y,z$ 满足 $2+\\log_2 x = 3+\\log_3 y = 5+\\log_5 z$，则 $x,y,z$ 的大小关系<b>不可能</b>的是',
+      choices: ['$x>y>z$','$x>z>y$','$y>x>z$','$y>z>x$'],
+      answer: 'D',
+      source: '---2025-G-全国I卷-8-函数.tex---\n\n% === Begin Label Data ===\n% ID: 55\n% 难度星级: ★★★★\n% 标签: 函数，对数\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国I卷}{8}{函数}\n若实数 $x,y,z$ 满足\n$2+\\log_2 x = 3+\\log_3 y = 5+\\log_5 z$，\n则 $x,y,z$ 的大小关系不可能的是\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$x>y>z$}\n\\choice{$x>z>y$}\n\\choice{$y>x>z$}\n\\choice{$y>z>x$}\n\\end{choices}\n\\end{problem}'
+    },
+    '导数': {
+      fname: '2024-G-新课标I卷-7-导数.tex',
+      text: '已知函数 $f(x)=x\\ln x - ax$ 有两个极值点 $x_1, x_2$（$x_1 < x_2$）。<br><br>(1) 求 $a$ 的取值范围；<br>(2) 证明：$x_1 \\cdot x_2 > e^2$。',
+      choices: [],
+      answer: '(1) $a>1$；(2) 略',
+      source: '---2024-G-新课标I卷-7-导数.tex---\n\n% === Begin Label Data ===\n% ID: 128\n% 难度星级: ★★★★★\n% 标签: 导数，极值点\n% === End  Label Data ===\n\n\\begin{problem}{2024}{G}{新课标I卷}{7}{导数}\n已知函数 $f(x)=x\\ln x - ax$\n有两个极值点 $x_1, x_2$（$x_1 < x_2$）。\n\n(1) 求 $a$ 的取值范围；\n\n(2) 证明：$x_1 \\cdot x_2 > e^2$。\n\\end{problem}'
+    },
+    '立体几何': {
+      fname: '2025-G-全国II卷-12-立体几何.tex',
+      text: '已知正四面体 $ABCD$ 的棱长为 $2$，则其外接球的表面积为',
+      choices: ['$4\\pi$','$6\\pi$','$8\\pi$','$12\\pi$'],
+      answer: 'B',
+      source: '---2025-G-全国II卷-12-立体几何.tex---\n\n% === Begin Label Data ===\n% ID: 201\n% 难度星级: ★★★★\n% 标签: 立体几何，外接球\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国II卷}{12}{立体几何}\n已知正四面体 $ABCD$ 的棱长为 $2$，\n则其外接球的表面积为\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$4\\pi$}\n\\choice{$6\\pi$}\n\\choice{$8\\pi$}\n\\choice{$12\\pi$}\n\\end{choices}\n\\end{problem}'
+    },
+    '解析几何': {
+      fname: '2025-G-全国I卷-10-解析几何.tex',
+      text: '已知直线 $l: y = kx + 1$ 与圆 $x^2 + y^2 = 4$ 相交于 $A, B$ 两点，若 $|AB| = 2\\sqrt{3}$，则 $k$ 的值为',
+      choices: ['$\\pm\\dfrac{\\sqrt{3}}{3}$','$\\pm 1$','$\\pm\\sqrt{3}$','$\\pm\\dfrac{1}{3}$'],
+      answer: 'A',
+      source: '---2025-G-全国I卷-10-解析几何.tex---\n\n% === Begin Label Data ===\n% ID: 305\n% 难度星级: ★★★★\n% 标签: 解析几何，直线与圆\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国I卷}{10}{解析几何}\n已知直线 $l: y = kx + 1$ 与圆\n$x^2 + y^2 = 4$ 相交于 $A, B$ 两点，\n若 $|AB| = 2\\sqrt{3}$，则 $k$ 的值为\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$\\pm\\frac{\\sqrt{3}}{3}$}\n\\choice{$\\pm 1$}\n\\choice{$\\pm\\sqrt{3}$}\n\\choice{$\\pm\\frac{1}{3}$}\n\\end{choices}\n\\end{problem}'
+    },
+    '圆锥曲线': {
+      fname: '2024-G-新课标I卷-11-圆锥曲线.tex',
+      text: '已知椭圆 $C: \\dfrac{x^2}{a^2} + \\dfrac{y^2}{b^2} = 1\\;(a>b>0)$ 的离心率为 $\\dfrac{\\sqrt{3}}{2}$，过右焦点 $F$ 的直线交 $C$ 于 $A, B$ 两点，若 $|AF| = 3|BF|$，则直线 $AB$ 的斜率为',
+      choices: ['$\\pm\\dfrac{\\sqrt{3}}{3}$','$\\pm 1$','$\\pm\\sqrt{3}$','$\\pm\\dfrac{\\sqrt{3}}{2}$'],
+      answer: 'C',
+      source: '---2024-G-新课标I卷-11-圆锥曲线.tex---\n\n% === Begin Label Data ===\n% ID: 412\n% 难度星级: ★★★★★\n% 标签: 圆锥曲线，椭圆\n% === End  Label Data ===\n\n\\begin{problem}{2024}{G}{新课标I卷}{11}{圆锥曲线}\n已知椭圆 $C: \\frac{x^2}{a^2}+\\frac{y^2}{b^2}=1$\n$(a>b>0)$ 的离心率为 $\\frac{\\sqrt{3}}{2}$，\n过右焦点 $F$ 的直线交 $C$ 于 $A,B$ 两点，\n若 $|AF|=3|BF|$，则直线 $AB$ 的斜率为\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$\\pm\\frac{\\sqrt{3}}{3}$}\n\\choice{$\\pm 1$}\n\\choice{$\\pm\\sqrt{3}$}\n\\choice{$\\pm\\frac{\\sqrt{3}}{2}$}\n\\end{choices}\n\\end{problem}'
+    },
+    '数列': {
+      fname: '2024-G-新课标I卷-10-数列.tex',
+      text: '已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，若 $a_3 = 7$，$S_6 = 66$，则 $a_1 =$ <span class="answer-blank"></span>。',
+      choices: [],
+      answer: '$a_1 = 3$',
+      source: '---2024-G-新课标I卷-10-数列.tex---\n\n% === Begin Label Data ===\n% ID: 520\n% 难度星级: ★★★\n% 标签: 数列，等差数列\n% === End  Label Data ===\n\n\\begin{problem}{2024}{G}{新课标I卷}{10}{数列}\n已知等差数列 $\\{a_n\\}$ 的前 $n$ 项和为 $S_n$，\n若 $a_3 = 7$，$S_6 = 66$，\n则 $a_1 = $ \\underline{\\hspace{4em}}。\n\\end{problem}'
+    },
+    '向量': {
+      fname: '2025-G-全国I卷-6-向量.tex',
+      text: '已知向量 $\\vec{a}=(1,2)$，$\\vec{b}=(3,-1)$，则 $\\vec{a} \\cdot \\vec{b}$ 的值为',
+      choices: ['$1$','$5$','$-1$','$7$'],
+      answer: 'A',
+      source: '---2025-G-全国I卷-6-向量.tex---\n\n% === Begin Label Data ===\n% ID: 601\n% 难度星级: ★★\n% 标签: 向量，数量积\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国I卷}{6}{向量}\n已知向量 $\\vec{a}=(1,2)$，\n$\\vec{b}=(3,-1)$，\n则 $\\vec{a} \\cdot \\vec{b}$ 的值为\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$1$}\n\\choice{$5$}\n\\choice{$-1$}\n\\choice{$7$}\n\\end{choices}\n\\end{problem}'
+    },
+    '概率统计': {
+      fname: '2025-G-全国II卷-8-概率.tex',
+      text: '某工厂生产的产品合格率为 $0.95$，现从中随机抽取 $3$ 件，则至少有 $2$ 件合格的概率为',
+      choices: ['$0.857$','$0.902$','$0.950$','$0.993$'],
+      answer: 'A',
+      source: '---2025-G-全国II卷-8-概率.tex---\n\n% === Begin Label Data ===\n% ID: 702\n% 难度星级: ★★★\n% 标签: 概率，条件概率\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国II卷}{8}{概率统计}\n某工厂生产的产品合格率为 $0.95$，\n现从中随机抽取 $3$ 件，\n则至少有 $2$ 件合格的概率为\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$0.857$}\n\\choice{$0.902$}\n\\choice{$0.950$}\n\\choice{$0.993$}\n\\end{choices}\n\\end{problem}'
+    },
+    '排列组合': {
+      fname: '2024-G-新课标II卷-5-排列组合.tex',
+      text: '将 $5$ 名志愿者分配到 $3$ 个不同的服务岗位，每个岗位至少 $1$ 人，则不同的分配方案共有',
+      choices: ['$60$ 种','$90$ 种','$150$ 种','$240$ 种'],
+      answer: 'C',
+      source: '---2024-G-新课标II卷-5-排列组合.tex---\n\n% === Begin Label Data ===\n% ID: 803\n% 难度星级: ★★★\n% 标签: 排列组合，分组分配\n% === End  Label Data ===\n\n\\begin{problem}{2024}{G}{新课标II卷}{5}{排列组合}\n将 $5$ 名志愿者分配到 $3$ 个不同的\n服务岗位，每个岗位至少 $1$ 人，\n则不同的分配方案共有\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$60$ 种}\n\\choice{$90$ 种}\n\\choice{$150$ 种}\n\\choice{$240$ 种}\n\\end{choices}\n\\end{problem}'
+    },
+    '不等式': {
+      fname: '2025-G-全国II卷-4-不等式.tex',
+      text: '已知 $a > b > 0$，则下列不等式一定成立的是',
+      choices: ['$\\dfrac{1}{a} > \\dfrac{1}{b}$','$a^2 < b^2$','$\\sqrt{a} > \\sqrt{b}$','$a - b < 0$'],
+      answer: 'C',
+      source: '---2025-G-全国II卷-4-不等式.tex---\n\n% === Begin Label Data ===\n% ID: 901\n% 难度星级: ★★\n% 标签: 不等式，基本性质\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国II卷}{4}{不等式}\n已知 $a > b > 0$，则下列不等式\n一定成立的是\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$\\frac{1}{a} > \\frac{1}{b}$}\n\\choice{$a^2 < b^2$}\n\\choice{$\\sqrt{a} > \\sqrt{b}$}\n\\choice{$a - b < 0$}\n\\end{choices}\n\\end{problem}'
+    },
+    '复数': {
+      fname: '2025-G-全国I卷-2-复数.tex',
+      text: '已知复数 $z = \\dfrac{1+i}{1-i}$，则 $|z| = $',
+      choices: ['$0$','$1$','$\\sqrt{2}$','$2$'],
+      answer: 'B',
+      source: '---2025-G-全国I卷-2-复数.tex---\n\n% === Begin Label Data ===\n% ID: 1001\n% 难度星级: ★\n% 标签: 复数，运算\n% === End  Label Data ===\n\n\\begin{problem}{2025}{G}{全国I卷}{2}{复数}\n已知复数 $z = \\frac{1+i}{1-i}$，\n则 $|z| = $\n(\\hspace{1cm})\n\\begin{choices}\n\\choice{$0$}\n\\choice{$1$}\n\\choice{$\\sqrt{2}$}\n\\choice{$2$}\n\\end{choices}\n\\end{problem}'
+    }
+  };
+
+  function switchTopic(el) {
+    document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+    const topic = el.dataset.topic;
+    const d = topicData[topic];
+    if (!d) return;
+
+    document.getElementById('sourceArea').value = d.source;
+
+    const optLabels = ['A', 'B', 'C', 'D'];
+    let choicesHTML = '';
+    if (d.choices && d.choices.length > 0) {
+      choicesHTML = '<div style="margin:10px 0 6px 0;">' +
+        d.choices.map((c, i) => '<div class="p-choice"><span class="opt">' + optLabels[i] + '.</span> ' + c + '</div>').join('') +
+        '</div>';
+    }
+    document.getElementById('previewBox').innerHTML =
+      '<div class="p-title">📄 ' + d.fname + '</div>' +
+      '<div class="p-text">' + d.text + choicesHTML +
+      '<div style="font-weight:700;margin-top:10px;font-size:13px;">【答案】</div>' +
+      '<div style="font-size:13px;">' + d.answer + '</div></div>';
+
+    renderMathInElement(document.getElementById('previewBox'), {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false}
+      ],
+      throwOnError: false
+    });
+  }
+</script>
+
+</body>
+</html>
