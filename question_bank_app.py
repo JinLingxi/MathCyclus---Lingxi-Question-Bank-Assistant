@@ -4045,23 +4045,69 @@ def page_exam_paper_generation():
                             
                             # 获取当前目标难度
                             current_diff = st.session_state.get("ai_exam_diff_val", 3.0)
+                            intent_profile = _build_exam_intent_profile(st.session_state.get("ai_exam_intent", ""))
+                            used_rel_paths = set()
+
+                            def row_diff(row):
+                                try:
+                                    return float(row.get("难度星级") or 1.0)
+                                except Exception:
+                                    return 1.0
+
+                            def row_rel_path(row):
+                                return row.get("相对文件路径", "")
+
+                            def pick_rows(filtered, target_count):
+                                if target_count <= 0:
+                                    return []
+                                filtered = [q for q in filtered if row_rel_path(q) and row_rel_path(q) not in used_rel_paths]
+                                if not filtered:
+                                    return []
+                                if intent_profile.get("active"):
+                                    filtered = sorted(
+                                        filtered,
+                                        key=lambda q: (
+                                            _exam_intent_score(q, intent_profile),
+                                            -_safe_int(q.get("组卷引用次数", "0")),
+                                            row_diff(q),
+                                            random.random(),
+                                        ),
+                                        reverse=True,
+                                    )
+                                    picked = filtered[:target_count]
+                                else:
+                                    picked = random.sample(filtered, min(target_count, len(filtered)))
+                                used_rel_paths.update(row_rel_path(q) for q in picked)
+                                return picked
                             
                             # 辅助函数：根据难度范围过滤并随机抽取指定数量
-                            def sample_questions(pool, target_count, q_type=None, diff_range=None):
-                                filtered = pool
+                            def sample_questions(pool, target_count, q_type=None, diff_range=None, prefer_multi=False, prefer_subjects=None):
+                                filtered = list(pool)
                                 if q_type:
-                                    filtered = [q for q in filtered if q_type in q.get("题目类型", "")]
+                                    filtered = [q for q in filtered if q_type in q.get("题型", "")]
                                 if diff_range:
                                     # 如果没有星级，默认视为基础题 (1.0)
-                                    filtered = [q for q in filtered if diff_range[0] <= float(q.get("难度星级") or 1.0) <= diff_range[1]]
+                                    filtered = [q for q in filtered if diff_range[0] <= row_diff(q) <= diff_range[1]]
+                                if prefer_subjects:
+                                    subject_filtered = [q for q in filtered if any(s in q.get("知识板块", "") for s in prefer_subjects)]
+                                    if subject_filtered:
+                                        filtered = subject_filtered
+                                if prefer_multi:
+                                    multi_filtered = [q for q in filtered if _row_looks_multi_choice(q)]
+                                    if multi_filtered:
+                                        filtered = multi_filtered
                                 
-                                if len(filtered) >= target_count:
-                                    return random.sample(filtered, target_count)
-                                else:
-                                    # 如果指定难度不够，放宽难度限制补齐
-                                    backup = [q for q in pool if q not in filtered and (q_type in q.get("题目类型", "") if q_type else True)]
-                                    needed = target_count - len(filtered)
-                                    return filtered + random.sample(backup, min(needed, len(backup)))
+                                picked = pick_rows(filtered, target_count)
+                                needed = target_count - len(picked)
+                                if needed <= 0:
+                                    return picked
+
+                                # 如果指定难度或多选特征不够，放宽这些软限制补齐，但仍保持题型和去重。
+                                backup = list(pool)
+                                if q_type:
+                                    backup = [q for q in backup if q_type in q.get("题型", "")]
+                                picked += pick_rows(backup, needed)
+                                return picked
 
                             selected_rows = []
                             if is_paper:
@@ -4072,9 +4118,9 @@ def page_exam_paper_generation():
                                 sq_hard = sample_questions(candidates, 1, q_type="选择题", diff_range=(4.5, 6.0))
                                 
                                 # 多选 3 题 (基础1 + 中档1 + 难题1)
-                                mq_base = sample_questions(candidates, 1, q_type="选择题", diff_range=(0.0, 2.5))
-                                mq_mid = sample_questions(candidates, 1, q_type="选择题", diff_range=(3.0, 4.0))
-                                mq_hard = sample_questions(candidates, 1, q_type="选择题", diff_range=(4.5, 6.0))
+                                mq_base = sample_questions(candidates, 1, q_type="选择题", diff_range=(0.0, 2.5), prefer_multi=True)
+                                mq_mid = sample_questions(candidates, 1, q_type="选择题", diff_range=(3.0, 4.0), prefer_multi=True)
+                                mq_hard = sample_questions(candidates, 1, q_type="选择题", diff_range=(4.5, 6.0), prefer_multi=True)
                                 
                                 # 填空 3 题 (基础1 + 中档1 + 难题1)
                                 fq_base = sample_questions(candidates, 1, q_type="填空题", diff_range=(0.0, 2.5))
@@ -4084,7 +4130,7 @@ def page_exam_paper_generation():
                                 # 解答 5 题 (基础2 + 中档2 + 难题1)
                                 aq_base = sample_questions(candidates, 2, q_type="解答题", diff_range=(0.0, 2.5))
                                 aq_mid = sample_questions(candidates, 2, q_type="解答题", diff_range=(3.0, 4.0))
-                                aq_hard = sample_questions(candidates, 1, q_type="解答题", diff_range=(4.5, 6.0))
+                                aq_hard = sample_questions(candidates, 1, q_type="解答题", diff_range=(4.5, 6.0), prefer_subjects=intent_profile.get("final_subjects"))
                                 
                                 selected_rows = sq_base + sq_mid + sq_hard + mq_base + mq_mid + mq_hard + fq_base + fq_mid + fq_hard + aq_base + aq_mid + aq_hard
                             else:
@@ -4116,6 +4162,9 @@ def page_exam_paper_generation():
                                 st.warning(f"题库中满足条件的题目不足，仅抽取到 {len(final_paths)} 题。")
                             else:
                                 st.success(f"智能组卷完成！已成功抽取 {len(final_paths)} 道题目。")
+                            if intent_profile.get("active"):
+                                matched_subjects = "、".join(intent_profile.get("subjects") or []) or "无明确板块"
+                                st.caption(f"已使用组卷意图参与筛选：匹配板块 {matched_subjects}，关键词 {len(intent_profile.get('tokens') or [])} 个。")
                                 
                             # 强制覆盖当前购物车
                             st.session_state["exam_selected_qs"] = final_paths
@@ -4237,6 +4286,249 @@ def page_exam_paper_generation():
     # 3. 复用浏览界面进行选题
     page_browse(is_exam_mode=True)
 
+def _exam_output_tex_path(export_filename: str, export_dir: str) -> str:
+    return os.path.join(export_dir, export_filename, f"{export_filename}.tex")
+
+def _next_exam_export_filename(export_dir: str, theme_name: str, today=None) -> str:
+    import datetime
+
+    today = today or datetime.date.today()
+    prefix = f"{today.strftime('%Y')}年{today.strftime('%m')}月{today.strftime('%d')}日 {theme_name}组卷"
+    max_index = 0
+
+    if os.path.exists(export_dir):
+        for name in os.listdir(export_dir):
+            stem = os.path.splitext(name)[0] if name.endswith(".tex") else name
+            if not stem.startswith(prefix):
+                continue
+            suffix = stem[len(prefix):]
+            if suffix.isdigit():
+                max_index = max(max_index, int(suffix))
+
+    return f"{prefix}{max_index + 1}"
+
+def _compile_exam_pdf(tex_path: str) -> dict:
+    if not tex_path or not os.path.exists(tex_path):
+        return {"ok": False, "error": "找不到待编译的 tex 文件。"}
+
+    xelatex = shutil.which("xelatex")
+    if not xelatex:
+        return {"ok": False, "error": "未检测到 xelatex，已生成 tex 文件但无法自动编译 PDF。"}
+
+    work_dir = os.path.dirname(tex_path)
+    tex_name = os.path.basename(tex_path)
+    last_output = ""
+
+    try:
+        for _ in range(2):
+            completed = subprocess.run(
+                [
+                    xelatex,
+                    "-interaction=nonstopmode",
+                    "-halt-on-error",
+                    "-file-line-error",
+                    tex_name,
+                ],
+                cwd=work_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
+            )
+            last_output = completed.stdout or ""
+            if completed.returncode != 0:
+                return {
+                    "ok": False,
+                    "error": "PDF 编译失败，请检查 LaTeX 日志。",
+                    "log": last_output[-4000:],
+                }
+
+        pdf_path = os.path.splitext(tex_path)[0] + ".pdf"
+        if os.path.exists(pdf_path):
+            return {"ok": True, "pdf_path": pdf_path, "log": last_output[-2000:]}
+        return {"ok": False, "error": "xelatex 已运行，但未找到生成的 PDF 文件。", "log": last_output[-4000:]}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "PDF 编译超时，tex 文件已保留，可稍后手动编译。", "log": last_output[-4000:]}
+    except Exception as e:
+        return {"ok": False, "error": f"PDF 编译异常：{e}", "log": last_output[-4000:]}
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+def _question_paths_from_exam_blocks(blocks) -> list:
+    paths = []
+    seen = set()
+    for blk in blocks or []:
+        if blk.get("type") != "question":
+            continue
+        path = blk.get("path")
+        if path and path not in seen and os.path.exists(path):
+            paths.append(path)
+            seen.add(path)
+    return paths
+
+def _increment_exam_usage_counts(question_paths) -> dict:
+    updated = 0
+    skipped = []
+
+    for fpath in question_paths:
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read()
+            meta, _ = parse_meta_data(content)
+            if not meta or not str(meta.get("ID", "")).strip():
+                skipped.append(os.path.basename(fpath))
+                continue
+
+            meta["组卷引用次数"] = str(_safe_int(meta.get("组卷引用次数", "0")) + 1)
+            new_content = inject_meta_data(content, meta)
+            if new_content != content:
+                atomic_write_text(fpath, new_content, backup=True)
+                _update_csv_index_for_content_change(fpath, new_content)
+            updated += 1
+        except Exception:
+            skipped.append(os.path.basename(fpath))
+
+    if updated:
+        _clear_advanced_search_result_cache()
+        clear_statistics_cache()
+    return {"updated": updated, "skipped": skipped}
+
+def _build_exam_intent_profile(intent_text: str) -> dict:
+    text = (intent_text or "").strip()
+    if not text:
+        return {"active": False, "text": "", "subjects": [], "tokens": [], "final_subjects": [], "difficulty": ""}
+
+    subjects = [s for s in SUBJECTS if s and s in text]
+    final_subjects = [
+        s for s in subjects
+        if re.search(rf"(最后|压轴|最后一题|最后一道).{{0,12}}{re.escape(s)}|{re.escape(s)}.{{0,12}}(最后|压轴|最后一题|最后一道)", text)
+    ]
+
+    difficulty = ""
+    if any(word in text for word in ("压轴", "拔高", "难题", "综合", "挑战")):
+        difficulty = "hard"
+    if any(word in text for word in ("基础", "简单", "不要太难", "别太难", "中档", "适中")):
+        difficulty = "medium_or_easy"
+
+    stop_words = {
+        "本次", "组卷", "试卷", "题目", "考察", "侧重", "希望", "需要", "可以", "必须",
+        "不要", "最后", "一道", "最后一道", "最后一题", "比较", "适合", "学生", "高中",
+        "数学", "训练", "练习", "讲义", "模拟", "高考", "范围", "题型", "难度",
+    }
+    chunks = re.split(r"[\s，。；、,.!?！？：:（）()\[\]【】\"'“”‘’]+", text)
+    tokens = set(subjects)
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if len(chunk) < 2 or chunk in stop_words:
+            continue
+        if len(chunk) <= 8:
+            tokens.add(chunk)
+        else:
+            for size in (2, 3, 4):
+                for i in range(0, max(0, len(chunk) - size + 1)):
+                    token = chunk[i:i + size]
+                    if token not in stop_words:
+                        tokens.add(token)
+
+    return {
+        "active": True,
+        "text": text,
+        "subjects": subjects,
+        "tokens": sorted(tokens, key=lambda x: (-len(x), x))[:80],
+        "final_subjects": final_subjects,
+        "difficulty": difficulty,
+    }
+
+def _exam_intent_score(row: dict, profile: dict) -> float:
+    if not profile.get("active"):
+        return 0.0
+
+    haystack = "".join(
+        str(row.get(field, ""))
+        for field in ("文件名称", "试卷名称", "知识板块", "标签", "备注", "题干", "答案", "解析")
+    )
+    score = 0.0
+    for subject in profile.get("subjects", []):
+        if subject in str(row.get("知识板块", "")):
+            score += 12
+        elif subject in haystack:
+            score += 6
+
+    for token in profile.get("tokens", []):
+        if token and token in haystack:
+            score += min(8, max(2, len(token)))
+
+    try:
+        diff = float(row.get("难度星级") or 1.0)
+    except Exception:
+        diff = 1.0
+    if profile.get("difficulty") == "hard":
+        score += diff
+    elif profile.get("difficulty") == "medium_or_easy":
+        score += max(0.0, 6.0 - diff)
+
+    return score
+
+def _row_looks_multi_choice(row: dict) -> bool:
+    text = "".join(str(row.get(field, "")) for field in ("标签", "备注", "题干", "答案", "解析"))
+    answer = str(row.get("答案", ""))
+    answer_letters = re.findall(r"(?<![A-Za-z])([A-Da-d])(?![A-Za-z])", answer)
+    return "多选" in text or len(set(letter.upper() for letter in answer_letters)) >= 2
+
+def _replace_choices_with_items(text: str) -> str:
+    idx = 0
+    while True:
+        idx = text.find(r'\choice', idx)
+        if idx == -1:
+            break
+        start_brace = text.find('{', idx)
+        if start_brace == -1:
+            idx += len(r'\choice')
+            continue
+        if text[idx + 7:start_brace].strip() != '':
+            idx += len(r'\choice')
+            continue
+        next_char_idx = start_brace + 1
+        while next_char_idx < len(text) and text[next_char_idx].isspace():
+            next_char_idx += 1
+        is_double = False
+        if next_char_idx < len(text) and text[next_char_idx] == '{':
+            is_double = True
+            content_start = next_char_idx + 1
+        else:
+            content_start = start_brace + 1
+        brace_count = 2 if is_double else 1
+        match_end = -1
+        content = ''
+        for i in range(content_start, len(text)):
+            if text[i] == '{':
+                brace_count += 1
+            elif text[i] == '}':
+                brace_count -= 1
+            if brace_count == 0:
+                match_end = i + 1
+                inner = text[content_start:i]
+                if is_double:
+                    last_brace_idx = inner.rfind('}')
+                    content = inner[:last_brace_idx].strip() if last_brace_idx != -1 else inner.strip()
+                else:
+                    content = inner.strip()
+                break
+        if match_end != -1:
+            prefix = text[:idx]
+            suffix = text[match_end:]
+            text = prefix + r'\item ' + content + suffix
+            idx = len(prefix) + len(r'\item ') + len(content)
+        else:
+            idx += len(r'\choice')
+    return text
+
 def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
     # 确保导出目录存在
     ensure_dir(export_dir)
@@ -4323,55 +4615,7 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
                 # 同时将带参数的 \begin{choices}[2] 去除参数
                 line = re.sub(r'\\begin\{choices\}\[.*?\]', r'\\begin{choices}', line)
                 
-                def replace_choices_with_items(text):
-                    idx = 0
-                    while True:
-                        idx = text.find(r'\choice', idx)
-                        if idx == -1: break
-                        start_brace = text.find('{', idx)
-                        if start_brace == -1:
-                            idx += len(r'\choice')
-                            continue
-                        if text[idx+7:start_brace].strip() != '':
-                            idx += len(r'\choice')
-                            continue
-                        next_char_idx = start_brace + 1
-                        while next_char_idx < len(text) and text[next_char_idx].isspace():
-                            next_char_idx += 1
-                        is_double = False
-                        if next_char_idx < len(text) and text[next_char_idx] == '{':
-                            is_double = True
-                            content_start = next_char_idx + 1
-                        else:
-                            content_start = start_brace + 1
-                        brace_count = 2 if is_double else 1
-                        match_end = -1
-                        content = ''
-                        for i in range(content_start, len(text)):
-                            if text[i] == '{': brace_count += 1
-                            elif text[i] == '}': brace_count -= 1
-                            if brace_count == 0:
-                                match_end = i + 1
-                                inner = text[content_start:i]
-                                if is_double:
-                                    last_brace_idx = inner.rfind('}')
-                                    if last_brace_idx != -1:
-                                        content = inner[:last_brace_idx].strip()
-                                    else:
-                                        content = inner.strip()
-                                else:
-                                    content = inner.strip()
-                                break
-                        if match_end != -1:
-                            prefix = text[:idx]
-                            suffix = text[match_end:]
-                            text = prefix + r'\item ' + content + suffix
-                            idx = len(prefix) + len(r'\item ') + len(content)
-                        else:
-                            idx += len(r'\choice')
-                    return text
-
-                line = replace_choices_with_items(line)
+                line = _replace_choices_with_items(line)
                     
                 new_body_lines.append(line)
             else:
@@ -4380,7 +4624,7 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
                     line = line.replace(r'\end{problem}', r'\end{question}')
                     
                 line = re.sub(r'\\begin\{choices\}\[.*?\]', r'\\begin{choices}', line)
-                line = replace_choices_with_items(line)
+                line = _replace_choices_with_items(line)
                 
                 new_body_lines.append(line)
         body_lines = new_body_lines
@@ -4421,7 +4665,7 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
                 final_export_dir = os.path.join(export_dir, export_filename)
                 ensure_dir(final_export_dir)
                 
-                output_file = os.path.join(final_export_dir, f"{export_filename}.tex")
+                output_file = _exam_output_tex_path(export_filename, export_dir)
                 atomic_write_text(output_file, final_content, backup=os.path.exists(output_file))
                 return output_file
             
@@ -4440,15 +4684,7 @@ def render_typesetting_workspace():
     theme_name = st.session_state.get("exam_theme", "练习类模板")
     export_dir = os.path.join(BASE_DIR, "Test Paper Group", "导出文件", y_str, m_str)
     
-    # 确定当天的序号
-    daily_count = 1
-    if os.path.exists(export_dir):
-        prefix = f"{y_str}年{m_str}月{d_str}日 {theme_name}组卷"
-        for f in os.listdir(export_dir):
-            if f.startswith(prefix) and f.endswith(".tex"):
-                daily_count += 1
-                
-    default_filename = f"{y_str}年{m_str}月{d_str}日 {theme_name}组卷{daily_count}"
+    default_filename = _next_exam_export_filename(export_dir, theme_name, today=today)
     
     # 返回按钮与生成按钮栏
     c_back, c_name, c_gen = st.columns([1, 1.5, 1])
@@ -4461,9 +4697,28 @@ def render_typesetting_workspace():
     with c_gen:
         if st.button("🖨️ 确认生成试卷", type="primary", use_container_width=True):
             if theme_name in ("练习类模板", "讲义类模板", "试卷类模板"):
+                expected_output_path = _exam_output_tex_path(export_filename, export_dir)
+                is_overwrite = os.path.exists(expected_output_path)
                 output_path = generate_exam_paper(export_filename, export_dir, st.session_state["exam_blocks"], theme_name)
                 if output_path:
                     st.success(f"试卷已成功生成至：{output_path}")
+                    compile_result = _compile_exam_pdf(output_path)
+                    if compile_result.get("ok"):
+                        st.success(f"PDF 已自动编译完成：{compile_result.get('pdf_path')}")
+                    else:
+                        st.warning(compile_result.get("error", "PDF 编译失败。"))
+                        if compile_result.get("log"):
+                            with st.expander("查看 xelatex 编译日志"):
+                                st.code(compile_result["log"])
+
+                    if is_overwrite:
+                        st.info("检测到本次为覆盖同名试卷，未重复增加题目组卷引用次数。")
+                    else:
+                        usage_result = _increment_exam_usage_counts(_question_paths_from_exam_blocks(st.session_state["exam_blocks"]))
+                        if usage_result.get("updated", 0):
+                            st.success(f"已更新 {usage_result['updated']} 道题目的组卷引用次数。")
+                        if usage_result.get("skipped"):
+                            st.caption("部分题目缺少完整元数据，未更新引用次数：" + "、".join(usage_result["skipped"][:5]))
                 else:
                     st.error("生成失败，请检查模板文件是否存在或格式是否正确！")
             else:

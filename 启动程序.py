@@ -17,7 +17,7 @@ def kill_existing_streamlit():
             result = subprocess.run(find_cmd, shell=True, capture_output=True, text=True)
             
             pids = []
-            for line in result.stdout.strip().split('\n')[1:]: # 跳过表头
+            for line in result.stdout.strip().split('\n')[1:]: # 跳过表头根据
                 pid_str = line.strip()
                 if pid_str.isdigit():
                     pids.append(pid_str)
