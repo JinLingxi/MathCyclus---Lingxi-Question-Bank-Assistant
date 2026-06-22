@@ -135,3 +135,9 @@ streamlit run question_bank_app.py
 ## 📄 开源协议
 
 本项目采用 MIT License 开源协议，欢迎贡献与使用。
+
+## 👥 用户群
+
+如果你正在使用或关注 MathCyclus，欢迎扫码加入用户群，交流本地部署、题目录入、LaTeX 排版、组卷流程与后续功能建议。
+
+![MathCyclus 用户群](fig/用户群.png)
