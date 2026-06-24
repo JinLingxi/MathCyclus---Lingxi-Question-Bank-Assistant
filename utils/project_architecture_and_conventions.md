@@ -24,7 +24,7 @@
   2. `page_single_entry()`: 单题录入（包含 OCR 剪贴板识别、AI 规范化、自动分配全局唯一 ID、自动写回磁盘）。
   3. `page_browse()`: 全局浏览与编辑（核心查阅页，包含高级检索、行内编辑、标签修改、AI 解答生成面板）。
   4. `page_exam_paper()`: 智能组卷服务（“购物车”逻辑，管理 `st.session_state["exam_selected_qs"]`）。
-  5. `page_batch_tools()`: 批量工具（ZIP 上传、文件夹批量处理、批量题库索引重建）。
+  5. `page_batch_tools()`: 工具箱（ZIP 上传、文件夹批量处理、题库索引重建）。
   6. `page_advanced_search()`: 独立的三级查找页（复用 `render_advanced_search_inline` 组件）。
 
 #### 1.2 AI 解题核心链路 (`call_ai_for_answer_solutions` 及周边)

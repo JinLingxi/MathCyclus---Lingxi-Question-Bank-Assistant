@@ -3,6 +3,7 @@ import datetime
 import os
 import shutil
 import tempfile
+import time
 
 
 def _same_filesystem_temp_path(target_path: str) -> str:
@@ -45,6 +46,24 @@ def file_change_token(path: str):
     return (getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)), stat.st_size)
 
 
+def _replace_with_retry(temp_path: str, target_path: str, attempts: int = 8, delay: float = 0.25) -> None:
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            os.replace(temp_path, target_path)
+            return
+        except OSError as e:
+            last_error = e
+            if getattr(e, "winerror", None) not in (5, 32) or attempt == attempts - 1:
+                break
+            time.sleep(delay)
+
+    raise PermissionError(
+        f"无法写入文件：{target_path}。该文件可能正被 Excel/WPS、编辑器、杀毒软件或另一个程序占用；"
+        "请关闭占用后重试。"
+    ) from last_error
+
+
 def atomic_write_text(path: str, content: str, encoding: str = "utf-8", backup: bool = False) -> None:
     """Write text by replacing the target only after the temp file is complete."""
     if backup:
@@ -55,7 +74,7 @@ def atomic_write_text(path: str, content: str, encoding: str = "utf-8", backup: 
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(temp_path, path)
+        _replace_with_retry(temp_path, path)
     finally:
         if os.path.exists(temp_path):
             try:
@@ -75,7 +94,7 @@ def atomic_write_csv_rows(path: str, fieldnames, rows, encoding: str = "utf-8-si
             writer.writerows(rows)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(temp_path, path)
+        _replace_with_retry(temp_path, path)
     finally:
         if os.path.exists(temp_path):
             try:

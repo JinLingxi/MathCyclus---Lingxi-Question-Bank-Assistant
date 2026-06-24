@@ -50,6 +50,6 @@ MathCyclus_demo.html
 
 *-G-*.tex
 
-# 本地自动备份
+# 管理备份问题：本地自动备份，不上传到 GitHub
 .backups/
 

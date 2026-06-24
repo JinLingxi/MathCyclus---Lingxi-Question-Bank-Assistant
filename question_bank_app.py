@@ -2,9 +2,11 @@ import streamlit as st
 import os
 import re
 import time
+import datetime
 import base64
 import requests
 import hashlib
+import html
 import subprocess
 import shutil
 import uuid
@@ -426,6 +428,665 @@ def save_modified_tex_file(file_path, new_content):
     atomic_write_text(file_path, final_content, backup=True)
         
     return final_content
+
+def _norm_abs_path(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path or ""))
+
+def _is_managed_question_file(file_path: str) -> bool:
+    abs_path = os.path.abspath(file_path or "")
+    chapters_abs = os.path.abspath(CHAPTERS_DIR)
+    try:
+        if os.path.commonpath([chapters_abs, abs_path]) != chapters_abs:
+            return False
+    except ValueError:
+        return False
+
+    rel_path = os.path.relpath(abs_path, chapters_abs)
+    rel_parts = os.path.normpath(rel_path).split(os.sep)
+    basename = os.path.basename(abs_path)
+
+    return (
+        os.path.isfile(abs_path)
+        and basename.endswith(".tex")
+        and not basename.startswith("content_")
+        and not any("相关图" in part for part in rel_parts)
+        and " 图" not in basename
+    )
+
+def _remove_question_from_csv_index(file_path: str) -> int:
+    from utils.csv_ops import read_csv_index, write_csv_index
+
+    abs_path = os.path.abspath(file_path)
+    rel_path = os.path.relpath(abs_path, CHAPTERS_DIR)
+    target_rel = os.path.normcase(os.path.normpath(rel_path))
+    target_name = os.path.basename(abs_path).replace(".tex", "")
+
+    rows = read_csv_index()
+    kept_rows = []
+    removed_count = 0
+    for row in rows:
+        row_rel = os.path.normcase(os.path.normpath(row.get("相对文件路径", "") or ""))
+        row_name = (row.get("文件名称", "") or "").strip()
+        if row_rel == target_rel or (not row_rel and row_name == target_name):
+            removed_count += 1
+            continue
+        kept_rows.append(row)
+
+    if removed_count:
+        write_csv_index(kept_rows)
+    return removed_count
+
+def _get_question_csv_rows(file_path: str):
+    from utils.csv_ops import read_csv_index
+
+    abs_path = os.path.abspath(file_path)
+    rel_path = os.path.relpath(abs_path, CHAPTERS_DIR)
+    target_rel = os.path.normcase(os.path.normpath(rel_path))
+    target_name = os.path.basename(abs_path).replace(".tex", "")
+
+    matched_rows = []
+    for row in read_csv_index():
+        row_rel = os.path.normcase(os.path.normpath(row.get("相对文件路径", "") or ""))
+        row_name = (row.get("文件名称", "") or "").strip()
+        if row_rel == target_rel or (not row_rel and row_name == target_name):
+            matched_rows.append(dict(row))
+    return matched_rows
+
+def _csv_has_question_record(file_path: str) -> bool:
+    return bool(_get_question_csv_rows(file_path))
+
+def _forget_deleted_question_path(file_path: str):
+    target = _norm_abs_path(file_path)
+
+    for key in ("adv_last_results",):
+        rows = st.session_state.get(key)
+        if isinstance(rows, list):
+            st.session_state[key] = [
+                row for row in rows
+                if _norm_abs_path(row.get("path") if isinstance(row, dict) else row) != target
+            ]
+
+    for key in ("exam_selected_qs", "recent_saved_paths"):
+        paths = st.session_state.get(key)
+        if isinstance(paths, list):
+            st.session_state[key] = [p for p in paths if _norm_abs_path(p) != target]
+
+def _related_tikz_dir_for_question(file_path: str) -> str:
+    base_name = os.path.basename(file_path).replace(".tex", "")
+    return os.path.join(os.path.dirname(file_path), f"{base_name} 相关图")
+
+def _backup_related_tikz_dir(file_path: str) -> str:
+    tikz_dir = _related_tikz_dir_for_question(file_path)
+    if not os.path.isdir(tikz_dir):
+        return ""
+
+    root_dir = os.getcwd()
+    try:
+        rel_path = os.path.relpath(os.path.abspath(tikz_dir), root_dir)
+        if rel_path.startswith(".."):
+            rel_path = os.path.basename(tikz_dir)
+    except ValueError:
+        rel_path = os.path.basename(tikz_dir)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_dir = os.path.join(root_dir, ".backups", rel_path + f".{timestamp}")
+    shutil.copytree(tikz_dir, backup_dir)
+    return backup_dir
+
+def _remove_related_tikz_dir(file_path: str):
+    tikz_dir = _related_tikz_dir_for_question(file_path)
+    if os.path.isdir(tikz_dir):
+        shutil.rmtree(tikz_dir)
+
+def _update_chapter_indexes_from_ui():
+    try:
+        import utils.batch_gen as batch_gen
+        batch_gen.update_chapter_contents()
+    except Exception as e:
+        st.toast(f"章节索引更新失败：{e}", icon="⚠️")
+
+def _remember_deleted_question(record: dict):
+    history = st.session_state.setdefault("delete_mode_deleted_records", [])
+    history.insert(0, record)
+
+def delete_question_file_and_sync(file_path: str):
+    if not _is_managed_question_file(file_path):
+        raise ValueError("只能删除 chapters 目录下的普通题目 .tex 文件。")
+
+    abs_path = os.path.abspath(file_path)
+    with open(abs_path, "r", encoding="utf-8") as f:
+        original_content = f.read()
+    original_csv_rows = _get_question_csv_rows(abs_path)
+    q_label = format_question_title(os.path.basename(abs_path))
+    backup_path = backup_existing_file(abs_path)
+    tikz_backup_path = _backup_related_tikz_dir(abs_path)
+    try:
+        os.remove(abs_path)
+        removed_rows = _remove_question_from_csv_index(abs_path)
+    except Exception:
+        if backup_path and os.path.exists(backup_path) and not os.path.exists(abs_path):
+            ensure_dir(os.path.dirname(abs_path))
+            shutil.copy2(backup_path, abs_path)
+        raise
+
+    try:
+        _remove_related_tikz_dir(abs_path)
+    except Exception as e:
+        st.toast(f"题目已删除，但相关图目录未能删除：{e}", icon="⚠️")
+    _forget_deleted_question_path(abs_path)
+    _clear_advanced_search_result_cache()
+    clear_statistics_cache()
+
+    _update_chapter_indexes_from_ui()
+
+    _remember_deleted_question({
+        "id": hashlib.md5(f"{abs_path}:{time.time()}".encode("utf-8")).hexdigest()[:12],
+        "label": q_label,
+        "original_path": abs_path,
+        "backup_path": backup_path,
+        "tikz_backup_path": tikz_backup_path,
+        "content": original_content,
+        "csv_rows": original_csv_rows,
+        "deleted_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "restored": False,
+    })
+
+    return backup_path or tikz_backup_path, removed_rows
+
+def restore_deleted_question_and_sync(record: dict):
+    original_path = record.get("original_path") or ""
+    backup_path = record.get("backup_path") or ""
+    tikz_backup_path = record.get("tikz_backup_path") or ""
+
+    if not original_path or not backup_path or not os.path.exists(backup_path):
+        raise FileNotFoundError("未找到该题的备份文件，无法恢复。")
+    if os.path.exists(original_path):
+        raise FileExistsError("原位置已经存在同名题目文件，请先检查题库目录。")
+
+    from utils.csv_ops import read_csv_index, write_csv_index
+    csv_rows = record.get("csv_rows") or []
+    if csv_rows:
+        data = read_csv_index()
+        existing_rels = {
+            os.path.normcase(os.path.normpath(row.get("相对文件路径", "") or ""))
+            for row in data
+        }
+        added_any = False
+        for row in csv_rows:
+            rel_path = os.path.normcase(os.path.normpath(row.get("相对文件路径", "") or ""))
+            if rel_path not in existing_rels:
+                data.append(row)
+                existing_rels.add(rel_path)
+                added_any = True
+        if added_any:
+            write_csv_index(data)
+    else:
+        basename = os.path.basename(original_path).replace(".tex", "")
+        parts = basename.split("-")
+        if len(parts) >= 5 and not _csv_has_question_record(original_path):
+            with open(backup_path, "r", encoding="utf-8") as f:
+                restored_content = f.read()
+            add_to_csv_index(original_path, restored_content, parts[0], parts[1], parts[2], parts[3], parts[4])
+
+    ensure_dir(os.path.dirname(original_path))
+    shutil.copy2(backup_path, original_path)
+
+    if tikz_backup_path and os.path.isdir(tikz_backup_path):
+        base_name = os.path.basename(original_path).replace(".tex", "")
+        tikz_target = os.path.join(os.path.dirname(original_path), f"{base_name} 相关图")
+        if not os.path.exists(tikz_target):
+            shutil.copytree(tikz_backup_path, tikz_target)
+
+    record["restored"] = True
+    _clear_advanced_search_result_cache()
+    clear_statistics_cache()
+    _update_chapter_indexes_from_ui()
+
+def _backup_root_dir() -> str:
+    return os.path.join(BASE_DIR, ".backups")
+
+def _strip_backup_timestamp(filename: str) -> str:
+    stem, ext = os.path.splitext(filename)
+    stem = re.sub(r"\.\d{8}-\d{6}(?:-\d{6})?$", "", stem)
+    return stem + (ext or ".tex")
+
+def _backup_original_path(backup_path: str) -> str:
+    rel_path = os.path.relpath(os.path.abspath(backup_path), _backup_root_dir())
+    rel_dir = os.path.dirname(rel_path)
+    original_filename = _strip_backup_timestamp(os.path.basename(backup_path))
+    return os.path.join(BASE_DIR, rel_dir, original_filename)
+
+def _backup_deleted_at(backup_path: str) -> str:
+    stem = os.path.splitext(os.path.basename(backup_path))[0]
+    match = re.search(r"\.(\d{8})-(\d{6})(?:-(\d{6}))?$", stem)
+    if not match:
+        return ""
+    date_s, time_s, micro_s = match.groups()
+    try:
+        dt = datetime.datetime.strptime(date_s + time_s, "%Y%m%d%H%M%S")
+        if micro_s:
+            dt = dt.replace(microsecond=int(micro_s))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ""
+
+def _find_tikz_backup_for_question_backup(backup_path: str, original_path: str) -> str:
+    root = _backup_root_dir()
+    base_name = os.path.basename(original_path).replace(".tex", "")
+    rel_original_dir = os.path.relpath(os.path.dirname(original_path), BASE_DIR)
+    backup_parent = os.path.join(root, rel_original_dir)
+    if not os.path.isdir(backup_parent):
+        return ""
+
+    candidates = []
+    prefix = f"{base_name} 相关图."
+    for name in os.listdir(backup_parent):
+        full_path = os.path.join(backup_parent, name)
+        if os.path.isdir(full_path) and name.startswith(prefix):
+            candidates.append(full_path)
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda p: os.path.getmtime(p))
+
+def scan_question_backup_records():
+    root = _backup_root_dir()
+    chapters_backup = os.path.join(root, "chapters")
+    if not os.path.isdir(chapters_backup):
+        return []
+
+    records = []
+    for walk_root, dirs, files in os.walk(chapters_backup):
+        dirs[:] = [d for d in dirs if "相关图" not in d]
+        for filename in files:
+            if not filename.endswith(".tex"):
+                continue
+            if filename.startswith("content_") or " 图" in filename:
+                continue
+            backup_path = os.path.join(walk_root, filename)
+            original_path = _backup_original_path(backup_path)
+            original_filename = os.path.basename(original_path)
+            try:
+                with open(backup_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception:
+                content = ""
+
+            records.append({
+                "id": hashlib.md5(backup_path.encode("utf-8")).hexdigest()[:12],
+                "label": format_question_title(original_filename),
+                "original_path": original_path,
+                "backup_path": backup_path,
+                "tikz_backup_path": _find_tikz_backup_for_question_backup(backup_path, original_path),
+                "content": content,
+                "csv_rows": [],
+                "deleted_at": _backup_deleted_at(backup_path),
+                "restored": os.path.exists(original_path),
+            })
+
+    records.sort(key=lambda rec: os.path.getmtime(rec["backup_path"]) if os.path.exists(rec["backup_path"]) else 0, reverse=True)
+    return records
+
+def permanently_delete_backup_record(record: dict):
+    backup_path = record.get("backup_path") or ""
+    tikz_backup_path = record.get("tikz_backup_path") or ""
+
+    root = os.path.abspath(_backup_root_dir())
+    targets = []
+    if backup_path and os.path.isfile(backup_path):
+        targets.append(os.path.abspath(backup_path))
+    if tikz_backup_path and os.path.isdir(tikz_backup_path):
+        targets.append(os.path.abspath(tikz_backup_path))
+
+    for target in targets:
+        try:
+            if os.path.commonpath([root, target]) != root:
+                raise ValueError("备份路径不在 .backups 目录内，已拒绝删除。")
+        except ValueError:
+            raise ValueError("备份路径不在 .backups 目录内，已拒绝删除。")
+
+    for target in targets:
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        elif os.path.isfile(target):
+            os.remove(target)
+
+def clear_all_question_backups():
+    records = scan_question_backup_records()
+    deleted_count = 0
+    for record in records:
+        permanently_delete_backup_record(record)
+        deleted_count += 1
+
+    chapters_backup = os.path.join(_backup_root_dir(), "chapters")
+    if os.path.isdir(chapters_backup):
+        for walk_root, dirs, files in os.walk(chapters_backup, topdown=False):
+            for dirname in dirs:
+                full_path = os.path.join(walk_root, dirname)
+                if "相关图." in dirname and os.path.isdir(full_path):
+                    shutil.rmtree(full_path)
+            if walk_root != chapters_backup and not os.listdir(walk_root):
+                os.rmdir(walk_root)
+    return deleted_count
+
+@st.dialog("恢复误删题目", width="large")
+def restore_deleted_questions_dialog():
+    records = st.session_state.get("delete_mode_deleted_records", [])
+
+    c_title, c_exit = st.columns([4, 1], vertical_alignment="center")
+    with c_title:
+        st.caption("这里显示本次删除模式中删除、且尚未恢复的题目。恢复会复制备份回原路径，并同步 CSV 索引和章节索引。")
+    with c_exit:
+        st.markdown('<span class="delete-exit-btn-hook"></span>', unsafe_allow_html=True)
+        with st.container(key="restore_deleted_close_wrap"):
+            if st.button("退出恢复界面", key="restore_deleted_close", use_container_width=True):
+                st.rerun()
+
+    active_records = [
+        rec for rec in records
+        if not rec.get("restored") and rec.get("backup_path") and os.path.exists(rec.get("backup_path"))
+    ]
+
+    if not active_records:
+        st.info("本次删除模式中暂无可恢复的误删题目。")
+        return
+
+    for idx, rec in enumerate(active_records):
+        q_label = rec.get("label") or format_question_title(os.path.basename(rec.get("original_path", "")))
+        content = rec.get("content", "")
+        extra_label = ""
+        if rec.get("deleted_at"):
+            extra_label = f"<span style='font-size:0.5em; color:gray; font-weight:normal; margin-left: 10px;'>删除于 {html.escape(rec.get('deleted_at'))}</span>"
+
+        render_static_question_header(q_label, content, rec.get("original_path", ""), extra_html_label=extra_label)
+        try:
+            st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"渲染错误: {e}")
+
+        st.markdown('<span class="blue-restore-btn-hook"></span>', unsafe_allow_html=True)
+        restore_key = f"restore_deleted_{rec.get('id', idx)}"
+        original_exists = os.path.exists(rec.get("original_path", ""))
+        restore_label = "原位置已有同名题" if original_exists else "↩️ 恢复该题"
+        with st.container(key=f"restore_deleted_btn_wrap_{rec.get('id', idx)}"):
+            if st.button(
+                restore_label,
+                key=restore_key,
+                type="primary",
+                use_container_width=True,
+                disabled=original_exists,
+            ):
+                try:
+                    restore_deleted_question_and_sync(rec)
+                    st.toast(f"已恢复 {q_label}", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"恢复失败: {_format_file_write_error(e)}")
+        st.divider()
+
+@st.dialog("管理备份问题", width="large")
+def manage_backup_questions_dialog():
+    records = scan_question_backup_records()
+
+    c_search, c_clear, c_exit = st.columns([3.1, 1.35, 1.05], vertical_alignment="bottom")
+    with c_search:
+        query = st.text_input(
+            "查找备份题目",
+            placeholder="输入题号、试卷名、知识板块或题干关键词...",
+            key="backup_manager_query",
+            label_visibility="collapsed",
+        )
+    with c_clear:
+        st.markdown('<span class="backup-manage-btn-hook"></span>', unsafe_allow_html=True)
+        with st.container(key="backup_manager_clear_all_wrap"):
+            if st.button("清除所有备份问题", key="backup_manager_clear_all", use_container_width=True):
+                st.session_state["backup_manager_confirm_clear"] = True
+    with c_exit:
+        st.markdown('<span class="delete-exit-btn-hook"></span>', unsafe_allow_html=True)
+        with st.container(key="backup_manager_close_wrap"):
+            if st.button("退出备份管理界面", key="backup_manager_close", use_container_width=True):
+                st.session_state["backup_manager_confirm_clear"] = False
+                st.rerun()
+
+    if st.session_state.get("backup_manager_confirm_clear"):
+        st.warning("确认永久删除所有题目备份吗？该操作不会进入回收站，也无法通过本系统恢复。")
+        c_ok, c_cancel, _ = st.columns([1, 1, 3])
+        with c_ok:
+            st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
+            with st.container(key="backup_manager_clear_ok_wrap"):
+                if st.button("确认清除", key="backup_manager_clear_ok", type="primary", use_container_width=True):
+                    try:
+                        count = clear_all_question_backups()
+                        st.session_state["backup_manager_confirm_clear"] = False
+                        st.toast(f"已清除 {count} 条题目备份。", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"清除失败: {_format_file_write_error(e)}")
+        with c_cancel:
+            if st.button("取消", key="backup_manager_clear_cancel", use_container_width=True):
+                st.session_state["backup_manager_confirm_clear"] = False
+                st.rerun()
+
+    if not records:
+        st.info("当前没有可管理的题目备份。")
+        return
+
+    q = (query or "").strip()
+    if q:
+        records = [
+            rec for rec in records
+            if q in (rec.get("label", "") or "")
+            or q in (rec.get("content", "") or "")
+            or q in (rec.get("original_path", "") or "")
+            or q in (rec.get("backup_path", "") or "")
+            or q in (rec.get("deleted_at", "") or "")
+        ]
+
+    st.caption(f"当前显示 {len(records)} 条题目备份。恢复会复制备份回原路径；永久删除只会删除 .backups 中的备份文件。")
+
+    if not records:
+        st.warning("未找到匹配的备份题目。")
+        return
+
+    for idx, rec in enumerate(records):
+        q_label = rec.get("label") or format_question_title(os.path.basename(rec.get("original_path", "")))
+        content = rec.get("content", "")
+        extra_label = ""
+        if rec.get("deleted_at"):
+            extra_label = f"<span style='font-size:0.5em; color:gray; font-weight:normal; margin-left: 10px;'>备份于 {html.escape(rec.get('deleted_at'))}</span>"
+
+        render_static_question_header(q_label, content, rec.get("original_path", ""), extra_html_label=extra_label)
+        try:
+            st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"渲染错误: {e}")
+
+        c_restore, c_delete = st.columns([1, 1])
+        with c_restore:
+            st.markdown('<span class="blue-restore-btn-hook"></span>', unsafe_allow_html=True)
+            original_exists = os.path.exists(rec.get("original_path", ""))
+            restore_label = "原位置已有同名题" if original_exists else "↩️ 恢复该题"
+            with st.container(key=f"backup_restore_btn_wrap_{rec.get('id', idx)}"):
+                if st.button(
+                    restore_label,
+                    key=f"backup_restore_{rec.get('id', idx)}",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=original_exists,
+                ):
+                    try:
+                        restore_deleted_question_and_sync(rec)
+                        st.toast(f"已恢复 {q_label}", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"恢复失败: {_format_file_write_error(e)}")
+        with c_delete:
+            st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
+            with st.container(key=f"backup_delete_wrap_{rec.get('id', idx)}"):
+                if st.button("永久删除", key=f"backup_delete_{rec.get('id', idx)}", type="primary", use_container_width=True):
+                    try:
+                        permanently_delete_backup_record(rec)
+                        st.toast(f"已永久删除 {q_label} 的备份。", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"永久删除失败: {_format_file_write_error(e)}")
+        st.divider()
+
+DELETE_SKIP_CONFIRM_KEY = "delete_skip_confirm_until_refresh"
+
+def _format_file_write_error(e: Exception) -> str:
+    msg = str(e)
+    is_permission_error = isinstance(e, PermissionError)
+    has_windows_lock_code = "WinError 32" in msg or "WinError 5" in msg
+    if "题库索引表.csv" in msg:
+        return (
+            f"{msg}\n\n"
+            "处理办法：请先关闭 Excel/WPS/编辑器中打开的 utils/题库索引表.csv，"
+            "并确认只保留一个题库系统页面在执行删除/恢复，然后重试。"
+        )
+    if is_permission_error or has_windows_lock_code or "无法写入文件" in msg:
+        return (
+            f"{msg}\n\n"
+            "处理办法：请关闭正在打开相关题目文件、备份文件或目录的编辑器/预览程序，"
+            "并避免同时点击多个删除/恢复/清除按钮，然后重试。"
+        )
+    return msg
+
+def _execute_delete_question_from_ui(fpath: str, q_label: str):
+    try:
+        backup_path, removed_rows = delete_question_file_and_sync(fpath)
+        st.toast(f"已删除 {q_label}，移除索引记录 {removed_rows} 条。", icon="✅")
+        if backup_path:
+            st.session_state["last_deleted_question_backup"] = backup_path
+        st.rerun()
+    except Exception as e:
+        st.error(f"删除失败: {_format_file_write_error(e)}")
+
+@st.dialog("确认删除该题", width="small")
+def confirm_delete_question_dialog(fpath: str, q_label: str, key_hash: str):
+    st.warning(f"确认删除：{q_label}？")
+    st.caption("删除会移除题目文件、CSV 索引记录和章节索引引用，原题目文件会自动备份到 .backups。若误删，可点删除模式右上角的“恢复误删题目”恢复本次删除记录，或点“管理备份问题”查找历史备份；当前备份不会自动定期清理。")
+
+    c_opt, c_ok, c_cancel = st.columns([2.2, 1, 1], vertical_alignment="bottom")
+    with c_opt:
+        skip_confirm = st.checkbox(
+            "本次彻底刷新页面前不再提醒",
+            key=f"delete_skip_confirm_checkbox_{key_hash}",
+        )
+    with c_ok:
+        if st.button("确认", key=f"delete_confirm_ok_{key_hash}", type="primary", use_container_width=True):
+            if skip_confirm:
+                st.session_state[DELETE_SKIP_CONFIRM_KEY] = True
+            _execute_delete_question_from_ui(fpath, q_label)
+    with c_cancel:
+        if st.button("取消", key=f"delete_confirm_cancel_{key_hash}", use_container_width=True):
+            st.rerun()
+
+def render_static_question_header(q_label: str, content: str, fpath: str, extra_html_label: str = ""):
+    st.markdown(f"### {html.escape(q_label)} {extra_html_label}", unsafe_allow_html=True)
+
+    from utils.latex_ops import parse_meta_data
+    meta, _ = parse_meta_data(content)
+    diff = (meta.get("难度星级", "") or "").strip()
+    tags = (meta.get("标签", "") or "").strip()
+    remark = (meta.get("备注", "") or "").strip()
+
+    tag_badges = ""
+    for tag in [t.strip() for t in tags.split("，") if t.strip()]:
+        tag_badges += f"<span class='static-meta-badge static-meta-tag'>🏷️ {html.escape(tag)}</span>"
+    if not tag_badges:
+        tag_badges = "<span class='static-meta-empty'>无标签</span>"
+
+    diff_text = html.escape(diff) if diff else "未设置"
+    remark_text = html.escape(remark) if remark else "无备注"
+
+    st.markdown("""
+    <style>
+    .static-meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        align-items: center;
+        margin: -2px 0 12px 0;
+        padding: 10px 12px;
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.72);
+    }
+    .static-meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #1f2328;
+        font-size: 14px;
+        line-height: 1.45;
+    }
+    .static-meta-label {
+        font-weight: 700;
+    }
+    .static-meta-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 14px;
+        line-height: 1.45;
+        font-weight: 600;
+    }
+    .static-meta-tag {
+        color: #0366d6;
+        background-color: #f1f8ff;
+        border: 1px solid #c8e1ff;
+    }
+    .static-meta-empty {
+        color: #8c959f;
+        font-size: 13px;
+    }
+    .static-meta-remark {
+        padding: 2px 8px;
+        color: #8a6500;
+        background-color: #fffdef;
+        border: 1px solid #dfd8c2;
+        border-radius: 6px;
+        font-weight: 500;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+        <div class="static-meta-row">
+            <div class="static-meta-item"><span class="static-meta-label">难度星级：</span><span>{diff_text}</span></div>
+            <div class="static-meta-item"><span class="static-meta-label">标签：</span>{tag_badges}</div>
+            <div class="static-meta-item"><span class="static-meta-label">备注：</span><span class="static-meta-remark">{remark_text}</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def render_delete_question_item(fpath: str, q_label: str = None, content: str = None, key_prefix: str = "delete_mode", extra_html_label: str = "", show_header: bool = True):
+    if not fpath or not os.path.exists(fpath):
+        return
+
+    if content is None:
+        with open(fpath, "r", encoding="utf-8") as f:
+            content = f.read()
+
+    q_label = q_label or format_question_title(os.path.basename(fpath))
+    if show_header:
+        render_static_question_header(q_label, content, fpath, extra_html_label=extra_html_label)
+
+    try:
+        st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"渲染错误: {e}")
+
+    key_hash = hashlib.md5(f"{key_prefix}:{fpath}".encode("utf-8")).hexdigest()[:12]
+    st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
+    if st.button("🗑️ 删除该题", key=f"{key_prefix}_delete_{key_hash}", type="primary", use_container_width=True):
+        if st.session_state.get(DELETE_SKIP_CONFIRM_KEY):
+            _execute_delete_question_from_ui(fpath, q_label)
+        else:
+            confirm_delete_question_dialog(fpath, q_label, key_hash)
 
 def ocr_image_to_latex(images=None):
     """调用 AI 接口识别图片中的数学公式 (支持多张)
@@ -2469,8 +3130,199 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
             st.empty()
                              
 # ================= 页面：浏览/编辑 =================
-def page_browse(is_exam_mode=False):
-    if not is_exam_mode:
+def page_browse(is_exam_mode=False, is_delete_mode=False):
+    if is_delete_mode:
+        st.markdown("""
+        <style>
+        div[data-testid="element-container"]:has(.red-btn-hook) + div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.red-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button,
+        div[class*="st-key-delete_mode_exit_btn_wrap"] button,
+        div[class*="st-key-restore_deleted_close_wrap"] button,
+        div[class*="st-key-backup_manager_close_wrap"] button,
+        div[class*="st-key-backup_manager_clear_ok_wrap"] button,
+        div[class*="st-key-backup_delete_wrap_"] button,
+        div[class*="st-key-delete_mode_exit_btn"] button,
+        div[class*="st-key-restore_deleted_close"] button,
+        div[class*="st-key-backup_manager_close"] button,
+        div[class*="st-key-backup_manager_clear_ok"] button,
+        div[class*="st-key-backup_delete_"] button {
+            background-color: #d73a49 !important;
+            border-color: #d73a49 !important;
+            color: #ffffff !important;
+            font-weight: 700 !important;
+        }
+        div[data-testid="element-container"]:has(.red-btn-hook) + div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.red-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button:hover,
+        div[class*="st-key-delete_mode_exit_btn_wrap"] button:hover,
+        div[class*="st-key-restore_deleted_close_wrap"] button:hover,
+        div[class*="st-key-backup_manager_close_wrap"] button:hover,
+        div[class*="st-key-backup_manager_clear_ok_wrap"] button:hover,
+        div[class*="st-key-backup_delete_wrap_"] button:hover,
+        div[class*="st-key-delete_mode_exit_btn"] button:hover,
+        div[class*="st-key-restore_deleted_close"] button:hover,
+        div[class*="st-key-backup_manager_close"] button:hover,
+        div[class*="st-key-backup_manager_clear_ok"] button:hover,
+        div[class*="st-key-backup_delete_"] button:hover {
+            background-color: #b92534 !important;
+            border-color: #b92534 !important;
+            color: #ffffff !important;
+        }
+        div[data-testid="column"]:has(.delete-exit-btn-hook) div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.delete-exit-btn-hook) + div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.delete-exit-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button,
+        div[class*="st-key-delete_mode_exit_btn_wrap"] button,
+        div[class*="st-key-restore_deleted_close_wrap"] button,
+        div[class*="st-key-backup_manager_close_wrap"] button {
+            min-height: 58px !important;
+            height: 58px !important;
+            padding: 0.25rem 0.35rem !important;
+            background-color: #d73a49 !important;
+            border-color: #d73a49 !important;
+            color: #ffffff !important;
+            border-radius: 8px !important;
+            font-weight: 750 !important;
+            line-height: 1.15 !important;
+            white-space: normal !important;
+        }
+        div[data-testid="column"]:has(.delete-exit-btn-hook) div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.delete-exit-btn-hook) + div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.delete-exit-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button:hover,
+        div[class*="st-key-delete_mode_exit_btn_wrap"] button:hover,
+        div[class*="st-key-restore_deleted_close_wrap"] button:hover,
+        div[class*="st-key-backup_manager_close_wrap"] button:hover {
+            background-color: #b92534 !important;
+            border-color: #b92534 !important;
+            color: #ffffff !important;
+        }
+        div[data-testid="column"]:has(.delete-exit-btn-hook) div[data-testid="stButton"] > button p,
+        div[data-testid="element-container"]:has(.delete-exit-btn-hook) + div[data-testid="stButton"] > button p,
+        div[data-testid="element-container"]:has(.delete-exit-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button p,
+        div[class*="st-key-delete_mode_exit_btn_wrap"] button p,
+        div[class*="st-key-restore_deleted_close_wrap"] button p,
+        div[class*="st-key-backup_manager_close_wrap"] button p {
+            white-space: pre-line !important;
+            line-height: 1.15 !important;
+        }
+        div[data-testid="column"]:has(.delete-restore-btn-hook) div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.delete-restore-btn-hook) + div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.delete-restore-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.blue-restore-btn-hook) + div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.blue-restore-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button,
+        div[class*="st-key-delete_mode_restore_btn_wrap"] button,
+        div[class*="st-key-restore_deleted_btn_wrap_"] button,
+        div[class*="st-key-backup_restore_btn_wrap_"] button,
+        div[class*="st-key-delete_mode_restore_btn"] button,
+        div[class*="st-key-restore_deleted_"] button,
+        div[class*="st-key-backup_restore_"] button {
+            min-height: 58px !important;
+            height: 58px !important;
+            padding: 0.25rem 0.35rem !important;
+            background-color: #0969da !important;
+            border-color: #0969da !important;
+            color: #ffffff !important;
+            border-radius: 8px !important;
+            font-weight: 750 !important;
+            line-height: 1.15 !important;
+            white-space: normal !important;
+        }
+        div[data-testid="column"]:has(.delete-restore-btn-hook) div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.delete-restore-btn-hook) + div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.delete-restore-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.blue-restore-btn-hook) + div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.blue-restore-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button:hover,
+        div[class*="st-key-delete_mode_restore_btn_wrap"] button:hover,
+        div[class*="st-key-restore_deleted_btn_wrap_"] button:hover,
+        div[class*="st-key-backup_restore_btn_wrap_"] button:hover,
+        div[class*="st-key-delete_mode_restore_btn"] button:hover,
+        div[class*="st-key-restore_deleted_"] button:hover,
+        div[class*="st-key-backup_restore_"] button:hover {
+            background-color: #0757b8 !important;
+            border-color: #0757b8 !important;
+            color: #ffffff !important;
+        }
+        div[data-testid="column"]:has(.delete-restore-btn-hook) div[data-testid="stButton"] > button p,
+        div[data-testid="element-container"]:has(.delete-restore-btn-hook) + div[data-testid="stButton"] > button p,
+        div[data-testid="element-container"]:has(.delete-restore-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button p,
+        div[class*="st-key-delete_mode_restore_btn_wrap"] button p,
+        div[class*="st-key-restore_deleted_btn_wrap_"] button p,
+        div[class*="st-key-backup_restore_btn_wrap_"] button p {
+            white-space: pre-line !important;
+            line-height: 1.15 !important;
+        }
+        div[data-testid="column"]:has(.backup-manage-btn-hook) div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.backup-manage-btn-hook) + div[data-testid="stButton"] > button,
+        div[data-testid="element-container"]:has(.backup-manage-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button,
+        div[class*="st-key-delete_mode_backup_manager_btn_wrap"] button,
+        div[class*="st-key-backup_manager_clear_all_wrap"] button,
+        div[class*="st-key-delete_mode_backup_manager_btn"] button,
+        div[class*="st-key-backup_manager_clear_all"] button {
+            min-height: 58px !important;
+            height: 58px !important;
+            padding: 0.25rem 0.35rem !important;
+            background-color: #f2cc60 !important;
+            border-color: #d4a72c !important;
+            color: #1f2328 !important;
+            border-radius: 8px !important;
+            font-weight: 800 !important;
+            line-height: 1.15 !important;
+            white-space: normal !important;
+        }
+        div[data-testid="column"]:has(.backup-manage-btn-hook) div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.backup-manage-btn-hook) + div[data-testid="stButton"] > button:hover,
+        div[data-testid="element-container"]:has(.backup-manage-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button:hover,
+        div[class*="st-key-delete_mode_backup_manager_btn_wrap"] button:hover,
+        div[class*="st-key-backup_manager_clear_all_wrap"] button:hover,
+        div[class*="st-key-delete_mode_backup_manager_btn"] button:hover,
+        div[class*="st-key-backup_manager_clear_all"] button:hover {
+            background-color: #e3b341 !important;
+            border-color: #bf8700 !important;
+            color: #1f2328 !important;
+        }
+        div[data-testid="column"]:has(.backup-manage-btn-hook) div[data-testid="stButton"] > button p,
+        div[data-testid="element-container"]:has(.backup-manage-btn-hook) + div[data-testid="stButton"] > button p,
+        div[data-testid="element-container"]:has(.backup-manage-btn-hook) + div[data-testid="element-container"] div[data-testid="stButton"] > button p,
+        div[class*="st-key-delete_mode_backup_manager_btn_wrap"] button p,
+        div[class*="st-key-backup_manager_clear_all_wrap"] button p {
+            white-space: pre-line !important;
+            line-height: 1.15 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        c_header, c_search, c_actions = st.columns([1, 1.2, 1.4])
+        with c_header:
+            st.header("🗑️ 删除题库问题")
+            st.subheader("删除模式")
+            if "browse_mode" not in st.session_state:
+                st.session_state["browse_mode"] = "按知识板块浏览"
+            browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览", "按录入顺序浏览"], horizontal=True, label_visibility="collapsed", key="browse_mode")
+
+        with c_search:
+            render_advanced_search_inline()
+
+        with c_actions:
+            st.write("")
+            st.write("")
+            exit_btn_col, restore_btn_col, backup_btn_col = st.columns([1, 1, 1])
+            with exit_btn_col:
+                st.markdown('<span class="delete-exit-btn-hook"></span>', unsafe_allow_html=True)
+                with st.container(key="delete_mode_exit_btn_wrap"):
+                    if st.button("退出\n删除模式", key="delete_mode_exit_btn", type="secondary", use_container_width=True):
+                        st.session_state["tools_subpage"] = None
+                        st.session_state["adv_search_active"] = False
+                        _clear_advanced_search_result_cache()
+                        st.rerun()
+            with restore_btn_col:
+                st.markdown('<span class="delete-restore-btn-hook"></span>', unsafe_allow_html=True)
+                with st.container(key="delete_mode_restore_btn_wrap"):
+                    if st.button("恢复\n误删题目", key="delete_mode_restore_btn", type="primary", use_container_width=True):
+                        restore_deleted_questions_dialog()
+            with backup_btn_col:
+                st.markdown('<span class="backup-manage-btn-hook"></span>', unsafe_allow_html=True)
+                with st.container(key="delete_mode_backup_manager_btn_wrap"):
+                    if st.button("管理\n备份问题", key="delete_mode_backup_manager_btn", type="secondary", use_container_width=True):
+                        manage_backup_questions_dialog()
+
+    elif not is_exam_mode:
         c_header, c_search = st.columns([1, 1.5])
         with c_header:
             st.header("🔍 全局浏览与编辑")
@@ -2490,8 +3342,10 @@ def page_browse(is_exam_mode=False):
     
     # 根据红线截图，我们在这里画一条醒目的红线
     st.markdown('<hr style="border-top: 1px solid #e1e4e8; margin-top: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
+    if is_delete_mode:
+        st.caption("删除会移除题目文件、CSV 索引记录和对应章节索引；原题目文件会自动备份到 .backups。若误删，可点右上角“恢复误删题目”恢复本次删除记录，或点“管理备份问题”查找历史备份；当前备份不会自动定期清理。")
     
-    if not is_exam_mode and st.session_state.get("recent_saved_active") and st.session_state.get("recent_saved_paths"):
+    if not is_exam_mode and not is_delete_mode and st.session_state.get("recent_saved_active") and st.session_state.get("recent_saved_paths"):
         paths = [p for p in st.session_state.get("recent_saved_paths", []) if p and os.path.exists(p)]
         c1, c2 = st.columns([1, 1])
         with c1:
@@ -2603,7 +3457,7 @@ def page_browse(is_exam_mode=False):
     # === 如果激活了搜索，优先显示搜索结果 ===
     if not is_exam_mode and st.session_state.get("adv_search_active"):
         if _adv_search_has_query():
-            render_advanced_search_results()
+            render_advanced_search_results(is_delete_mode=is_delete_mode)
             return  # 搜索状态下，不显示下方的常规浏览内容
         st.session_state["adv_search_active"] = False
     
@@ -2771,6 +3625,11 @@ def page_browse(is_exam_mode=False):
                                     
                                 q_label = format_question_title(fname)
 
+                                if is_delete_mode:
+                                    render_delete_question_item(fpath, q_label, content, key_prefix="delete_subject_all_years")
+                                    st.divider()
+                                    continue
+
                                 render_question_header(q_label, content, fpath)
                                 
                                 if is_exam_mode:
@@ -2903,6 +3762,11 @@ def page_browse(is_exam_mode=False):
                                 
                                 # 提取显示标签
                                 q_label = format_question_title(fname)
+
+                                if is_delete_mode:
+                                    render_delete_question_item(fpath, q_label, content, key_prefix="delete_subject_year")
+                                    st.divider()
+                                    continue
 
                                 render_question_header(q_label, content, fpath)
                                 
@@ -3123,12 +3987,14 @@ def page_browse(is_exam_mode=False):
                         questions = get_questions_by_paper(year, paper_name)
                     if questions and view_mode == "单题选择模式":
                         st.write("")
-                        st.subheader("选择题目进行编辑")
+                        st.subheader("选择题目进行删除" if is_delete_mode else "选择题目进行编辑")
                         
                         # 使用 session_state 记录当前选中的题目索引
                         select_key = f"selected_q_idx_{year}_{paper_name}"
                         if select_key not in st.session_state:
                             st.session_state[select_key] = 0
+                        if st.session_state[select_key] >= len(questions):
+                            st.session_state[select_key] = max(0, len(questions) - 1)
                         
                         # 按钮网格布局 (每行 3 个，适配左栏宽度)
                         num_cols = 3
@@ -3181,6 +4047,12 @@ def page_browse(is_exam_mode=False):
                                 
                             # 题目编号
                             q_label = format_question_title(q['file'])
+
+                            if is_delete_mode:
+                                render_delete_question_item(q_path, q_label, content, key_prefix="delete_paper_all")
+                                st.divider()
+                                continue
+
                             render_question_header(q_label, content, q_path)
                             
                             if is_exam_mode:
@@ -3416,6 +4288,14 @@ def page_browse(is_exam_mode=False):
                         extra_label = f"<span style='font-size:0.5em; color:gray; font-weight:normal; margin-left: 10px;'>🕒 {time_str}</span>"
                         
                     lazy_key = hashlib.md5(f"time_browse:{fpath}".encode()).hexdigest()[:10]
+
+                    if is_delete_mode:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        render_delete_question_item(fpath, q_label, content, key_prefix="delete_time", extra_html_label=extra_label)
+                        st.divider()
+                        continue
+
                     st.markdown(f"### {q_label} {extra_label}", unsafe_allow_html=True)
                     
                     if is_exam_mode:
@@ -3620,7 +4500,10 @@ def page_browse(is_exam_mode=False):
             if "browse_mode" in locals():
                 q_fname = os.path.basename(selected_file_path)
                 q_label = format_question_title(q_fname)
-                render_question_header(q_label, current_content, selected_file_path)
+                if is_delete_mode:
+                    render_static_question_header(q_label, current_content, selected_file_path)
+                else:
+                    render_question_header(q_label, current_content, selected_file_path)
                 
             if is_exam_mode:
                 st.subheader("👁️ 问题预览")
@@ -3645,6 +4528,8 @@ def page_browse(is_exam_mode=False):
                         if st.session_state.get("ai_exam_active"):
                             st.session_state["ai_exam_modified"] = True
                         st.rerun()
+            elif is_delete_mode:
+                render_delete_question_item(selected_file_path, q_label, current_content, key_prefix="delete_selected", show_header=False)
             else:
                 col_edit, col_preview = st.columns([1, 1])
                 
@@ -3670,7 +4555,7 @@ def page_browse(is_exam_mode=False):
                 
                 render_ai_solution_panel(selected_file_path, q_label, key_prefix="ai_solution_v1")
                         
-            if not is_exam_mode:
+            if not is_exam_mode and not is_delete_mode:
                 with st.expander("查看文件路径"):
                     st.code(selected_file_path)
 
@@ -5013,15 +5898,18 @@ def render_typesetting_workspace():
                     
         st.divider()
 
-# ================= 页面：批量工具 =================
+# ================= 页面：工具箱 =================
 def page_tools():
-    st.header("🛠️ 批量工具箱")
+    st.header("🛠️ 工具箱")
 
     if st.session_state.get("tools_subpage") == "tag_edit":
-        if st.button("⬅️ 返回批量工具箱", type="secondary"):
+        if st.button("⬅️ 返回工具箱", type="secondary"):
             st.session_state["tools_subpage"] = None
             st.rerun()
         page_tag_edit()
+        return
+    if st.session_state.get("tools_subpage") == "delete_questions":
+        page_browse(is_delete_mode=True)
         return
     
     st.markdown("""
@@ -5205,6 +6093,22 @@ def page_tools():
         st.markdown("<style>div:has(> button[key='btn_tools_tag_edit']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
         if st.button("进入标签与属性修改", key="btn_tools_tag_edit", use_container_width=True):
             st.session_state["tools_subpage"] = "tag_edit"
+            st.rerun()
+
+    with r2_c3:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🗑️ 6. 删除题库问题</div>
+            <div class="tool-desc">
+                进入专用删除模式，沿用全局浏览和三级查找定位题目。删除时会先把题目文件及同名相关图备份到 <code>.backups</code>，再从题库目录移除，并同步 CSV 索引和章节索引；误删可在删除模式右上角“恢复误删题目”恢复本次删除记录，也可点“管理备份问题”查找历史备份。当前备份不会自动定期清理。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_delete_questions']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("开始删除选定问题", key="btn_tools_delete_questions", use_container_width=True):
+            st.session_state["tools_subpage"] = "delete_questions"
+            st.session_state["adv_search_active"] = False
+            _clear_advanced_search_result_cache()
             st.rerun()
 
 def batch_fix_choice_formats():
@@ -5839,66 +6743,98 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     # --- 注入 CSS 实现紧凑同行布局与徽章样式 ---
     st.markdown("""
     <style>
-    /* 限定作用域，避免污染全局布局 */
-    /* 移除对 stHorizontalBlock 的 :has 覆盖，防止左侧边栏布局崩溃 */
-    
-    div[data-testid="column"]:has(.star-col) {
-        width: 100px !important;
-        min-width: 100px !important;
-        max-width: 100px !important;
-        flex: 0 0 auto !important;
-    }
-    div[data-testid="column"]:has(.star-col) iframe {
-        height: 45px !important; /* 强制约束星星组件高度 */
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-    div[data-testid="column"]:has(.tight-lbl) {
-        width: fit-content !important;
-        min-width: fit-content !important;
-        flex: 0 1 auto !important;
-        padding-right: 0px !important;
-        padding-left: 0px !important;
-    }
-    div[data-testid="column"]:has(.tight-lbl) p {
-        margin: 0 !important;
-        padding: 0 !important;
-        line-height: 1;
+    .meta-cell {
         display: flex;
         align-items: center;
-        min-height: 30px; /* 与按钮高度保持一致的基础高度 */
+        min-height: 40px;
+        gap: 5px;
+        white-space: nowrap;
     }
-    div[data-testid="column"]:has(.rem-lbl) {
-        padding-left: 20px !important; /* 强制拉开备注与前面按钮的距离 */
+    .meta-cell .meta-title {
+        color: #1f2328;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+        flex: 0 0 auto;
     }
-    div[data-testid="column"]:has(.tight-btn) {
+    .meta-cell .meta-empty {
+        color: #9a9a9a;
+        font-size: 12px;
+        line-height: 1;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.meta-row-marker) {
+        gap: 8px !important;
+        align-items: center !important;
+    }
+    div[data-testid="column"]:has(.meta-star-cell) {
+        flex: 0 0 220px !important;
+        width: 220px !important;
+        min-width: 220px !important;
+        max-width: 220px !important;
+        margin-right: 12px !important;
+    }
+    div[data-testid="column"]:has(.meta-tag-cell),
+    div[data-testid="column"]:has(.meta-remark-cell) {
+        flex: 0 1 auto !important;
         width: fit-content !important;
-        min-width: 40px !important;
-        flex: 0 0 auto !important;
-        padding-left: 4px !important;
+        min-width: 108px !important;
+        max-width: min(36vw, 420px) !important;
     }
-    
-    /* 淡灰色 + 按钮 */
-    div[data-testid="column"]:has(.tight-btn) div[data-testid="stPopover"] > button {
-        color: #666 !important;
-        background-color: #f5f6f8 !important;
-        border: 1px solid #ddd !important;
-        padding: 0px 10px !important;
-        min-height: 24px !important;
-        height: 24px !important;
+    div[data-testid="column"]:has(.meta-action-cell) {
+        flex: 0 0 52px !important;
+        width: 52px !important;
+        min-width: 52px !important;
+        max-width: 52px !important;
+        justify-content: flex-start !important;
+    }
+    div[data-testid="column"]:has(.meta-tag-action-cell) {
+        margin-right: 12px !important;
+    }
+    div[data-testid="column"]:has(.meta-filler-cell) {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+    div[data-testid="column"]:has(.meta-star-cell),
+    div[data-testid="column"]:has(.meta-tag-cell),
+    div[data-testid="column"]:has(.meta-remark-cell),
+    div[data-testid="column"]:has(.meta-action-cell) {
+        display: flex !important;
+        align-items: center !important;
+        min-height: 44px !important;
+    }
+    div[data-testid="column"]:has(.meta-star-cell) iframe {
+        display: block !important;
+        height: 35px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        transform: translateY(1px);
+    }
+    div[data-testid="column"]:has(.meta-text-cell) p {
+        margin: 0 !important;
+        padding: 0 !important;
         line-height: 1 !important;
-        width: auto !important;
-        border-radius: 12px !important;
-        font-size: 12px !important;
+    }
+    /* 淡灰色 + 按钮 */
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button {
+        color: #6b46c1 !important;
+        background-color: #ffffff !important;
+        border: 1px solid rgba(0, 0, 0, 0.12) !important;
+        padding: 0 !important;
+        min-height: 40px !important;
+        height: 40px !important;
+        width: 52px !important;
+        border-radius: 8px !important;
+        font-size: 19px !important;
+        font-weight: 650 !important;
         margin: 0 !important;
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
-        transform: translateY(3px); /* 微调按钮位置以完美对齐文本 */
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
     }
-    div[data-testid="column"]:has(.tight-btn) div[data-testid="stPopover"] > button:hover {
-        background-color: #e2e6ea !important;
-        border-color: #ccc !important;
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button:hover {
+        background-color: #f7f4ff !important;
+        border-color: rgba(109, 40, 217, 0.28) !important;
     }
     
     /* 现代徽章样式 (Badge) */
@@ -5933,11 +6869,10 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     
     with st.container(border=True):
         # === 统一放在同一行：星级 | 标签 + 按钮 | 备注 + 按钮 ===
-        # 这里用更精细的列宽比例来挤压空间
-        c_star, c_tag_lbl, c_tag_btn, c_rem_lbl, c_rem_btn, _ = st.columns([1.1, 0.7, 0.3, 0.9, 0.3, 2.7], vertical_alignment="center")
+        c_star, c_tag_lbl, c_tag_btn, c_rem_lbl, c_rem_btn, c_filler = st.columns([1.65, 1.05, 0.5, 1.05, 0.5, 7.25], vertical_alignment="center", gap="small")
         
         with c_star:
-            st.markdown("<span class='star-col'></span>", unsafe_allow_html=True)
+            st.markdown("<span class='meta-row-marker meta-star-cell'></span>", unsafe_allow_html=True)
             # 使用更全局唯一的 key，防止在不同页面（全局浏览 vs 搜索结果）复用同一个文件时产生冲突
             import hashlib
             unique_hash = hashlib.md5(f"{fpath}_{q_label}_{extra_html_label}".encode()).hexdigest()[:8]
@@ -5956,12 +6891,12 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
             if tags:
                 # 把逗号分隔的标签拆分成多个小徽章
                 tag_html = "".join([f"<span class='badge-tag'>🏷️ {t.strip()}</span>" for t in tags.split("，") if t.strip()])
-                st.markdown(f"<span class='tight-lbl'></span>**标签：**{tag_html}", unsafe_allow_html=True)
+                st.markdown(f"<div class='meta-cell meta-text-cell meta-tag-cell'><span class='meta-title'>标签：</span>{tag_html}</div>", unsafe_allow_html=True)
             else:
-                st.markdown("<span class='tight-lbl'></span>**标签：**<span style='color:#aaa; font-size:12px;'>无标签</span>", unsafe_allow_html=True)
+                st.markdown("<div class='meta-cell meta-text-cell meta-tag-cell'><span class='meta-title'>标签：</span><span class='meta-empty'>无标签</span></div>", unsafe_allow_html=True)
                 
         with c_tag_btn:
-            st.markdown("<span class='tight-btn'></span>", unsafe_allow_html=True)
+            st.markdown("<span class='meta-action-cell meta-tag-action-cell'></span>", unsafe_allow_html=True)
             tag_popover_key = f"tag_popover_{fpath}_{st.session_state.get(f'tag_version_{fpath}', 0)}"
             with st.popover("➕", help="修改标签"):
                 new_tags_str = st.text_input("编辑标签（逗号“，”分隔）", value=tags, key=f"tag_input_{tag_popover_key}")
@@ -5984,12 +6919,12 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
 
         with c_rem_lbl:
             if remark:
-                st.markdown(f"<span class='rem-lbl tight-lbl'></span>**备注：**<span class='badge-rem'>📝 {remark}</span>", unsafe_allow_html=True)
+                st.markdown(f"<div class='meta-cell meta-text-cell meta-remark-cell'><span class='meta-title'>备注：</span><span class='badge-rem'>📝 {remark}</span></div>", unsafe_allow_html=True)
             else:
-                st.markdown("<span class='rem-lbl tight-lbl'></span>**备注：**<span style='color:#aaa; font-size:12px;'>无备注</span>", unsafe_allow_html=True)
+                st.markdown("<div class='meta-cell meta-text-cell meta-remark-cell'><span class='meta-title'>备注：</span><span class='meta-empty'>无备注</span></div>", unsafe_allow_html=True)
                 
         with c_rem_btn:
-            st.markdown("<span class='tight-btn'></span>", unsafe_allow_html=True)
+            st.markdown("<span class='meta-action-cell meta-rem-action-cell'></span>", unsafe_allow_html=True)
             rem_popover_key = f"rem_popover_{fpath}_{st.session_state.get(f'rem_version_{fpath}', 0)}"
             with st.popover("➕", help="修改备注"):
                 new_rem_str = st.text_input("编辑备注", value=remark, key=f"rem_input_{rem_popover_key}")
@@ -6009,6 +6944,9 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
                         if st.button("取消", key=f"rem_cancel_{rem_popover_key}", type="secondary"):
                             st.session_state[f'rem_version_{fpath}'] = st.session_state.get(f'rem_version_{fpath}', 0) + 1
                             st.rerun()
+
+        with c_filler:
+            st.markdown("<span class='meta-filler-cell'></span>", unsafe_allow_html=True)
 
         # 处理未保存的星级变更弹窗（放到最后，避免打乱单行布局）
         if pending_key in st.session_state:
@@ -6547,7 +7485,7 @@ def page_system_intro():
 - CSV 写入前会检查关键字段与重复 ID，发现异常时阻止写入
 - 搜索缓存会跟随 CSV 文件变化自动失效，减少“刚保存但搜索不到”的情况
 
-如果出现搜索结果异常、统计不准确、题目移动后找不到，优先执行“批量工具”中的一键重建/同步题库索引。
+如果出现搜索结果异常、统计不准确、题目移动后找不到，优先执行“工具箱”中的一键重建/同步题库索引。
 
 ---
 
@@ -6570,7 +7508,7 @@ def page_system_intro():
 - 面向“多条件精确过滤”的检索入口
 - 适合做专题筛选、交叉检索与快速定位
 
-**🛠️ 批量工具**
+**🛠️ 工具箱**
 
 - 面向“全库/批量维护”的工具集合
 - 适合做批量规范化、批量修复、批量结构调整等任务
@@ -6747,7 +7685,7 @@ def render_advanced_search_inline():
             st.session_state["adv_search_active"] = False
             st.rerun()
 
-def render_advanced_search_results():
+def render_advanced_search_results(is_delete_mode=False):
     st.markdown("### 🎯 查找结果")
     
     t1 = st.session_state.get("adv_t1", "全文内容")
@@ -6778,7 +7716,7 @@ def render_advanced_search_results():
             return s_query in item["full_text"]
         return False
 
-    query_key = (t1, q1, t2, q2, t3, q3)
+    query_key = (t1, q1, t2, q2, t3, q3, "delete" if is_delete_mode else "edit")
     if st.session_state.get("adv_last_query") == query_key and st.session_state.get("adv_last_results") is not None:
         results = st.session_state.get("adv_last_results") or []
     else:
@@ -6806,7 +7744,10 @@ def render_advanced_search_results():
 
         page_size = st.selectbox("每页显示", options=[10, 20, 30, 50], index=2, key="adv_results_page_size")
         total_pages = (len(results) + page_size - 1) // page_size
-        page = st.number_input("页码", min_value=1, max_value=max(1, total_pages), value=1, step=1, key="adv_results_page")
+        current_results_page = int(st.session_state.get("adv_results_page", 1) or 1)
+        current_results_page = max(1, min(max(1, total_pages), current_results_page))
+        st.session_state["adv_results_page"] = current_results_page
+        page = st.number_input("页码", min_value=1, max_value=max(1, total_pages), value=current_results_page, step=1, key="adv_results_page")
 
         start = (page - 1) * page_size
         end = min(len(results), start + page_size)
@@ -6820,6 +7761,11 @@ def render_advanced_search_results():
                 content = f.read()
                 
             q_label = format_question_title(fname)
+
+            if is_delete_mode:
+                render_delete_question_item(fpath, q_label, content, key_prefix="delete_search")
+                st.divider()
+                continue
 
             render_question_header(q_label, content, fpath)
             
@@ -7113,7 +8059,7 @@ def main():
     with st.sidebar:
         logo_img_path = os.path.join(BASE_DIR, "fig", "MathCyclus_logo.png")
         if os.path.exists(logo_img_path):
-            st.image(logo_img_path, width=96)
+            st.image(logo_img_path, width=72)
         # 使用 <br> 让 MathCyclus 分成两行，避免挤出边框
         st.markdown('<div class="sol-logo" style="margin-bottom:0; padding-bottom: 10px;">Math<br><span>Cyclus</span></div>', unsafe_allow_html=True)
         if st.button("打开 MathCyclus 题库介绍", key="mathcyclus_demo_btn", help="打开 MathCyclus 题库介绍"):
@@ -7127,8 +8073,8 @@ def main():
             margin: 0 auto 4px auto !important;
         }
         [data-testid="stSidebar"] div[data-testid="stImage"] img {
-            width: 96px !important;
-            max-width: 96px !important;
+            width: 72px !important;
+            max-width: 72px !important;
             height: auto !important;
         }
         /* 覆盖在 Math / Cyclus 文字上的透明点击层 */
@@ -7156,7 +8102,7 @@ def main():
             "📝\n录入新题", 
             "🔍\n全局浏览与编辑", 
             "🖨️\n组卷服务", 
-            "🛠️\n批量工具",
+            "🛠️\n工具箱",
             "🔎\n三级查找",
             "📘\n体系介绍",
             "📖\n规范说明"
@@ -7172,6 +8118,8 @@ def main():
                 st.session_state["browse_mode"] = "按知识板块浏览"
             elif sel != "🔎\n三级查找":
                 st.session_state["adv_search_active"] = False
+            if sel != "🛠️\n工具箱":
+                st.session_state["tools_subpage"] = None
             
         selected_nav = st.radio("工作流导航", nav_options, label_visibility="collapsed", key="main_sidebar_radio", on_change=_on_main_sidebar_nav_change)
         st.session_state["main_nav_selection"] = selected_nav
@@ -7185,7 +8133,7 @@ def main():
         page_browse()
     elif selected_nav == "🖨️\n组卷服务":
         page_exam_paper_generation()
-    elif selected_nav == "🛠️\n批量工具":
+    elif selected_nav == "🛠️\n工具箱":
         page_tools()
     elif selected_nav == "🔎\n三级查找":
         page_advanced_search()
