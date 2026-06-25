@@ -46,12 +46,40 @@ def inject_custom_css():
             overflow-y: scroll;
             scrollbar-gutter: stable;
         }
-        header[data-testid="stHeader"],
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            height: 0 !important;
+        }
         div[data-testid="stToolbar"],
         div[data-testid="stDecoration"],
         #MainMenu {
             visibility: hidden !important;
             height: 0 !important;
+        }
+        [data-testid="collapsedControl"] {
+            visibility: visible !important;
+            position: fixed !important;
+            top: 0.75rem !important;
+            left: 0.75rem !important;
+            z-index: 1002 !important;
+            pointer-events: auto !important;
+        }
+        [data-testid="collapsedControl"] button {
+            visibility: visible !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 2.5rem !important;
+            height: 2.5rem !important;
+            border-radius: 999px !important;
+            border: 1px solid rgba(109, 40, 217, 0.18) !important;
+            background: rgba(255, 255, 255, 0.94) !important;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08) !important;
+            pointer-events: auto !important;
+        }
+        [data-testid="collapsedControl"] button:hover {
+            border-color: rgba(109, 40, 217, 0.3) !important;
+            background: #ffffff !important;
         }
         .stApp {
             overflow-x: hidden;
