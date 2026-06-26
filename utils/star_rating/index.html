@@ -16,15 +16,20 @@
     .container {
       display: flex;
       align-items: center;
+      flex-wrap: nowrap;
       gap: 5px;
+      min-width: 190px;
     }
     .label {
       font-size: 14px;
       font-weight: 600;
       color: #31333F;
+      flex: 0 0 auto;
+      white-space: nowrap;
     }
     .stars-container {
       display: inline-flex;
+      flex: 0 0 auto;
       font-size: 20px;
       cursor: pointer;
       user-select: none;

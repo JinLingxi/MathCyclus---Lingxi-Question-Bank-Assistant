@@ -10,7 +10,7 @@ import html
 import subprocess
 import shutil
 import uuid
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 try:
     from PIL import ImageGrab
 except ImportError:
@@ -21,8 +21,9 @@ import io
 from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
 from services.file_service import atomic_write_text, backup_existing_file, file_change_token
 
-# 加载环境变量
-load_dotenv()
+# 加载根目录环境变量
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(APP_ROOT, ".env"))
 
 from utils.core_config import *
 from utils.file_ops import *
@@ -49,6 +50,7 @@ def inject_custom_css():
         header[data-testid="stHeader"] {
             background: transparent !important;
             height: 0 !important;
+            overflow: visible !important;
         }
         div[data-testid="stToolbar"],
         div[data-testid="stDecoration"],
@@ -56,16 +58,23 @@ def inject_custom_css():
             visibility: hidden !important;
             height: 0 !important;
         }
-        [data-testid="collapsedControl"] {
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapsedControl"] {
+            display: block !important;
             visibility: visible !important;
+            opacity: 1 !important;
             position: fixed !important;
             top: 0.75rem !important;
             left: 0.75rem !important;
-            z-index: 1002 !important;
+            z-index: 2147483647 !important;
             pointer-events: auto !important;
+            transform: none !important;
+            clip: auto !important;
         }
-        [data-testid="collapsedControl"] button {
+        [data-testid="collapsedControl"] button,
+        [data-testid="stSidebarCollapsedControl"] button {
             visibility: visible !important;
+            opacity: 1 !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -77,7 +86,8 @@ def inject_custom_css():
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08) !important;
             pointer-events: auto !important;
         }
-        [data-testid="collapsedControl"] button:hover {
+        [data-testid="collapsedControl"] button:hover,
+        [data-testid="stSidebarCollapsedControl"] button:hover {
             border-color: rgba(109, 40, 217, 0.3) !important;
             background: #ffffff !important;
         }
@@ -231,6 +241,510 @@ def inject_custom_css():
         }
         </style>
     """, unsafe_allow_html=True)
+
+def inject_sidebar_recovery_control():
+    components.html(
+        """
+        <script>
+        (() => {
+            const parentWindow = window.parent;
+            const doc = parentWindow.document;
+            const buttonId = "mc-sidebar-reopen-button";
+            const styleId = "mc-sidebar-reopen-style";
+            const scriptVersion = "2026-06-26.6";
+
+            if (parentWindow.__mcSidebarRecoveryObserver) {
+                parentWindow.__mcSidebarRecoveryObserver.disconnect();
+                delete parentWindow.__mcSidebarRecoveryObserver;
+            }
+            if (parentWindow.__mcSidebarRecoveryTimer) {
+                parentWindow.clearInterval(parentWindow.__mcSidebarRecoveryTimer);
+                delete parentWindow.__mcSidebarRecoveryTimer;
+            }
+
+            doc.body.classList.remove(
+                "mc-force-sidebar-open",
+                "mc-sidebar-ready",
+                "mc-sidebar-user-collapsed"
+            );
+
+            [
+                "mc-sidebar-toggle-button",
+                "mc-sidebar-toggle-style"
+            ].forEach((id) => {
+                const node = doc.getElementById(id);
+                if (node) {
+                    node.remove();
+                }
+            });
+            for (const id of [buttonId, styleId]) {
+                const node = doc.getElementById(id);
+                if (node && node.dataset.mcVersion !== scriptVersion) {
+                    node.remove();
+                }
+            }
+
+            try {
+                parentWindow.localStorage.removeItem("mc-sidebar-user-collapsed");
+            } catch {
+                // Storage can be unavailable in some browser modes.
+            }
+
+            function ensureStyle() {
+                if (doc.getElementById(styleId)) {
+                    return;
+                }
+                const style = doc.createElement("style");
+                style.id = styleId;
+                style.dataset.mcVersion = scriptVersion;
+                style.textContent = `
+                    #${buttonId} {
+                        position: fixed;
+                        top: 12px;
+                        left: 12px;
+                        z-index: 2147483647;
+                        width: 42px;
+                        height: 42px;
+                        border-radius: 999px;
+                        border: 1px solid rgba(109, 40, 217, 0.22);
+                        background: rgba(255, 255, 255, 0.96);
+                        color: #6d28d9;
+                        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+                        display: none;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 0;
+                        cursor: pointer;
+                    }
+                    #${buttonId}.mc-visible {
+                        display: flex;
+                    }
+                    #${buttonId}:hover {
+                        background: #ffffff;
+                        border-color: rgba(109, 40, 217, 0.38);
+                    }
+                    #${buttonId} svg {
+                        width: 22px;
+                        height: 22px;
+                        stroke: currentColor;
+                    }
+                    body.mc-force-sidebar-open [data-testid="stSidebar"] {
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        transform: translateX(0) !important;
+                        left: 0 !important;
+                        width: 110px !important;
+                        min-width: 110px !important;
+                        max-width: 110px !important;
+                        pointer-events: auto !important;
+                    }
+                    body.mc-force-sidebar-open #${buttonId},
+                    body.mc-force-sidebar-open [data-testid="collapsedControl"],
+                    body.mc-force-sidebar-open [data-testid="stSidebarCollapsedControl"] {
+                        display: none !important;
+                    }
+                `;
+                doc.head.appendChild(style);
+            }
+
+            function isVisible(el) {
+                if (!el) {
+                    return false;
+                }
+                const rect = el.getBoundingClientRect();
+                const style = parentWindow.getComputedStyle(el);
+                return rect.width > 0
+                    && rect.height > 0
+                    && style.display !== "none"
+                    && style.visibility !== "hidden"
+                    && style.opacity !== "0";
+            }
+
+            function sidebarIsVisible() {
+                const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+                if (!sidebar || !isVisible(sidebar)) {
+                    return false;
+                }
+                const rect = sidebar.getBoundingClientRect();
+                return rect.width > 40 && rect.right > 40;
+            }
+
+            function isRecoveryButton(el) {
+                return el && (el.id === buttonId || Boolean(el.closest(`#${buttonId}`)));
+            }
+
+            function nativeExpandButton() {
+                const directSelectors = [
+                    '[data-testid="collapsedControl"] button',
+                    '[data-testid="stSidebarCollapsedControl"] button',
+                    'button[data-testid="collapsedControl"]',
+                    'button[data-testid="stSidebarCollapsedControl"]',
+                    '[data-testid="collapsedControl"] [role="button"]',
+                    '[data-testid="stSidebarCollapsedControl"] [role="button"]',
+                    'button[aria-label*="sidebar" i]',
+                    'button[title*="sidebar" i]',
+                    'button[aria-label*="side bar" i]',
+                    'button[title*="side bar" i]',
+                    'button[aria-label*="展开"]',
+                    'button[title*="展开"]',
+                    'button[aria-label*="侧边"]',
+                    'button[title*="侧边"]',
+                    'button[aria-label*="侧栏"]',
+                    'button[title*="侧栏"]'
+                ];
+                for (const selector of directSelectors) {
+                    let el = null;
+                    try {
+                        el = doc.querySelector(selector);
+                    } catch {
+                        el = null;
+                    }
+                    if (el && !isRecoveryButton(el) && !el.closest('[data-testid="stSidebar"]')) {
+                        return el;
+                    }
+                }
+
+                const candidates = Array.from(doc.querySelectorAll('button, [role="button"]'));
+                return candidates.find((el) => {
+                    if (isRecoveryButton(el) || el.closest('[data-testid="stSidebar"]')) {
+                        return false;
+                    }
+                    const rect = el.getBoundingClientRect();
+                    if (rect.left > 120 || rect.top > 100 || rect.width > 80 || rect.height > 80) {
+                        return false;
+                    }
+                    const label = [
+                        el.getAttribute("aria-label") || "",
+                        el.getAttribute("title") || "",
+                        el.textContent || "",
+                        el.outerHTML || ""
+                    ].join(" ");
+                    return /sidebar|side bar|侧边|侧栏|展开|expand|open|chevron.*right|right.*chevron|arrow.*right|right.*arrow/i.test(label);
+                }) || null;
+            }
+
+            function pressButton(el) {
+                if (!el) {
+                    return;
+                }
+                const eventInit = { bubbles: true, cancelable: true, view: parentWindow };
+                for (const type of ["pointerdown", "mousedown", "mouseup"]) {
+                    const EventCtor = type.startsWith("pointer") && parentWindow.PointerEvent
+                        ? parentWindow.PointerEvent
+                        : parentWindow.MouseEvent;
+                    el.dispatchEvent(new EventCtor(type, eventInit));
+                }
+                el.click();
+            }
+
+            function purgeSidebarState(storage) {
+                if (!storage) {
+                    return;
+                }
+                const keys = [];
+                for (let i = 0; i < storage.length; i += 1) {
+                    const key = storage.key(i);
+                    if (!key) {
+                        continue;
+                    }
+                    let value = "";
+                    try {
+                        value = storage.getItem(key) || "";
+                    } catch {
+                        value = "";
+                    }
+                    if (
+                        /sidebar|sideBar|SideBar/i.test(key)
+                        || (/sidebar/i.test(value) && /collapse|collapsed/i.test(value))
+                    ) {
+                        keys.push(key);
+                    }
+                }
+                keys.forEach((key) => storage.removeItem(key));
+            }
+
+            function bindForceOpenCleanup() {
+                const selectors = [
+                    '[data-testid="stSidebarCollapseButton"]',
+                    '[data-testid="stSidebar"] button[aria-label*="collapse" i]',
+                    '[data-testid="stSidebar"] button[title*="collapse" i]',
+                    '[data-testid="stSidebar"] button[aria-label*="close" i]',
+                    '[data-testid="stSidebar"] button[title*="close" i]',
+                    '[data-testid="stSidebar"] button[aria-label*="收起"]',
+                    '[data-testid="stSidebar"] button[title*="收起"]',
+                    '[data-testid="stSidebar"] button[aria-label*="隐藏"]',
+                    '[data-testid="stSidebar"] button[title*="隐藏"]'
+                ];
+                selectors.forEach((selector) => {
+                    let nodes = [];
+                    try {
+                        nodes = Array.from(doc.querySelectorAll(selector));
+                    } catch {
+                        nodes = [];
+                    }
+                    nodes.forEach((node) => {
+                        if (node.dataset.mcSidebarCleanupBound === "1") {
+                            return;
+                        }
+                        node.dataset.mcSidebarCleanupBound = "1";
+                        node.addEventListener("click", () => {
+                            doc.body.classList.remove("mc-force-sidebar-open");
+                        }, { capture: true });
+                    });
+                });
+            }
+
+            function openSidebarWithoutReload() {
+                purgeSidebarState(parentWindow.localStorage);
+                purgeSidebarState(parentWindow.sessionStorage);
+                doc.body.classList.add("mc-force-sidebar-open");
+                bindForceOpenCleanup();
+                parentWindow.setTimeout(update, 150);
+            }
+
+            function ensureButton() {
+                ensureStyle();
+                let button = doc.getElementById(buttonId);
+                if (button) {
+                    return button;
+                }
+                button = doc.createElement("button");
+                button.id = buttonId;
+                button.type = "button";
+                button.dataset.mcVersion = scriptVersion;
+                button.title = "展开侧边栏";
+                button.setAttribute("aria-label", "展开侧边栏");
+                button.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m7 6 6 6-6 6"></path>
+                        <path d="m13 6 6 6-6 6"></path>
+                    </svg>
+                `;
+                button.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+
+                    doc.body.classList.remove(
+                        "mc-force-sidebar-open",
+                        "mc-sidebar-ready",
+                        "mc-sidebar-user-collapsed"
+                    );
+
+                    const native = nativeExpandButton();
+                    if (native) {
+                        pressButton(native);
+                        parentWindow.setTimeout(update, 350);
+                        return;
+                    }
+
+                    openSidebarWithoutReload();
+                });
+                doc.body.appendChild(button);
+                return button;
+            }
+
+            function update() {
+                bindForceOpenCleanup();
+                const button = ensureButton();
+                button.classList.toggle("mc-visible", !sidebarIsVisible() && !doc.body.classList.contains("mc-force-sidebar-open"));
+            }
+
+            update();
+            parentWindow.__mcSidebarRecoveryObserver = new parentWindow.MutationObserver(update);
+            parentWindow.__mcSidebarRecoveryObserver.observe(doc.body, {
+                attributes: true,
+                childList: true,
+                subtree: true
+            });
+            parentWindow.__mcSidebarRecoveryTimer = parentWindow.setInterval(update, 500);
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+AI_ENV_DEFAULTS = {
+    "AI_API_KEY": "",
+    "AI_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "AI_MODEL_NAME": "qwen-vl-plus",
+    "AI_SOLVER_MODEL_NAME": "qwen3.6-flash",
+    "AI_OCR_PROMPT": "请识别这张图片中的数学题，并严格按照 LaTeX 格式输出。",
+}
+
+AI_ENV_WRITE_ORDER = (
+    "AI_API_KEY",
+    "AI_BASE_URL",
+    "AI_MODEL_NAME",
+    "AI_SOLVER_MODEL_NAME",
+)
+
+def _root_env_path() -> str:
+    return os.path.join(APP_ROOT, ".env")
+
+def _read_root_ai_env_config() -> dict:
+    env_path = _root_env_path()
+    file_exists = os.path.exists(env_path)
+    raw = {}
+    if file_exists:
+        try:
+            raw = {k: (v or "") for k, v in dotenv_values(env_path).items() if k}
+        except Exception:
+            raw = {}
+
+    values = {}
+    for key, default in AI_ENV_DEFAULTS.items():
+        if file_exists:
+            values[key] = raw.get(key, default)
+        else:
+            values[key] = os.getenv(key, default)
+    return values
+
+def _format_env_value(value: str) -> str:
+    value = (value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    value = value.replace("\n", "\\n")
+    if value == "":
+        return ""
+    if re.search(r"\s|#|\"|'|\\", value):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return value
+
+def _write_root_ai_env_config(updates: dict):
+    env_path = _root_env_path()
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    else:
+        lines = [
+            "# AI service configuration.",
+            "# Managed by MathCyclus API 设置.",
+            "",
+        ]
+
+    seen = set()
+    output = []
+    env_line_re = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+    for line in lines:
+        match = env_line_re.match(line)
+        if match and match.group(1) in updates:
+            key = match.group(1)
+            output.append(f"{key}={_format_env_value(updates[key])}")
+            seen.add(key)
+        else:
+            output.append(line)
+
+    missing = [key for key in AI_ENV_WRITE_ORDER if key in updates and key not in seen]
+    if missing and output and output[-1].strip():
+        output.append("")
+    for key in missing:
+        output.append(f"{key}={_format_env_value(updates[key])}")
+
+    atomic_write_text(env_path, "\n".join(output).rstrip() + "\n", backup=False)
+    load_dotenv(env_path, override=True)
+
+    if os.path.exists(ocr_prompt_file):
+        with open(ocr_prompt_file, "r", encoding="utf-8") as f:
+            globals()["AI_OCR_PROMPT"] = f.read()
+    else:
+        globals()["AI_OCR_PROMPT"] = os.getenv(
+            "AI_OCR_PROMPT",
+            AI_ENV_DEFAULTS["AI_OCR_PROMPT"],
+        ).replace("\\n", "\n")
+
+def _read_ocr_prompt_for_settings(config: dict) -> tuple[str, bool]:
+    if os.path.exists(ocr_prompt_file):
+        with open(ocr_prompt_file, "r", encoding="utf-8") as f:
+            return f.read(), True
+    return config.get("AI_OCR_PROMPT", AI_ENV_DEFAULTS["AI_OCR_PROMPT"]).replace("\\n", "\n"), False
+
+def _write_ocr_prompt_file(prompt: str):
+    normalized = (prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    atomic_write_text(ocr_prompt_file, normalized + ("\n" if normalized else ""), backup=False)
+    globals()["AI_OCR_PROMPT"] = normalized
+
+@st.dialog("API 设置", width="large")
+def api_settings_dialog():
+    env_path = _root_env_path()
+    config = _read_root_ai_env_config()
+    ocr_prompt_value, prompt_file_exists = _read_ocr_prompt_for_settings(config)
+    env_state = "已读取根目录 .env" if os.path.exists(env_path) else "未找到 .env，保存时会自动创建"
+    prompt_state = "已读取根目录 ocr_prompt.txt" if prompt_file_exists else "未找到 ocr_prompt.txt，保存时会自动创建"
+
+    st.caption(f"{env_state}：{env_path}")
+    st.caption(f"{prompt_state}：{ocr_prompt_file}")
+    st.info("OCR 实际优先使用 ocr_prompt.txt。下方提示词框显示并保存的就是这个文件内容；.env 里的 AI_OCR_PROMPT 只作为文件不存在时的备用。", icon="ℹ️")
+
+    with st.form("api_settings_form"):
+        api_key = st.text_input(
+            "API Key（密钥字符串，例如 sk-... 或 DashScope API Key）",
+            value=config.get("AI_API_KEY", ""),
+            type="password",
+            placeholder="sk-... / dashscope_xxx",
+        )
+        base_url = st.text_input(
+            "Base URL（接口根地址，例如 https://dashscope.aliyuncs.com/compatible-mode/v1）",
+            value=config.get("AI_BASE_URL", AI_ENV_DEFAULTS["AI_BASE_URL"]),
+            placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+        model_name = st.text_input(
+            "OCR / 图片识别模型（模型名，例如 qwen-vl-plus 或 gpt-4o）",
+            value=config.get("AI_MODEL_NAME", AI_ENV_DEFAULTS["AI_MODEL_NAME"]),
+            placeholder="qwen-vl-plus",
+        )
+        solver_model = st.text_input(
+            "解题模型（可选，例如 qwen3.6-flash；留空则使用默认解题模型）",
+            value=config.get("AI_SOLVER_MODEL_NAME", AI_ENV_DEFAULTS["AI_SOLVER_MODEL_NAME"]),
+            placeholder="qwen3.6-flash",
+        )
+        ocr_prompt = st.text_area(
+            "OCR 提示词（保存到 ocr_prompt.txt）",
+            value=ocr_prompt_value,
+            height=260,
+        )
+
+        submitted = st.form_submit_button("保存 API 配置", type="primary", use_container_width=True)
+
+    if submitted:
+        required_missing = []
+        if not api_key.strip():
+            required_missing.append("API Key")
+        if not base_url.strip():
+            required_missing.append("Base URL")
+        if not model_name.strip():
+            required_missing.append("OCR / 图片识别模型")
+
+        if required_missing:
+            st.error("请补全：" + "、".join(required_missing))
+            return
+
+        try:
+            _write_root_ai_env_config({
+                "AI_API_KEY": api_key.strip(),
+                "AI_BASE_URL": base_url.strip(),
+                "AI_MODEL_NAME": model_name.strip(),
+                "AI_SOLVER_MODEL_NAME": solver_model.strip(),
+            })
+            _write_ocr_prompt_file(ocr_prompt)
+            st.success(".env 与 ocr_prompt.txt 已保存，当前会话已重新加载 API 配置。")
+        except Exception as e:
+            st.error(f"保存失败：{e}")
+
+def _query_param_enabled(name: str) -> bool:
+    try:
+        value = st.query_params.get(name, "")
+    except Exception:
+        return False
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+def _remove_query_param(name: str):
+    try:
+        if name in st.query_params:
+            del st.query_params[name]
+    except Exception:
+        pass
 
 def format_question_title(filename):
     """
@@ -1122,7 +1636,7 @@ def ocr_image_to_latex(images=None):
         images: List of PIL Image objects
     """
     # 动态加载 .env 配置，支持热更新
-    load_dotenv(override=True)
+    load_dotenv(_root_env_path(), override=True)
     
     api_key = os.getenv("AI_API_KEY")
     base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1")
@@ -1223,7 +1737,7 @@ def ocr_image_to_latex(images=None):
         return f"❌ 发生错误: {str(e)}"
 
 def ocr_solution_images_to_answer_solutions(images=None) -> dict:
-    load_dotenv(override=True)
+    load_dotenv(_root_env_path(), override=True)
     api_key = os.getenv("AI_API_KEY")
     base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1")
     model_name = os.getenv("AI_MODEL_NAME", "gpt-4o")
@@ -1551,7 +2065,7 @@ def _normalize_ai_generated_tex_for_preview(text: str) -> str:
     return s.strip()
 
 def call_ai_for_answer_solutions(problem_tex: str, fast: bool = True) -> dict:
-    load_dotenv(override=True)
+    load_dotenv(_root_env_path(), override=True)
     api_key = os.getenv("AI_API_KEY")
     base_url = os.getenv("AI_BASE_URL")
     model_name = os.getenv("AI_SOLVER_MODEL_NAME") or "qwen3.6-flash"
@@ -6749,6 +7263,58 @@ def update_question_meta(fpath, key, value):
     except Exception as e:
         print("Update CSV failed:", e)
 
+def _split_tag_values(tag_text: str) -> list[str]:
+    tags = []
+    seen = set()
+    for raw in re.split(r"[，,]", tag_text or ""):
+        tag = raw.strip()
+        if tag and tag not in seen:
+            tags.append(tag)
+            seen.add(tag)
+    return tags
+
+def _parse_tag_history_time(value: str) -> float:
+    text = (value or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(text, fmt).timestamp()
+        except ValueError:
+            pass
+    return 0.0
+
+@st.cache_data(show_spinner=False)
+def _tag_history_suggestions_cached(csv_token, limit=5):
+    from utils.csv_ops import read_csv_index
+
+    stats = {}
+    for row in read_csv_index():
+        row_time = max(
+            _parse_tag_history_time(row.get("最后修改时间", "")),
+            _parse_tag_history_time(row.get("初次录入的时间", "")),
+        )
+        for tag in _split_tag_values(row.get("标签", "")):
+            item = stats.setdefault(tag, {"tag": tag, "count": 0, "last_seen": 0.0})
+            item["count"] += 1
+            item["last_seen"] = max(item["last_seen"], row_time)
+
+    ranked = sorted(
+        stats.values(),
+        key=lambda item: (-item["count"], -item["last_seen"], item["tag"]),
+    )
+    return ranked[:limit]
+
+def get_tag_history_suggestions(limit=5):
+    return _tag_history_suggestions_cached(file_change_token(CSV_INDEX_PATH), limit)
+
+def _append_tag_text(current_tags: str, tag: str) -> str:
+    tags = _split_tag_values(current_tags)
+    if tag not in tags:
+        tags.append(tag)
+    return "，".join(tags)
+
+def _apply_tag_suggestion(input_key: str, tag: str):
+    st.session_state[input_key] = _append_tag_text(st.session_state.get(input_key, ""), tag)
+
 def render_question_header(q_label, content, fpath, extra_html_label=""):
     st.markdown(f"### {q_label} {extra_html_label}", unsafe_allow_html=True)
     
@@ -6808,11 +7374,12 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         min-width: 108px !important;
         max-width: min(36vw, 420px) !important;
     }
-    div[data-testid="column"]:has(.meta-action-cell) {
-        flex: 0 0 52px !important;
-        width: 52px !important;
-        min-width: 52px !important;
-        max-width: 52px !important;
+    div[data-testid="column"]:has(.meta-action-cell),
+    .mc-meta-action-column {
+        flex: 0 0 36px !important;
+        width: 36px !important;
+        min-width: 36px !important;
+        max-width: 36px !important;
         justify-content: flex-start !important;
     }
     div[data-testid="column"]:has(.meta-tag-action-cell) {
@@ -6832,6 +7399,8 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     }
     div[data-testid="column"]:has(.meta-star-cell) iframe {
         display: block !important;
+        width: 210px !important;
+        min-width: 210px !important;
         height: 35px !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -6843,26 +7412,95 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         line-height: 1 !important;
     }
     /* 淡灰色 + 按钮 */
-    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button {
-        color: #6b46c1 !important;
-        background-color: #ffffff !important;
-        border: 1px solid rgba(0, 0, 0, 0.12) !important;
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button,
+    .mc-meta-action-popover button,
+    .mc-meta-action-button {
+        color: #ffffff !important;
+        background: linear-gradient(135deg, #9f7aea 0%, #7c3aed 52%, #5b21b6 100%) !important;
+        border: 1px solid rgba(255, 255, 255, 0.42) !important;
         padding: 0 !important;
-        min-height: 40px !important;
-        height: 40px !important;
-        width: 52px !important;
-        border-radius: 8px !important;
-        font-size: 19px !important;
-        font-weight: 650 !important;
+        min-height: 36px !important;
+        height: 36px !important;
+        width: 36px !important;
+        min-width: 36px !important;
+        max-width: 36px !important;
+        border-radius: 10px !important;
+        font-size: 22px !important;
+        font-weight: 800 !important;
         margin: 0 !important;
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        gap: 0 !important;
+        text-shadow: 0 1px 1px rgba(49, 18, 101, 0.32) !important;
+        box-shadow: 0 8px 18px rgba(109, 40, 217, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.36), inset 0 -1px 0 rgba(49, 18, 101, 0.22) !important;
+        transform: translateY(0);
+        transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease !important;
     }
-    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button:hover {
-        background-color: #f7f4ff !important;
-        border-color: rgba(109, 40, 217, 0.28) !important;
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button::after,
+    .mc-meta-action-button::after {
+        content: "";
+        position: absolute;
+        top: 1px;
+        left: 2px;
+        right: 2px;
+        height: 45%;
+        border-radius: 8px 8px 6px 6px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0));
+        pointer-events: none;
+    }
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"],
+    .mc-meta-action-popover {
+        width: 36px !important;
+        min-width: 36px !important;
+        max-width: 36px !important;
+    }
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button svg,
+    .mc-meta-action-popover button svg,
+    .mc-meta-action-popover button [data-testid="stIconMaterial"],
+    .mc-meta-action-button svg,
+    .mc-meta-action-button [data-testid="stIconMaterial"] {
+        display: none !important;
+    }
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button p,
+    .mc-meta-action-popover button p,
+    .mc-meta-action-button p {
+        margin: 0 !important;
+        line-height: 1 !important;
+        font-size: 22px !important;
+        color: #ffffff !important;
+    }
+    div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button:hover,
+    .mc-meta-action-popover button:hover,
+    .mc-meta-action-button:hover {
+        background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 46%, #6d28d9 100%) !important;
+        border-color: rgba(76, 29, 149, 0.42) !important;
+        box-shadow: 0 10px 22px rgba(109, 40, 217, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.38), inset 0 -1px 0 rgba(49, 18, 101, 0.18) !important;
+        transform: translateY(-1px);
+    }
+    .mc-meta-action-button[aria-expanded="true"],
+    .mc-meta-action-button:active {
+        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 54%, #4c1d95 100%) !important;
+        box-shadow: 0 5px 12px rgba(76, 29, 149, 0.30), inset 0 2px 4px rgba(49, 18, 101, 0.24) !important;
+        transform: translateY(0);
+    }
+    .mc-meta-plus {
+        display: block;
+        position: relative;
+        z-index: 1;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1;
+        transform: translateY(-1px);
+    }
+    .tag-suggestion-title {
+        color: #6b7280;
+        font-size: 13px;
+        font-weight: 700;
+        margin: 8px 0 6px 0;
     }
     
     /* 现代徽章样式 (Badge) */
@@ -6894,6 +7532,101 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     }
     </style>
     """, unsafe_allow_html=True)
+
+    components.html(
+        """
+        <script>
+        (() => {
+            const w = window.parent;
+            const d = w.document;
+
+            function closestColumn(node) {
+                return node ? node.closest('div[data-testid="column"]') : null;
+            }
+
+            function paintActionButton(button) {
+                if (!button) {
+                    return;
+                }
+                const text = (button.textContent || "").trim();
+                if (!text.includes("+") && !text.includes("＋")) {
+                    return;
+                }
+                button.classList.add("mc-meta-action-button");
+                if (!button.querySelector(".mc-meta-plus")) {
+                    button.innerHTML = '<span class="mc-meta-plus">＋</span>';
+                }
+                Object.assign(button.style, {
+                    color: "#ffffff",
+                    background: "linear-gradient(135deg, #9f7aea 0%, #7c3aed 52%, #5b21b6 100%)",
+                    border: "1px solid rgba(255, 255, 255, 0.42)",
+                    width: "36px",
+                    minWidth: "36px",
+                    maxWidth: "36px",
+                    height: "36px",
+                    minHeight: "36px",
+                    padding: "0",
+                    borderRadius: "10px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    position: "relative",
+                    overflow: "hidden",
+                    gap: "0",
+                    textShadow: "0 1px 1px rgba(49, 18, 101, 0.32)",
+                    boxShadow: "0 8px 18px rgba(109, 40, 217, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.36), inset 0 -1px 0 rgba(49, 18, 101, 0.22)",
+                    transition: "transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease"
+                });
+                button.querySelectorAll('svg, [data-testid="stIconMaterial"]').forEach((icon) => {
+                    icon.style.setProperty("display", "none", "important");
+                });
+                button.querySelectorAll("p, span").forEach((textNode) => {
+                    if ((textNode.textContent || "").includes("+") || (textNode.textContent || "").includes("＋")) {
+                        textNode.style.setProperty("color", "#ffffff", "important");
+                        textNode.style.setProperty("font-size", "22px", "important");
+                        textNode.style.setProperty("font-weight", "800", "important");
+                        textNode.style.setProperty("line-height", "1", "important");
+                        textNode.style.setProperty("margin", "0", "important");
+                    }
+                });
+            }
+
+            function applyMetaActionClasses() {
+                d.querySelectorAll(".meta-action-cell").forEach((marker) => {
+                    const column = closestColumn(marker);
+                    if (!column) {
+                        return;
+                    }
+                    column.classList.add("mc-meta-action-column");
+                    column.querySelectorAll("button").forEach(paintActionButton);
+                    column.querySelectorAll('div[data-testid="stPopover"]').forEach((popover) => {
+                        popover.classList.add("mc-meta-action-popover");
+                        popover.querySelectorAll("button").forEach((button) => {
+                            button.classList.add("mc-meta-action-button");
+                            paintActionButton(button);
+                        });
+                    });
+                });
+            }
+
+            applyMetaActionClasses();
+            w.setTimeout(applyMetaActionClasses, 50);
+            w.setTimeout(applyMetaActionClasses, 200);
+            w.setTimeout(applyMetaActionClasses, 600);
+
+            if (w.__mcMetaActionObserver) {
+                w.__mcMetaActionObserver.disconnect();
+            }
+            w.__mcMetaActionObserver = new w.MutationObserver(applyMetaActionClasses);
+            w.__mcMetaActionObserver.observe(d.body, {
+                childList: true,
+                subtree: true
+            });
+        })();
+        </script>
+        """,
+        height=0,
+    )
     
     with st.container(border=True):
         # === 统一放在同一行：星级 | 标签 + 按钮 | 备注 + 按钮 ===
@@ -6926,8 +7659,23 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         with c_tag_btn:
             st.markdown("<span class='meta-action-cell meta-tag-action-cell'></span>", unsafe_allow_html=True)
             tag_popover_key = f"tag_popover_{fpath}_{st.session_state.get(f'tag_version_{fpath}', 0)}"
-            with st.popover("➕", help="修改标签"):
-                new_tags_str = st.text_input("编辑标签（逗号“，”分隔）", value=tags, key=f"tag_input_{tag_popover_key}")
+            with st.popover("＋", help="修改标签"):
+                tag_input_key = f"tag_input_{tag_popover_key}"
+                new_tags_str = st.text_input("编辑标签（逗号“，”分隔）", value=tags, key=tag_input_key)
+                tag_suggestions = get_tag_history_suggestions(limit=5)
+                if tag_suggestions:
+                    st.markdown("<div class='tag-suggestion-title'>历史热门标签</div>", unsafe_allow_html=True)
+                    for idx, item in enumerate(tag_suggestions):
+                        tag = item["tag"]
+                        count = item["count"]
+                        st.button(
+                            f"🏷️ {tag}  ×{count}",
+                            key=f"tag_suggest_{idx}_{tag_popover_key}",
+                            help="点击添加到标签输入框",
+                            use_container_width=True,
+                            on_click=_apply_tag_suggestion,
+                            args=(tag_input_key, tag),
+                        )
                 if not tags:
                     if st.button("直接保存", key=f"tag_save_{tag_popover_key}", type="primary"):
                         update_question_meta(fpath, "标签", new_tags_str)
@@ -6954,7 +7702,7 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         with c_rem_btn:
             st.markdown("<span class='meta-action-cell meta-rem-action-cell'></span>", unsafe_allow_html=True)
             rem_popover_key = f"rem_popover_{fpath}_{st.session_state.get(f'rem_version_{fpath}', 0)}"
-            with st.popover("➕", help="修改备注"):
+            with st.popover("＋", help="修改备注"):
                 new_rem_str = st.text_input("编辑备注", value=remark, key=f"rem_input_{rem_popover_key}")
                 if not remark:
                     if st.button("直接保存", key=f"rem_save_{rem_popover_key}", type="primary"):
@@ -7389,11 +8137,11 @@ def page_manual():
     """, unsafe_allow_html=True)
 
 def page_system_intro():
-    st.header("📘 工程体系介绍（录入 · 浏览 · 标签 · 组卷）")
+    st.header("📘 项目体系介绍（录入 · 浏览 · 标签 · 组卷）")
     st.markdown("""
 ### 🎯 这套系统解决什么问题？
 
-这是一套面向高中数学的题库工程化管理系统：以 `.tex` 为数据单元，把“题目内容、标签元数据、索引检索、批量维护、组卷导出”统一在一个可视化工作流里，做到：
+这是一套面向高中数学的题库项目管理系统：以 `.tex` 为数据单元，把“题目内容、标签元数据、索引检索、批量维护、组卷导出”统一在一个可视化工作流里，做到：
 
 - 🧱 题目文件结构规范、可长期维护
 - 🔎 检索与定位迅速（多维筛选/全文查找/三级查找）
@@ -7403,6 +8151,22 @@ def page_system_intro():
 
 ---
 
+### 📚 0) 关于本项目
+
+**GitHub 项目链接：** [MathCyclus - Lingxi Question Bank Assistant](https://github.com/JinLingxi/MathCyclus---Lingxi-Question-Bank-Assistant)
+
+**知乎 AI Works 页面：** [AI Works - MathCyclus高中数学题库 - 知乎](https://www.zhihu.com/project/detail/180133)
+
+**创作感想文章：** [关于本项目的一些创作感想](https://www.zhihu.com/question/2052717294719956381/answer/2053305696041677288)
+
+欢迎加入用户群沟通交流。
+    """, unsafe_allow_html=True)
+
+    user_group_img_path = os.path.join(BASE_DIR, "fig", "用户群.png")
+    if os.path.exists(user_group_img_path):
+        st.image(user_group_img_path, caption="用户群", width=260)
+
+    st.markdown("""
 ### 🗂️ 1) 数据与目录结构（“文件即数据库”）
 
 **核心原则：`.tex` 文件是单一事实来源（Source of Truth）。**
@@ -7904,6 +8668,12 @@ def main():
     st.set_page_config(page_title="高中数学题库管理系统", layout="wide", initial_sidebar_state="expanded")
     
     inject_custom_css()
+    inject_sidebar_recovery_control()
+    if _query_param_enabled("mathcyclus_intro"):
+        st.session_state["mathcyclus_intro_requested"] = True
+        _remove_query_param("mathcyclus_intro")
+    if st.session_state.pop("mathcyclus_intro_requested", False):
+        show_mathcyclus_intro()
     
     # 注入侧边栏的自定义 CSS (SolEdu 深色极简风格)
     st.markdown("""
@@ -7923,7 +8693,7 @@ def main():
 
         /* 调整内部边距，让内容完全居中 */
         [data-testid="stSidebarUserContent"] {
-            padding: 2rem 0rem !important;
+            padding: 0.3rem 0rem 1rem 0rem !important;
             display: flex !important;
             flex-direction: column !important;
             align-items: center !important;
@@ -7944,7 +8714,9 @@ def main():
         [data-testid="stSidebar"] button svg,
         [data-testid="stSidebar"] button svg path,
         [data-testid="collapsedControl"] svg,
-        [data-testid="collapsedControl"] svg path {
+        [data-testid="collapsedControl"] svg path,
+        [data-testid="stSidebarCollapsedControl"] svg,
+        [data-testid="stSidebarCollapsedControl"] svg path {
             fill: #5b21b6 !important;
             color: #5b21b6 !important;
             stroke: #5b21b6 !important;
@@ -8089,9 +8861,12 @@ def main():
         if os.path.exists(logo_img_path):
             st.image(logo_img_path, width=72)
         # 使用 <br> 让 MathCyclus 分成两行，避免挤出边框
-        st.markdown('<div class="sol-logo" style="margin-bottom:0; padding-bottom: 10px;">Math<br><span>Cyclus</span></div>', unsafe_allow_html=True)
-        if st.button("打开 MathCyclus 题库介绍", key="mathcyclus_demo_btn", help="打开 MathCyclus 题库介绍"):
-            show_mathcyclus_intro()
+        st.markdown(
+            '<a class="sol-logo sol-logo-link" href="?mathcyclus_intro=1" target="_self" '
+            'title="打开 MathCyclus 题库介绍" style="margin-bottom:0; padding-bottom:0;">'
+            'Math<br><span>Cyclus</span></a>',
+            unsafe_allow_html=True,
+        )
             
         st.markdown("""
         <style>
@@ -8105,42 +8880,57 @@ def main():
             max-width: 72px !important;
             height: auto !important;
         }
-        /* 覆盖在 Math / Cyclus 文字上的透明点击层 */
-        [data-testid="stSidebar"] div.stButton:first-of-type {
-            margin-top: -54px !important;
-            margin-bottom: 6px !important;
-            height: 48px !important;
-            z-index: 10 !important;
-        }
-        [data-testid="stSidebar"] div.stButton:first-of-type button {
-            opacity: 0 !important;
-            height: 48px !important;
+        .sol-logo-link,
+        .sol-logo-link:visited,
+        .sol-logo-link:hover,
+        .sol-logo-link:active {
+            display: block !important;
+            text-decoration: none !important;
+            color: #5b21b6 !important;
             cursor: pointer !important;
         }
+        .sol-logo-link span,
+        .sol-logo-link:visited span,
+        .sol-logo-link:hover span,
+        .sol-logo-link:active span {
+            color: #c084fc !important;
+        }
         /* 隐藏侧边栏的规范说明菜单项 */
-        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(8) {
+        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(9) {
             display: none !important;
         }
         </style>
         """, unsafe_allow_html=True)
         
         # 恢复为上下结构的图标+文字
+        api_nav_option = "🔑\nAPI设置"
+        exam_nav_option = "🖨️\n组卷服务\n(完善中)"
         nav_options = [
+            api_nav_option,
             "📊\n数据统计", 
             "📝\n录入新题", 
             "🔍\n全局浏览与编辑", 
-            "🖨️\n组卷服务", 
+            exam_nav_option,
             "🛠️\n工具箱",
             "🔎\n三级查找",
-            "📘\n体系介绍",
+            "📘\n项目介绍",
             "📖\n规范说明"
         ]
         
         if "main_nav_selection" not in st.session_state:
-            st.session_state["main_nav_selection"] = "📝\n录入新题"
+            st.session_state["main_nav_selection"] = "📊\n数据统计"
+        if "main_sidebar_radio" not in st.session_state:
+            st.session_state["main_sidebar_radio"] = st.session_state["main_nav_selection"]
 
         def _on_main_sidebar_nav_change():
             sel = st.session_state.get("main_sidebar_radio")
+            if sel == api_nav_option:
+                st.session_state["api_settings_dialog_requested"] = True
+                previous_nav = st.session_state.get("main_nav_selection", "📊\n数据统计")
+                if previous_nav == api_nav_option or previous_nav not in nav_options:
+                    previous_nav = "📊\n数据统计"
+                st.session_state["main_sidebar_radio"] = previous_nav
+                return
             if sel == "🔍\n全局浏览与编辑":
                 st.session_state["adv_search_active"] = False
                 st.session_state["browse_mode"] = "按知识板块浏览"
@@ -8150,7 +8940,14 @@ def main():
                 st.session_state["tools_subpage"] = None
             
         selected_nav = st.radio("工作流导航", nav_options, label_visibility="collapsed", key="main_sidebar_radio", on_change=_on_main_sidebar_nav_change)
-        st.session_state["main_nav_selection"] = selected_nav
+        if st.session_state.get("api_settings_dialog_requested"):
+            api_settings_dialog()
+            st.session_state["api_settings_dialog_requested"] = False
+            selected_nav = st.session_state.get("main_sidebar_radio", st.session_state.get("main_nav_selection", "📊\n数据统计"))
+        elif selected_nav == api_nav_option:
+            selected_nav = st.session_state.get("main_nav_selection", "📊\n数据统计")
+        else:
+            st.session_state["main_nav_selection"] = selected_nav
 
     # --- 主内容区路由 ---
     if selected_nav == "📊\n数据统计":
@@ -8159,13 +8956,13 @@ def main():
         page_entry()
     elif selected_nav == "🔍\n全局浏览与编辑":
         page_browse()
-    elif selected_nav == "🖨️\n组卷服务":
+    elif selected_nav == exam_nav_option:
         page_exam_paper_generation()
     elif selected_nav == "🛠️\n工具箱":
         page_tools()
     elif selected_nav == "🔎\n三级查找":
         page_advanced_search()
-    elif selected_nav == "📘\n体系介绍":
+    elif selected_nav == "📘\n项目介绍":
         page_system_intro()
     elif selected_nav == "📖\n规范说明":
         page_manual()

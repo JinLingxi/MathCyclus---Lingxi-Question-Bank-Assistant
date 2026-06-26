@@ -5661,14 +5661,21 @@ $ \left(x^2 + \dfrac{2}{x}\right)^6 $ 的展开式中常数项是\underline{\hsp
 \choice{{$\cos\left(2x+\dfrac{\pi}{6}\right)$}}
 \choice{{$\cos\left(\dfrac{5\pi}{6}-2x\right)$}}
 \end{choices}",,
-487,2020-G-新高考I卷-11-不等式,不等式\2020\2020-G-新高考I卷-11-不等式.tex,2020,G,新高考I卷,11,不等式,,否,选择题,,否,0,,2026-04-25 00:02:37,2026-04-25 00:02:37,"{2020}{G}{新高考I卷}{11}{不等式}
-已知 $ a>0,b>0 $，且 $ a+b=1 $，则
+487,2020-G-新高考I卷-11-不等式,不等式\2020\2020-G-新高考I卷-11-不等式.tex,2020,G,新高考I卷,11,不等式,,否,选择题,,是,0,,2026-04-25 00:02:37,2026-06-26 03:00:22,"已知 $a>0$，$b>0$，且 $a+b=1$，则 (\hspace{1cm})
 \begin{choices}
 \choice{{$a^2+b^2\geqslant\dfrac{1}{2}$}}
 \choice{{$2^{a-b}>\dfrac{1}{2}$}}
-\choice{{$\log_2a+\log_2b\geqslant-2$}}
+\choice{{$\log_{2}a+\log_{2}b\geqslant-2$}}
 \choice{{$\sqrt{a}+\sqrt{b}\leqslant\sqrt{2}$}}
-\end{choices}",,
+\end{choices}",$ABD$.,"\circled{1}已知 $a>0$，$b>0$，且 $a+b=1$，所以 $(a+b)^2\leqslant 2a^2+2b^2$，则 $a^2+b^2\geqslant \dfrac{1}{2}$，故 A 正确．
+
+\circled{2}利用分析法：要证 $2^{a-b}>\dfrac{1}{2}$，只需证明 $a-b>-1$ 即可，即 $a>b-1$，由于 $a>0$，$b>0$，且 $a+b=1$，所以：$a>0$，$-1<b-1<0$，故 B 正确．
+
+\circled{3} $\log_{2}a+\log_{2}b=\log_{2}ab\leqslant \log_{2}(\dfrac{a+b}{2})^2=-2$，故 C 错误．
+
+\circled{4}由于 $a>0$，$b>0$，且 $a+b=1$，利用分析法：要证 $\sqrt{a}+\sqrt{b}\leqslant \sqrt{2}$ 成立，只需对关系式进行平方，整理得 $a+b+2\sqrt{ab}\leqslant 2$，即 $2\sqrt{ab}\leqslant 1$，故 $\sqrt{ab}\leqslant \dfrac{1}{2}=\dfrac{a+b}{2}$，当且仅当 $a=b=\dfrac{1}{2}$ 时，等号成立．故 D 正确．
+
+故选：$ABD$．"
 488,2020-G-新高考I卷-12-概率,概率\2020\2020-G-新高考I卷-12-概率.tex,2020,G,新高考I卷,12,概率,,否,选择题,,否,0,,2026-04-25 00:02:37,2026-04-25 00:02:37,"{2020}{G}{新高考I卷}{12}{概率}
 信息熵是信息论中的一个重要概念．设随机变量 $ X $ 所有可能的取值为 $ 1 $，$ 2 $，$ \cdots $，$ n $，且 $ P(X=i)=p_i>0 $（$ i=1 $，$ 2 $，$ \cdots $，$ n $），$ \displaystyle\sum_{i=1}^n p_i=1 $，定义 $ X $ 的信息熵 $ \displaystyle H(X)=-\sum_{i=1}^n p_i\log_2 p_i $．
 \begin{choices}
@@ -7830,20 +7837,20 @@ $ \overrightarrow{OP}=(\cos\theta,\sin\theta) $，曲线 $ C $ 即是圆 $ O:x^{
 圆 $ Q $ 与圆 $ O $ 外切和内切对应的半径分别为 $ 1 $ 和 $ 3 $，
 
 进而 $ r\leqslant1 $ 或 $ R\geqslant3 $ 时 $ C\cap\Omega $ 是完整的一段圆弧或者圆，不满足题意，于是选 $ A $．"
-754,2021-G-上海卷-16-不等式,不等式\2021\2021-G-上海卷-16-不等式.tex,2021,G,上海卷,16,不等式,,是,选择题,,是,0,,2026-04-28 16:16:16,2026-04-28 16:16:16,"{2021}{G}{上海卷}{16}{不等式}
-两两不同的 $x_1,x_2,x_3,y_1,y_2,y_3$ 满足 $x_1+y_1=x_2+y_2=x_3+y_3$, 且满足 $x_1<y_1,x_2<y_2$, $x_3<y_3,x_1y_1+x_3y_3=2x_2y_2>0$. 下列一定成立的是: (\hspace{1cm})
+754,2021-G-上海卷-16-不等式,不等式\2021\2021-G-上海卷-16-不等式.tex,2021,G,上海卷,16,不等式,,是,选择题,,是,0,,2026-04-28 16:16:16,2026-06-26 02:02:39,"两两不同的 $x_1,x_2,x_3,y_1,y_2,y_3$ 满足 $x_1+y_1=x_2+y_2=x_3+y_3$, 且满足 $x_1<y_1,x_2<y_2$, $x_3<y_3,x_1y_1+x_3y_3=2x_2y_2>0$. 下列一定成立的是: (\hspace{1cm})
 \begin{choices}
 \choice{{${x_1+x_3>2x_2}$}}
 \choice{{${x_1+x_3<2x_2}$}}
 \choice{{${x_1x_3>x_2^2}$}}
 \choice{{${x_1x_3<x_2^2}$}}
-\end{choices}
-
-已知条件中出现了大量两个变量的和与积, 进而联想到一元二次方程, 因此考虑利用抛物线数形结合来解决它:
+\end{choices}",A,"已知条件中出现了大量两个变量的和与积, 进而联想到一元二次方程, 因此考虑利用抛物线数形结合来解决它:
 
 设 $x_1+y_1=x_2+y_2=x_3+y_3=a$, $x_1y_1=b_1$, $x_2y_2=b_2$, $x_3y_3=b_3$, $2b_2=b_1+b_3$
 
-作直线 $y=b_1$, $y=b_2$, $y=b_3$ 与 $y=-x^2+ax$ 相交, 标出题目有关交点的横坐标:",A,"\begin{tikzpicture}[line cap=round,line join=round,scale=0.6]
+作直线 $y=b_1$, $y=b_2$, $y=b_3$ 与 $y=-x^2+ax$ 相交, 标出题目有关交点的横坐标:
+
+
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.6]
 \usetikzlibrary{calc}
 
 % --- parameters (schematic) ---
@@ -9973,7 +9980,7 @@ $$
 868,2026-G-新高考I卷-12-圆锥曲线,圆锥曲线\2026\2026-G-新高考I卷-12-圆锥曲线.tex,2026,G,新高考I卷,12,圆锥曲线,,否,填空题,,否,0,,2026-06-07 22:44:17,2026-06-07 22:44:17,双曲线 $ 5x^2-6y^2=1 $ 的离心率为 \underline{\hspace{4em}}.,,
 869,2026-G-新高考I卷-13-三角函数,三角函数\2026\2026-G-新高考I卷-13-三角函数.tex,2026,G,新高考I卷,13,三角函数,,否,填空题,,否,0,,2026-06-07 22:44:17,2026-06-07 22:44:17,"已知 $ f(x)=2\sin(ax+\theta)(a\in\mathbb{Z},0\leqslant\theta<2\pi) $ 是偶函数，$ f(x) $ 在区间 $ \left(0,\dfrac{\pi}{2}\right) $ 单调递增，则 $ \theta= $ \underline{\hspace{4em}}，$ f\left(\dfrac{2\pi}{3}\right)= $ \underline{\hspace{4em}}.",,
 870,2026-G-新高考I卷-14-数列,数列\2026\2026-G-新高考I卷-14-数列.tex,2026,G,新高考I卷,14,数列,,否,填空题,,否,0,,2026-06-07 22:44:18,2026-06-07 22:44:18,"设实数 $ q $ 满足：存在数列 $ \{a_n\} $，使得对于任意 $ n\in\mathbb{N}^* $，均有 $ a_1+a_2+\cdots+a_{3n}=n^2+n $，且 $ \{a_n\} $ 中有某连续 $ 9 $ 项 $ a_k,a_{k+1},\cdots,a_{k+8} $ 是公比为 $ q $ 的等比数列，则 $ q $ 的最大值为 \underline{\hspace{4em}}.",,
-871,2026-G-新高考I卷-15-立体几何,立体几何\2026\2026-G-新高考I卷-15-立体几何.tex,2026,G,新高考I卷,15,立体几何,,是,解答题,,否,0,,2026-06-07 22:54:23,2026-06-07 22:57:59,"如图，在直三棱柱 $ ABC-A_1B_1C_1 $ 中，$ \angle ACB=90^\circ $，$ AC=BC $，$ D $，$ E $ 分别为 $ AB $，$ AC_1 $ 的中点.
+871,2026-G-新高考I卷-15-立体几何,立体几何\2026\2026-G-新高考I卷-15-立体几何.tex,2026,G,新高考I卷,15,立体几何,,是,解答题,,否,0,,2026-06-07 22:54:23,2026-06-25 02:18:24,"如图，在直三棱柱 $ ABC-A_1B_1C_1 $ 中，$ \angle ACB=90^\circ $，$ AC=BC $，$ D $，$ E $ 分别为 $ AB $，$ AC_1 $ 的中点.
 
 \begin{tikzpicture}[scale=1, line cap=round, line join=round]    % 三棱柱顶点    
 \coordinate (C)  at (0.5, 0);   
@@ -9988,11 +9995,11 @@ $$
 \draw[dashed] (A) -- (C);    
 \draw[dashed] (B) -- (C);   
  \draw[dashed] (A) -- (C1);  % 体对角线 AC₁(经过 E)
+ \draw[dashed] (C)  -- (C1);
     % 可见棱(实线)   
  \draw (A)  -- (B);    
 \draw (A)  -- (A1);    
 \draw (B)  -- (B1);   
- \draw (C)  -- (C1);   
  \draw (A1) -- (B1);   
  \draw (A1) -- (C1);   
  \draw (B1) -- (C1);
@@ -10497,3 +10504,253 @@ $n=1,2,3$ 时已经完成证明;
 （3）设定域为 $\mathbb{R}$ 的函数 $y=f(x)$ 存在导函数 $y=f'(x)$，且定义域为 $\mathbb{R}$ 的函数 $y=g(x)$ 函数值恒为正数. 若对任意实数 $t \in \mathbb{R}$，总存在曲线 $y=f(x)$ 上的点 $P$，使得点 $P$ 既是函数 $y=f(x)$ 的 $M_1(t-1, f(t)-g(t))$ 最近点，也是函数 $y=f(x)$ 的 $M_2(t+1, f(t)+g(t))$ 最近点，判断 $y=f(x)$ 的单调性，说明理由.",,
 549,2020-G-全国II卷（文）-7-流程框图,流程框图\2020\2020-G-全国II卷（文）-7-流程框图.tex,2020,G,全国II卷（文）,7,流程框图,,否,解答题,,否,0,,2026-04-25 01:25:57,2026-04-25 01:25:57,"{2020}{G}{全国II卷（文）}{7}{流程框图}
 执行下面的程序框图，若输入的 $ k=0 $，$ a=0 $，则输出的 $ k= $",,
+886,2026-G-全国II卷-1-复数,复数\2026\2026-G-全国II卷-1-复数.tex,2026,G,全国II卷,1,复数,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{1}{复数}
+$(1-3i)^2 = (\quad)$
+
+\begin{choices}
+\choice{{$-8+6i$}}
+\choice{{$-8-6i$}}
+\choice{{$8+6i$}}
+\choice{{$8-6i$}}
+\end{choices}",,
+887,2026-G-全国II卷-2-向量,向量\2026\2026-G-全国II卷-2-向量.tex,2026,G,全国II卷,2,向量,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{2}{向量}
+已知向量 $\vec{a}, \vec{b}$ 满足 $|\vec{a}+\vec{b}|=1, |\vec{a}-\vec{b}|=\sqrt{3}$，则 $\vec{a} \cdot \vec{b} = (\quad)$
+
+\begin{choices}
+\choice{{$\frac{1}{2}$}}
+\choice{{$\frac{1}{4}$}}
+\choice{{$-\frac{1}{2}$}}
+\choice{{$-\frac{1}{4}$}}
+\end{choices}",,
+888,2026-G-全国II卷-3-集合,集合\2026\2026-G-全国II卷-3-集合.tex,2026,G,全国II卷,3,集合,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{3}{集合}
+已知集合 $A=\{0,1,3,6,9\}, B=\{x \mid \sqrt{x}=x\}$，则 $A \cap B = (\quad)$
+
+\begin{choices}
+\choice{{$\{0,1\}$}}
+\choice{{$\{3,6\}$}}
+\choice{{$\{0,1,9\}$}}
+\choice{{$\{0,3,9\}$}}
+\end{choices}",,
+889,2026-G-全国II卷-4-圆锥曲线,圆锥曲线\2026\2026-G-全国II卷-4-圆锥曲线.tex,2026,G,全国II卷,4,圆锥曲线,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{4}{圆锥曲线}
+双曲线 $C: \frac{x^2}{a^2}-\frac{y^2}{b^2}=1 \ (a>0,b>0)$ 过点 $(1,0)$ 和 $(\frac{\sqrt{5}}{2},3)$，则其渐近线方程为 $(\quad)$
+
+\begin{choices}
+\choice{{$y=\pm 3\sqrt{2}x$}}
+\choice{{$y=\pm 4\sqrt{3}x$}}
+\choice{{$y=\pm \frac{\sqrt{3}}{2}x$}}
+\choice{{$y=\pm \frac{\sqrt{2}}{6}x$}}
+\end{choices}",,
+890,2026-G-全国II卷-5-立体几何,立体几何\2026\2026-G-全国II卷-5-立体几何.tex,2026,G,全国II卷,5,立体几何,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{5}{立体几何}
+棱台上下底面均为有一个内角是 $60^\circ$ 的菱形，且上下底面边长分别为 2 和 3，该棱台的高为 $\sqrt{3}$，则该棱台体积为 $(\quad)$
+
+\begin{choices}
+\choice{{$\frac{19}{12}$}}
+\choice{{$\frac{19}{6}$}}
+\choice{{$\frac{19}{4}$}}
+\choice{{$\frac{19}{2}$}}
+\end{choices}",,
+891,2026-G-全国II卷-6-排列组合,排列组合\2026\2026-G-全国II卷-6-排列组合.tex,2026,G,全国II卷,6,排列组合,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{6}{排列组合}
+甲、乙、丙、丁等 8 人分成 A, B 两技术小组，要求每组 4 人，且甲乙必须在同一组，丙丁不能在同一组，共有多少分配方案 $(\quad)$
+
+\begin{choices}
+\choice{{$10$}}
+\choice{{$12$}}
+\choice{{$16$}}
+\choice{{$24$}}
+\end{choices}",,
+892,2026-G-全国II卷-7-三角函数,三角函数\2026\2026-G-全国II卷-7-三角函数.tex,2026,G,全国II卷,7,三角函数,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{7}{三角函数}
+已知 $\alpha$ 为第二象限角，且 $3\sin 2\alpha \cos \alpha = 8\sin \alpha \cos 2\alpha$，则 $\frac{1+\sin \alpha}{2-\cos \alpha} = (\quad)$
+
+\begin{choices}
+\choice{{$\frac{3}{4}$}}
+\choice{{$\frac{3}{2}$}}
+\choice{{$\frac{1}{2}$}}
+\choice{{$\frac{15}{8}$}}
+\end{choices}",,
+893,2026-G-全国II卷-8-函数,函数\2026\2026-G-全国II卷-8-函数.tex,2026,G,全国II卷,8,函数,,否,选择题,,否,0,,2026-06-26 02:27:55,2026-06-26 02:27:55,"{2026}{G}{全国II卷}{8}{函数}
+已知 $f(x)$ 为定义在 $\mathbf{R}$ 上的偶函数，且 $f(x)+f(x-2)=0$，当 $x \in [\frac{3}{2},3)$ 时，$f(x)=x^2+ax+b$，则 $(\quad)$
+
+\begin{choices}
+\choice{{$a=-2,b=-3$}}
+\choice{{$a=-2,b=3$}}
+\choice{{$a=-4,b=-3$}}
+\choice{{$a=-4,b=3$}}
+\end{choices}",,
+894,2026-G-全国II卷-9-解析几何,解析几何\2026\2026-G-全国II卷-9-解析几何.tex,2026,G,全国II卷,9,解析几何,,否,选择题,,否,0,,2026-06-26 02:27:56,2026-06-26 02:27:56,"{2026}{G}{全国II卷}{9}{解析几何}
+已知 $\odot O: x^2+y^2=1, \odot A: x^2+y^2-6x-8y+k=0$，则 $(\quad)$
+
+\begin{choices}
+\choice{{点 $A$ 的坐标为 $(-3,-4)$}}
+\choice{{$k=9$ 时，$\odot A$ 与 $x$ 轴相切}}
+\choice{{当 $k=-11$ 时，$\odot A$ 与 $\odot O$ 相切}}
+\choice{{当 $\odot O$ 与 $\odot A$ 相交时，两交点所在直线的方程是 $6x+8y-k-2=0$}}
+\end{choices}",,
+895,2026-G-全国II卷-10-数列,数列\2026\2026-G-全国II卷-10-数列.tex,2026,G,全国II卷,10,数列,,否,选择题,,否,0,,2026-06-26 02:27:56,2026-06-26 02:27:56,"{2026}{G}{全国II卷}{10}{数列}
+等比数列 $\{a_n\}$ 的公比 $q \neq 1, a_1 > 0, 2a_3=a_2+a_1$，记前 $n$ 项和为 $S_n$，则 $(\quad)$
+
+\begin{choices}
+\choice{{$q=-\frac{1}{2}$}}
+\choice{{$S_n > \frac{2a_1}{3}$}}
+\choice{{$2S_{n+2} = S_{n+1} + S_n$}}
+\choice{{$\sum_{k=1}^n S_k > \frac{2na_1}{3}$}}
+\end{choices}",,
+896,2026-G-全国II卷-11-圆锥曲线,圆锥曲线\2026\2026-G-全国II卷-11-圆锥曲线.tex,2026,G,全国II卷,11,圆锥曲线,,否,选择题,,否,0,,2026-06-26 02:27:56,2026-06-26 02:27:56,"{2026}{G}{全国II卷}{11}{圆锥曲线}
+已知抛物线 $E: y^2=8x$，斜率 $k \ (k>0)$ 的直线 $l$ 过点 $(1,0)$，$\triangle ABC$ 为等边三角形，$A$ 在 $y$ 轴上，$B,C$ 在 $l$ 上，则 $(\quad)$
+
+\begin{choices}
+\choice{{抛物线准线方程为 $x=-2$}}
+\choice{{$l$ 与 $y$ 轴交点为 $(0,-k)$}}
+\choice{{若 $l$ 与 $E$ 相交于唯一一点 $B$，则抛物线焦点在直线 $AB$ 上}}
+\choice{{$k=2$ 时，$\triangle ABC$ 面积最小值为 $\frac{\sqrt{3}}{2}$}}
+\end{choices}",,
+897,2026-G-全国II卷-12-数列,数列\2026\2026-G-全国II卷-12-数列.tex,2026,G,全国II卷,12,数列,,否,填空题,,否,0,,2026-06-26 02:27:56,2026-06-26 02:27:56,"{2026}{G}{全国II卷}{12}{数列}
+$S_n$ 为等差数列 $\{a_n\}$ 前 $n$ 项和. 若 $a_1=-1, a_4=5$，则 $S_6=$ \underline{\hspace{4em}}.",,
+898,2026-G-全国II卷-13-函数,函数\2026\2026-G-全国II卷-13-函数.tex,2026,G,全国II卷,13,函数,,否,填空题,,是,0,,2026-06-26 02:27:56,2026-06-26 03:00:08,"{2026}{G}{全国II卷}{13}{函数}
+若函数 $f(x)=2^x+2^{2-x}-m$ 有两个零点，则 $m$ 的取值范围是 \underline{\hspace{4em}}.","$(4, +\infty)$","函数 $f(x)$ 有两个零点等价于方程 $2^x + 2^{2-x} = m$ 有两个不等实根. 即 $2^x + \dfrac{4}{2^x} = m$.
+
+令 $t = 2^x > 0$，则问题转化为方程 $t + \dfrac{4}{t} = m$ 有两个不等正根.
+
+由基本不等式可得：
+$t + \dfrac{4}{t} \geqslant 2\sqrt{t \cdot \dfrac{4}{t}} = 4.$
+当且仅当 $t = \dfrac{4}{t}$ 即 $t=2$ 时取等号.
+
+故 $m$ 的取值范围是 $(4, +\infty)$."
+899,2026-G-全国II卷-14-立体几何,立体几何\2026\2026-G-全国II卷-14-立体几何.tex,2026,G,全国II卷,14,立体几何,,否,填空题,,否,0,,2026-06-26 02:27:56,2026-06-26 02:27:56,"{2026}{G}{全国II卷}{14}{立体几何}
+球 $O$ 的体积为 $4\sqrt{3}\pi, A,B,C,D$ 四点均在球 $O$ 的球面上，$\triangle ABC$ 为等边三角形，$DA=DB=DC=\sqrt{2}$，则 $\triangle ABC$ 的面积为 \underline{\hspace{4em}}.",,
+900,2021-G-天津卷-13-不等式,不等式\2021\2021-G-天津卷-13-不等式.tex,2021,G,天津卷,13,不等式,,否,填空题,,是,0,,2026-06-26 02:30:36,2026-06-26 02:30:36,"已知 $ a > 0, b > 0 $，则 $ \dfrac{1}{a} + \dfrac{a}{b^2} + b $ 的最小值为 \underline{\hspace{4em}}.",$ 2\sqrt{2} $,"由题意，$ \dfrac{1}{a} + \dfrac{a}{b^2} + b = \dfrac{1}{a} + \dfrac{a}{b^2} + \dfrac{b}{2} + \dfrac{b}{2} \geqslant 4\sqrt[4]{\dfrac{1}{a} \cdot \dfrac{a}{b^2} \cdot \dfrac{b}{2} \cdot \dfrac{b}{2}} = 4\sqrt[4]{\dfrac{1}{4}}  = 2\sqrt{2} $，
+
+当且仅当 $ \dfrac{1}{a} = \dfrac{a}{b^2} = \dfrac{b}{2} $ 时取等号，结合 $ a > 0, b > 0 $ 可得此时 $ a = b = \sqrt{2} $，
+
+所以 $ \left(\dfrac{1}{a} + \dfrac{a}{b^2} + b\right)_{\min} = 2\sqrt{2} $."
+901,2022-G-新高考II卷-12-不等式,不等式\2022\2022-G-新高考II卷-12-不等式.tex,2022,G,新高考II卷,12,不等式,,否,选择题,,是,0,,2026-06-26 02:35:29,2026-06-26 02:35:29,"若实数 $ x $ ， $ y $ 满足 $ x^2 + y^2 - xy = 1 $ ，则 (\hspace{1cm})
+\begin{choices}
+\choice{{$ x + y \le 1 $}}
+\choice{{$ x + y \ge -2 $}}
+\choice{{$ x^2 + y^2 \le 2 $}}
+\choice{{$ x^2 + y^2 \ge 1 $}}
+\end{choices}",BC,"因为 $ x^2 + y^2 - xy = 1 $ ，所以 $ \displaystyle (x+y)^2 = 1 + 3xy \le 1 + 3\left( \frac{x+y}{2} \right)^2 $ ，
+
+化简得 $ \displaystyle (x+y)^2 \le 4 $ ，所以 $ -2 \le x + y \le 2 $. 故  A  错，  B 对;
+
+由 $ \displaystyle x^2 + y^2 = (x+y)^2 - 2xy = 1 + xy $ ，则 $ \displaystyle (x+y)^2 = 1 + 3xy \le 4 $ ，
+
+故 $ xy \le 1 $ ，则 $ \displaystyle x^2 + y^2 = 1 + xy \le 2 $ ，
+
+当 $ x = \dfrac{\sqrt{3}}{3} $ ， $ y = -\dfrac{\sqrt{3}}{3} $ 时，满足 $ x^2 + y^2 - xy = 1 $ ，
+但此时 $ x^2 + y^2 \ge 1 $ 不成立，
+
+故  C 对，  D  错."
+902,2013-G-山东卷（文）-12-不等式,不等式\2013\2013-G-山东卷（文）-12-不等式.tex,2013,G,山东卷（文）,12,不等式,,否,选择题,,是,0,,2026-06-26 02:51:51,2026-06-26 02:51:51,"设正实数 $x$, $y$, $z$ 满足 $x^2 - 3xy + 4y^2 - z = 0$，则当 $\frac{z}{xy}$ 取得最小值时，$x+2y-z$ 的最大值为 (\hspace{1cm})
+\begin{choices}
+\choice{{$0$}}
+\choice{{$\dfrac{9}{8}$}}
+\choice{{$2$}}
+\choice{{$\dfrac{9}{4}$}}
+\end{choices}",C,"由 $x^2 - 3xy + 4y^2 - z = 0$ 得 $x^2 + 4y^2 - 3xy = z$，故
+$$ \displaystyle \frac{z}{xy} = \frac{x^2 + 4y^2}{xy} - 3 \ge \frac{2\sqrt{x^2 \cdot 4y^2}}{xy} - 3 = \frac{4xy}{xy} - 3 = 1 $$
+当且仅当 $x^2 = 4y^2$，即 $x = 2y$ 时，$\dfrac{z}{xy}$ 有最小值 $1$.将 $x = 2y$ 代入原式得
+$$ \displaystyle z = 2y^2 $$
+所以
+$$ \displaystyle x + 2y - z = 2y + 2y - 2y^2 = -2y^2 + 4y $$
+当 $y = 1$ 时，上式有最大值 $2$.故选 $C$."
+903,2020-G-新高考I卷-11-不等式,不等式\2020\2020-G-新高考I卷-11-不等式.tex,2020,G,新高考I卷,11,不等式,,否,选择题,,是,0,,2026-06-26 02:59:04,2026-06-26 02:59:04,"已知 $a>0$，$b>0$，且 $a+b=1$，则（ ） (\hspace{1cm})
+\begin{choices}
+\choice{{$a^2+b^2\geqslant\dfrac{1}{2}$}}
+\choice{{$2^{a-b}>\dfrac{1}{2}$}}
+\choice{{$\log_{2}a+\log_{2}b\geqslant-2$}}
+\choice{{$\sqrt{a}+\sqrt{b}\leqslant\sqrt{2}$}}
+\end{choices}",$ABD$.,"\circled{1}已知 $a>0$，$b>0$，且 $a+b=1$，所以 $(a+b)^2\leqslant 2a^2+2b^2$，则 $a^2+b^2\geqslant \dfrac{1}{2}$，故 A 正确．
+
+\circled{2}利用分析法：要证 $2^{a-b}>\dfrac{1}{2}$，只需证明 $a-b>-1$ 即可，即 $a>b-1$，由于 $a>0$，$b>0$，且 $a+b=1$，所以：$a>0$，$-1<b-1<0$，故 B 正确．
+
+\circled{3} $\log_{2}a+\log_{2}b=\log_{2}ab\leqslant \log_{2}(\dfrac{a+b}{2})^2=-2$，故 C 错误．
+
+\circled{4}由于 $a>0$，$b>0$，且 $a+b=1$，利用分析法：要证 $\sqrt{a}+\sqrt{b}\leqslant \sqrt{2}$ 成立，只需对关系式进行平方，整理得 $a+b+2\sqrt{ab}\leqslant 2$，即 $2\sqrt{ab}\leqslant 1$，故 $\sqrt{ab}\leqslant \dfrac{1}{2}=\dfrac{a+b}{2}$，当且仅当 $a=b=\dfrac{1}{2}$ 时，等号成立．故 D 正确．
+
+故选：$ABD$．"
+904,2020-G-江苏卷-12-不等式,不等式\2020\2020-G-江苏卷-12-不等式.tex,2020,G,江苏卷,12,不等式,,否,填空题,,是,0,,2026-06-26 03:06:50,2026-06-26 03:06:50,"已知 $ 5x^2y^2 + y^4 = 1(x, y \in \mathbf{R}) $，则 $ x^2 + y^2 $ 的最小值是\underline{\hspace{4em}}.",$\dfrac{4}{5}$,"因为这个题目的已知等式与所要求的式子的次数不同，所以我们要利用好基本不等式来进行系数配凑，进而凑出以目标函数为变元的式子.
+
+原式变形为
+$$ 4=(5x^2+y^2)\cdot 4y^2\leqslant \left[\frac{(5x^2+y^2)+4y^2}{2}\right]^2=\frac{25}{4}(x^2+y^2)^2. $$
+故 $ x^2+y^2 \geqslant \dfrac{4}{5} $，当且仅当 $ 5x^2+y^2=4y^2=2 $，即 $ x^2=\dfrac{3}{10}, y^2=\dfrac{1}{2} $ 时，等号成立. 所以
+$$ (x^2+y^2)_{\min }=\frac{4}{5}. $$"
+905,2021-G-上海卷-16-不等式,不等式\2021\2021-G-上海卷-16-不等式.tex,2021,G,上海卷,16,不等式,,是,选择题,,是,0,,2026-06-26 03:53:39,2026-06-26 03:53:39,"两两不同的 $x_1, x_2, x_3, y_1, y_2, y_3$ 满足 $x_1+y_1=x_2+y_2=x_3+y_3$，且满足 $x_1<y_1, x_2<y_2, x_3<y_3, x_1y_1+x_3y_3=2x_2y_2>0$. 下列一定成立的是：(\hspace{1cm})
+\begin{choices}
+\choice{{$x_1+x_3>2x_2$}}
+\choice{{$x_1+x_3<2x_2$}}
+\choice{{$x_1x_3>x_2^2$}}
+\choice{{$x_1x_3<x_2^2$}}
+\end{choices}",A,"已知条件中出现了大量两个变量的和与积, 进而联想到一元二次方程, 因此考虑利用抛物线数形结合来解决它:
+
+设 $x_1+y_1=x_2+y_2=x_3+y_3=a$, $x_1y_1=b_1$, $x_2y_2=b_2$, $x_3y_3=b_3$, $2b_2=b_1+b_3$
+
+作直线 $y=b_1$, $y=b_2$, $y=b_3$ 与 $y=-x^2+ax$ 相交, 标出题目有关交点的横坐标:
+\begin{tikzpicture}[line cap=round,line join=round,scale=0.55]
+\usetikzlibrary{calc}
+
+% --- parameters (schematic) ---
+\def\a{8.0}    % parabola y = -x^2 + a x
+\def\bOne{12}  % y=b1 (top line)
+\def\bTwo{6}   % y=b2 (middle line)
+\def\bThree{2} % y=b3 (bottom line)
+
+% helper: intersection x of -x^2 + a x = b  -> x = (a ± sqrt(a^2-4b))/2
+\pgfmathsetmacro{\dOne}{sqrt(\a*\a-4*\bOne)}
+\pgfmathsetmacro{\dTwo}{sqrt(\a*\a-4*\bTwo)}
+\pgfmathsetmacro{\dThree}{sqrt(\a*\a-4*\bThree)}
+
+\pgfmathsetmacro{\xoneL}{(\a-\dOne)/2}
+\pgfmathsetmacro{\xoneR}{(\a+\dOne)/2}
+\pgfmathsetmacro{\xtwoL}{(\a-\dTwo)/2}
+\pgfmathsetmacro{\xtwoR}{(\a+\dTwo)/2}
+\pgfmathsetmacro{\xthreeL}{(\a-\dThree)/2}
+\pgfmathsetmacro{\xthreeR}{(\a+\dThree)/2}
+
+% --- draw the three horizontal lines ---
+\draw[thick] (-0.2,\bOne) -- (\a+0.6,\bOne);
+\draw[thick] (-0.2,\bTwo) -- (\a+0.6,\bTwo);
+\draw[thick] (-0.2,\bThree) -- (\a+0.6,\bThree);
+
+\node[right] at (\a+0.65,\bOne) {$y=b_1$};
+\node[right] at (\a+0.65,\bTwo) {$y=b_2$};
+\node[right] at (\a+0.65,\bThree) {$y=b_3$};
+
+% --- parabola y = -x^2 + a x ---
+\draw[thick] plot[domain=-0.2:\a+0.2,samples=200] (\x,{-(\x)*(\x)+\a*(\x)});
+\node[right] at (\a,{-(\a-0.2)*(\a-0.2)+\a*(\a-0.2)-1.5}) {$y=-x^2+ax$};
+
+% --- mark intersection points with labels x_i, y_i ---
+\coordinate (X1) at (\xoneL,\bOne);
+\coordinate (Y1) at (\xoneR,\bOne);
+\coordinate (X2) at (\xtwoL,\bTwo);
+\coordinate (Y2) at (\xtwoR,\bTwo);
+\coordinate (X3) at (\xthreeL,\bThree);
+\coordinate (Y3) at (\xthreeR,\bThree);
+
+\foreach \P/\lab/\pos in {X1/$x_1$/above,Y1/$y_1$/above,X2/$x_2$/above,Y2/$y_2$/above,X3/$x_3$/below,Y3/$y_3$/below}{
+  \fill (\P) circle (1.2pt);
+  \node[\pos] at (\P) {\lab};
+}
+
+% --- the oblique segment from x3 to x1 ---
+\draw[thick] (X3) -- (X1);
+
+% --- label (x1+x3)/2 on the middle line ---
+\pgfmathsetmacro{\xm}{(\xoneL+\xthreeL)/2}
+\coordinate (M) at (\xm,\bTwo);
+\fill (M) circle (1.1pt);
+\node[below] at ($(M)+(1,-0.05)$) {$\dfrac{x_1+x_3}{2}$};
+
+\end{tikzpicture}
+
+由图可知 $x_2<\dfrac{x_1+x_3}{2}$, 选 A. 严格的代数证明如下:
+
+设 $x_1=m-a$, $x_2=m-b$, $x_3=m-c$, $y_1=m+a$, $y_2=m+b$, $y_3=m+c$ ($a,b,c>0$)
+
+$m^2-a^2+m^2-c^2=2(m^2-b^2)\Rightarrow 2b^2=a^2+c^2\Rightarrow 2b^2>\dfrac{(a+c)^2}{2}\Rightarrow b>\dfrac{a+c}{2}$
+
+即 $x_1+x_3-2x_2=2b-(a+c)>0$.
+
+$x_1x_3-x_2^2=m^2-(a+c)m+ac-m^2+2bm-b^2=-\dfrac{(a-c)^2}{2}+m(2b-a+c)$
+
+由于 $m$ 大小正负未知, 因此无法判断 $x_1x_3-x_2^2$ 正负, 选 A."

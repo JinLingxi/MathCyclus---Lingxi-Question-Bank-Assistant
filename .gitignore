@@ -1,6 +1,9 @@
 # API 密钥和环境变量 (绝对不能上传)
 .env
 
+# Agent Mail 授权过程中的本地临时日志
+.agently-auth/
+
 # TikZ 绘图的临时图片和 PDF 缓存 (会占用大量空间，不需要上传)
 .tikz_cache/
 *.pdf
