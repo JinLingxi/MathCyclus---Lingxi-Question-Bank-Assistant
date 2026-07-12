@@ -21,6 +21,7 @@ import subprocess
 import csv
 import datetime
 from services.file_service import atomic_write_text, backup_existing_file
+from utils.runtime_files import ensure_log_csv
 
 # 基础路径配置
 # 项目根目录：脚本运行的工作目录
@@ -118,7 +119,7 @@ def update_chapter_contents():
             dirs[:] = [d for d in dirs if "相关图" not in d]
             
             for file in files:
-                if file.endswith('.tex') and not file.startswith('content_'):
+                if file.endswith('.tex') and not file.startswith('content_') and '-WK-' not in file:
                     # 排除 content_*.tex 自身，避免循环引用
                     file_path = os.path.join(root, file)
                     # 计算相对路径，用于 \input 指令
@@ -178,6 +179,7 @@ def main():
     主程序入口
     """
     start_time = time.time()
+    ensure_log_csv(root_dir)
     # 生成本次运行的唯一批次 ID，用于日志记录
     batch_id = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_entries = []

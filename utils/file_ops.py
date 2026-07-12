@@ -2,11 +2,22 @@ import os
 import re
 from .core_config import CHAPTERS_DIR, SUBJECTS
 
+
+def _matches_paper_type(filename, paper_type=None):
+    """Default file queries exclude WK; pass paper_type='WK' for the cloze library."""
+    if not filename.endswith(".tex") or filename.startswith("content_"):
+        return False
+    parts = os.path.splitext(os.path.basename(filename))[0].split("-")
+    if len(parts) < 5:
+        return False
+    actual_type = parts[1]
+    return actual_type == paper_type if paper_type else actual_type != "WK"
+
 def ensure_dir(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
-def get_all_years_globally():
+def get_all_years_globally(paper_type=None):
     """获取所有板块中包含的年份集合"""
     years = set()
     if not os.path.exists(CHAPTERS_DIR):
@@ -15,32 +26,43 @@ def get_all_years_globally():
         subject_dir = os.path.join(CHAPTERS_DIR, subject)
         if os.path.isdir(subject_dir):
             for year in os.listdir(subject_dir):
-                if year.isdigit() and os.path.isdir(os.path.join(subject_dir, year)):
+                year_dir = os.path.join(subject_dir, year)
+                if not (year.isdigit() and os.path.isdir(year_dir)):
+                    continue
+                if any(_matches_paper_type(filename, paper_type) for filename in os.listdir(year_dir)):
                     years.add(year)
     return sorted(list(years), reverse=True)
 
-def get_years(subject):
+def get_years(subject, paper_type=None):
     subject_dir = os.path.join(CHAPTERS_DIR, subject)
     if not os.path.exists(subject_dir):
         return []
-    years = [d for d in os.listdir(subject_dir) if os.path.isdir(os.path.join(subject_dir, d))]
+    years = [
+        year for year in os.listdir(subject_dir)
+        if os.path.isdir(os.path.join(subject_dir, year))
+        and any(_matches_paper_type(filename, paper_type) for filename in os.listdir(os.path.join(subject_dir, year)))
+    ]
     return sorted(years, reverse=True)
 
-def get_files(subject, year):
+def get_files(subject, year, paper_type=None):
     target_dir = os.path.join(CHAPTERS_DIR, subject, year)
     if not os.path.exists(target_dir):
         return []
-    files = [f for f in os.listdir(target_dir) if f.endswith(".tex") and not f.startswith("content_") and " 相关图" not in target_dir and " 图" not in f]
+    files = [
+        f for f in os.listdir(target_dir)
+        if f.endswith(".tex") and not f.startswith("content_") and " 相关图" not in target_dir and " 图" not in f
+        and _matches_paper_type(f, paper_type)
+    ]
     return sorted(files)
 
-def get_papers_by_year(year):
+def get_papers_by_year(year, paper_type=None):
     """获取某一年份下的所有试卷名称"""
     papers = set()
     for subject in SUBJECTS:
         target_dir = os.path.join(CHAPTERS_DIR, subject, year)
         if os.path.exists(target_dir):
             for f in os.listdir(target_dir):
-                if f.endswith(".tex") and not f.startswith("content_") and " 相关图" not in target_dir and " 图" not in f:
+                if f.endswith(".tex") and not f.startswith("content_") and " 相关图" not in target_dir and " 图" not in f and _matches_paper_type(f, paper_type):
                     parts = f[:-4].split('-')
                     if len(parts) >= 5:
                         papers.add(parts[2])
@@ -78,7 +100,7 @@ def get_papers_by_year_and_type(year, p_type):
         target_dir = os.path.join(CHAPTERS_DIR, subject, year)
         if os.path.exists(target_dir):
             for f in os.listdir(target_dir):
-                if f.endswith(".tex") and not f.startswith("content_") and " 相关图" not in target_dir and " 图" not in f:
+                if f.endswith(".tex") and not f.startswith("content_") and " 相关图" not in target_dir and " 图" not in f and _matches_paper_type(f, p_type):
                     parts = f[:-4].split('-')
                     if len(parts) >= 5 and parts[1] == p_type:
                         papers.add(parts[2])
@@ -105,14 +127,14 @@ def get_questions_by_paper_and_type(year, paper_name, p_type):
             return 999
     return sorted(questions, key=sort_key)
 
-def get_questions_by_paper(year, paper_name):
+def get_questions_by_paper(year, paper_name, paper_type=None):
     """获取某年某试卷的所有题目"""
     questions = []
     for subject in SUBJECTS:
         target_dir = os.path.join(CHAPTERS_DIR, subject, year)
         if os.path.exists(target_dir):
             for f in os.listdir(target_dir):
-                if f.endswith(".tex") and not f.startswith("content_") and " 图" not in f and f"-{paper_name}-" in f:
+                if f.endswith(".tex") and not f.startswith("content_") and " 图" not in f and f"-{paper_name}-" in f and _matches_paper_type(f, paper_type):
                     file_path = os.path.join(target_dir, f)
                     parts = f[:-4].split('-')
                     real_subject = parts[4] if len(parts) >= 5 else subject

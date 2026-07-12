@@ -17,15 +17,16 @@
 ### 1. 核心路由与主控制台：`question_bank_app.py`
 这是整个系统的心脏，长达数千行，集成了路由分发、业务流转、AI 交互与绝大多数 UI 绘制。
 
-#### 1.1 页面路由分发 (`main()` 与 `menu_options`)
-- 侧边栏使用 `option_menu` 进行页面导航。
-- 对应六大核心视图：
-  1. `page_dashboard()`: 数据统计台（调用 `charts.py` 渲染热力图、活动曲线）。
-  2. `page_single_entry()`: 单题录入（包含 OCR 剪贴板识别、AI 规范化、自动分配全局唯一 ID、自动写回磁盘）。
-  3. `page_browse()`: 全局浏览与编辑（核心查阅页，包含高级检索、行内编辑、标签修改、AI 解答生成面板）。
-  4. `page_exam_paper()`: 智能组卷服务（“购物车”逻辑，管理 `st.session_state["exam_selected_qs"]`）。
-  5. `page_batch_tools()`: 工具箱（ZIP 上传、文件夹批量处理、题库索引重建）。
-  6. `page_advanced_search()`: 独立的三级查找页（复用 `render_advanced_search_inline` 组件）。
+#### 1.1 页面路由分发 (`main()` 与侧边栏导航)
+- 侧边栏通过 Streamlit 单选控件进行页面导航。
+- 当前核心视图包括：
+  1. `render_statistics_dashboard()`: 数据统计台（调用 `charts.py` 渲染热力图、活动曲线）。
+  2. `page_entry()`: 单题、批量和同卷试题录入，支持图片 OCR、AI 规范化和写回题库。
+  3. `page_browse()`: 全局浏览与编辑，包含检索、源码编辑、标签修改和 AI 解答生成面板。
+  4. `page_exam_paper_generation()`: 智能组卷服务，管理 `st.session_state["exam_selected_qs"]` 购物车并导出模板文件。
+  5. `page_tools()`: 工具箱，提供题库索引重建、章节索引更新、TikZ 维护、题型格式修复和标签编辑等维护能力。
+  6. `page_advanced_search()`: 独立的三级查找页，复用 `render_advanced_search_inline` 组件。
+  7. `page_system_intro()` 与 API 设置页：提供项目说明和本地 AI 配置入口。
 
 #### 1.2 AI 解题核心链路 (`call_ai_for_answer_solutions` 及周边)
 这是最容易踩坑的模块，处理从请求到写回的完整生命周期：

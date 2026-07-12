@@ -50,9 +50,19 @@ old_app.py
 *.pyc
 
 MathCyclus_demo.html
+cloze_exports/
 
+# 题库试题源文件不上传到 GitHub
 *-G-*.tex
+*-M-*.tex
+*-W-*.tex
+*-XK-*.tex
+*-XS-*.tex
+*-QJ-*.tex
+*-JS-*.tex
 
 # 管理备份问题：本地自动备份，不上传到 GitHub
 .backups/
+
+tiku/
 

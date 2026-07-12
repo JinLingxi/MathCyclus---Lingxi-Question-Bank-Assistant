@@ -53,6 +53,229 @@ def get_editor_height(content):
         return base_height + tikz_count * 300
     return base_height
 
+
+def _tikz_image_markdown(tikz_code, source_tex_path=None, target_png_path=None):
+    b64, err = get_tikz_image_b64(
+        tikz_code,
+        BASE_DIR,
+        source_tex_path=source_tex_path,
+        target_png_path=target_png_path,
+    )
+    if b64:
+        return f"\n\n<div style='text-align: center;'><img src='data:image/png;base64,{b64}' style='max-width:100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 10px 0;'></div>\n\n"
+
+    safe_code = html.escape(tikz_code)
+    if err == "MISSING_PYMUPDF":
+        return (
+            "\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n"
+            f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
+        )
+    safe_err = html.escape(str(err))
+    return (
+        f"\n\n> ⚠️ **TikZ 编译失败** (`{safe_err}`)。请检查 LaTeX 语法或本地环境。\n\n"
+        f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
+    )
+
+
+def _replace_latex_linebreaks_outside_math(s):
+    s = s or ""
+    out = []
+    i = 0
+    in_inline_math = False
+    in_display_math = False
+    in_paren_math = False
+    in_bracket_math = False
+
+    while i < len(s):
+        if s.startswith("<details", i):
+            end = s.find("</details>", i)
+            if end != -1:
+                end += len("</details>")
+                out.append(s[i:end])
+                i = end
+                continue
+
+        if s.startswith(r"\[", i):
+            in_bracket_math = True
+            out.append(s[i:i + 2])
+            i += 2
+            continue
+        if s.startswith(r"\]", i):
+            in_bracket_math = False
+            out.append(s[i:i + 2])
+            i += 2
+            continue
+        if s.startswith(r"\(", i):
+            in_paren_math = True
+            out.append(s[i:i + 2])
+            i += 2
+            continue
+        if s.startswith(r"\)", i):
+            in_paren_math = False
+            out.append(s[i:i + 2])
+            i += 2
+            continue
+
+        if s.startswith("$$", i) and not in_inline_math:
+            in_display_math = not in_display_math
+            out.append("$$")
+            i += 2
+            continue
+
+        if s[i] == "$" and not in_display_math and (i == 0 or s[i - 1] != "\\"):
+            in_inline_math = not in_inline_math
+            out.append(s[i])
+            i += 1
+            continue
+
+        in_math = in_inline_math or in_display_math or in_paren_math or in_bracket_math
+        if not in_math and s.startswith(r"\\", i):
+            next_pos = i + 2
+            if next_pos < len(s) and s[next_pos].isascii() and s[next_pos].isalpha():
+                out.append(s[i])
+                i += 1
+                continue
+
+            end = next_pos
+            if end < len(s) and s[end] == "[":
+                close = s.find("]", end + 1)
+                if close != -1:
+                    end = close + 1
+            while end < len(s) and s[end] in " \t":
+                end += 1
+            out.append("<br>\n")
+            i = end
+            continue
+
+        for command in (r"\newline", r"\linebreak"):
+            if not in_math and s.startswith(command, i):
+                next_pos = i + len(command)
+                if next_pos == len(s) or not (s[next_pos].isascii() and s[next_pos].isalpha()):
+                    out.append("<br>\n")
+                    i = next_pos
+                    break
+        else:
+            out.append(s[i])
+            i += 1
+            continue
+        continue
+
+    return "".join(out)
+
+
+def _iter_latex_preview_segments(s):
+    s = s or ""
+    i = 0
+    while i < len(s):
+        if s.startswith("<details", i):
+            end = s.find("</details>", i)
+            if end != -1:
+                end += len("</details>")
+                yield "protected", s[i:end]
+                i = end
+                continue
+
+        math_start = None
+        math_end_token = None
+        if s.startswith("$$", i):
+            math_start = i + 2
+            math_end_token = "$$"
+        elif s.startswith(r"\[", i):
+            math_start = i + 2
+            math_end_token = r"\]"
+        elif s.startswith(r"\(", i):
+            math_start = i + 2
+            math_end_token = r"\)"
+        elif s[i] == "$" and (i == 0 or s[i - 1] != "\\"):
+            math_start = i + 1
+            math_end_token = "$"
+
+        if math_start is not None:
+            end = s.find(math_end_token, math_start)
+            if end == -1:
+                yield "math", s[i:]
+                return
+            end += len(math_end_token)
+            yield "math", s[i:end]
+            i = end
+            continue
+
+        next_positions = [p for p in (
+            s.find("$$", i + 1),
+            s.find(r"\[", i + 1),
+            s.find(r"\(", i + 1),
+            s.find("<details", i + 1),
+        ) if p != -1]
+
+        single_dollar = -1
+        j = i + 1
+        while j < len(s):
+            j = s.find("$", j)
+            if j == -1:
+                break
+            if (j == 0 or s[j - 1] != "\\") and not s.startswith("$$", j):
+                single_dollar = j
+                break
+            j += 1
+        if single_dollar != -1:
+            next_positions.append(single_dollar)
+
+        end = min(next_positions) if next_positions else len(s)
+        yield "text", s[i:end]
+        i = end
+
+
+def _circled_text_value(value):
+    value = (value or "").strip()
+    if value.isdigit():
+        n = int(value)
+        if n == 0:
+            return chr(0x24EA)
+        if 1 <= n <= 20:
+            return chr(0x2460 + n - 1)
+    return f"({value})"
+
+
+def _circled_html(value):
+    safe_value = html.escape((value or "").strip())
+    return f'<span style="display:inline-block; width:1.2em; height:1.2em; line-height:1.2em; text-align:center; border-radius:50%; border:1px solid currentColor; font-size:0.85em;">{safe_value}</span>'
+
+
+def _replace_circled_for_preview(s):
+    def replace_math(segment):
+        segment = re.sub(
+            r'\\text\s*\{\s*\\circled\{([^{}]+)\}\s*\}',
+            lambda m: r'\text{' + _circled_text_value(m.group(1)) + '}',
+            segment,
+        )
+        return re.sub(
+            r'\\circled\{([^{}]+)\}',
+            lambda m: r'\text{' + _circled_text_value(m.group(1)) + '}',
+            segment,
+        )
+
+    out = []
+    for kind, segment in _iter_latex_preview_segments(s):
+        if kind == "math":
+            out.append(replace_math(segment))
+        elif kind == "text":
+            out.append(re.sub(r'\\circled\{([^{}]+)\}', lambda m: _circled_html(m.group(1)), segment))
+        else:
+            out.append(segment)
+    return "".join(out)
+
+
+def _replace_spacing_outside_math(s):
+    out = []
+    for kind, segment in _iter_latex_preview_segments(s):
+        if kind == "text":
+            segment = re.sub(r'\\hspace\{.*?\}', "\u3000", segment)
+            segment = segment.replace(r'\quad', "\u3000")
+            segment = segment.replace(r'\hfill', "\u3000")
+        out.append(segment)
+    return "".join(out)
+
+
 def latex_to_markdown(content, show_title=True):
     """简单的 LaTeX 转 Markdown 用于预览"""
     content = re.sub(r"(?<!\$)\$([^$\n]*?)\$(?!\$)", lambda m: "$" + m.group(1).strip() + "$", content)
@@ -139,20 +362,14 @@ def latex_to_markdown(content, show_title=True):
     content = re.sub(r'\\underline\{\\hspace\{.*?\}\}', r'<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>', content)
     content = re.sub(r'\\underline\{(.*?)\}', r'<u>\1</u>', content)
     
-    # 处理剩下的 \hspace{...} 为全角空格
-    content = re.sub(r'\\hspace\{.*?\}', '　', content)
-    content = content.replace(r'\quad', '　')
-    content = content.replace(r'\hfill', '　')
+    # 处理剩下的 \hspace{...} 为全角空格，但不破坏数学公式内的空白命令
+    content = _replace_spacing_outside_math(content)
     
     # 处理 \textbf
     content = re.sub(r'\\textbf\{(.*?)\}', r'**\1**', content, flags=re.DOTALL)
     
-    # 处理 \circled{} (带圈数字)
-    def replace_circled(match):
-        num = match.group(1)
-        return f'<span style="display:inline-block; width:1.2em; height:1.2em; line-height:1.2em; text-align:center; border-radius:50%; border:1px solid currentColor; font-size:0.85em;">{num}</span>'
-
-    content = re.sub(r'\\circled\{(.*?)\}', replace_circled, content)
+    # 处理 \circled{}：数学公式内转为 KaTeX 可渲染的 \text{①}，公式外使用 HTML 圈号
+    content = _replace_circled_for_preview(content)
 
     # 1. 替换被抽离的 \input{... 相关图/...} 命令为渲染图片
     def replace_input_tikz(match):
@@ -168,49 +385,31 @@ def latex_to_markdown(content, show_title=True):
                 with open(full_path, 'r', encoding='utf-8') as f:
                     tikz_code = f.read()
                 
-                b64, err = get_tikz_image_b64(tikz_code, BASE_DIR, source_tex_path=full_path, target_png_path=png_path)
-                if b64:
-                    return f"\n\n<div style='text-align: center;'><img src='data:image/png;base64,{b64}' style='max-width:100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 10px 0;'></div>\n\n"
-                elif err == "MISSING_PYMUPDF":
-                    safe_code = html.escape(tikz_code)
-                    return (
-                        "\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n"
-                        f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
-                    )
-                else:
-                    safe_code = html.escape(tikz_code)
-                    safe_err = html.escape(str(err))
-                    return (
-                        f"\n\n> ⚠️ **TikZ 编译失败** (`{safe_err}`)。请检查 LaTeX 语法或本地环境。\n\n"
-                        f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
-                    )
+                return _tikz_image_markdown(tikz_code, source_tex_path=full_path, target_png_path=png_path)
             else:
                 return f"\n> ⚠️ 找不到引用的图片文件: `{input_path}`\n"
         return match.group(0)
 
     content = re.sub(r'\\input\{(.*?)\}', replace_input_tikz, content)
 
-    # 2. 替换题库中遗留的内联 \begin{tikzpicture} ... \end{tikzpicture}
+    # 2. 替换题库中遗留的内联 TikZ 代码块
     def replace_inline_tikz(match):
         tikz_code = match.group(0)
-        b64, err = get_tikz_image_b64(tikz_code, BASE_DIR)
-        if b64:
-            return f"\n\n<div style='text-align: center;'><img src='data:image/png;base64,{b64}' style='max-width:100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 10px 0;'></div>\n\n"
-        elif err == "MISSING_PYMUPDF":
-            safe_code = html.escape(tikz_code)
-            return (
-                "\n\n> ⚠️ **提示**：检测到 TikZ 绘图。请在终端运行 `pip install pymupdf` 安装依赖后，即可渲染为图片预览。\n\n"
-                f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
-            )
-        else:
-            safe_code = html.escape(tikz_code)
-            safe_err = html.escape(str(err))
-            return (
-                f"\n\n> ⚠️ **TikZ 编译失败** (`{safe_err}`)。请检查 LaTeX 语法或本地环境。\n\n"
-                f"<details><summary>查看 TikZ 源码</summary><div style='white-space: pre-wrap; font-family: inherit; background: #ffffff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 10px; margin-top: 8px;'>{safe_code}</div></details>\n\n"
-            )
+        return _tikz_image_markdown(tikz_code)
 
+    content = re.sub(
+        r'\\begingroup(?:(?!\\endgroup)[\s\S])*?\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}(?:(?!\\endgroup)[\s\S])*?\\endgroup',
+        replace_inline_tikz,
+        content,
+        flags=re.DOTALL,
+    )
     content = re.sub(r'\\begin\{tikzpicture\}.*?\\end\{tikzpicture\}', replace_inline_tikz, content, flags=re.DOTALL)
+    content = re.sub(
+        r'\\begingroup(?:(?!\\endgroup)[\s\S])*?\\(?:draw|coordinate|node|fill|path|foreach)\b(?:(?!\\endgroup)[\s\S])*?\\endgroup',
+        replace_inline_tikz,
+        content,
+        flags=re.DOTALL,
+    )
     
     # 尝试处理表格 tabular -> Markdown Table
     def replace_tabular(match):
@@ -269,6 +468,7 @@ def latex_to_markdown(content, show_title=True):
 
     content = re.sub(r'\\\[(.*?)\\\]', r'$$\n\1\n$$', content, flags=re.DOTALL)
     content = re.sub(r'\\\((.*?)\\\)', r'$\1$', content, flags=re.DOTALL)
+    content = _replace_latex_linebreaks_outside_math(content)
 
     def _wrap_boxed_outside_math(s: str) -> str:
         s = s or ""
@@ -395,7 +595,7 @@ def extract_and_replace_tikz(content, filename, save_dir):
     tikz_dir_name = f"{base_name} 相关图"
     tikz_dir_path = os.path.join(save_dir, tikz_dir_name)
     
-    pattern = r'(\\input\{[^}]*?相关图/[^}]+\})|(\\begin\{tikzpicture\}.*?\\end\{tikzpicture\})'
+    pattern = r'(\\input\{[^}]*?相关图/[^}]+\})|(\\begingroup(?:(?!\\endgroup)[\s\S])*?\\begin\{tikzpicture\}[\s\S]*?\\end\{tikzpicture\}(?:(?!\\endgroup)[\s\S])*?\\endgroup)|(\\begin\{tikzpicture\}.*?\\end\{tikzpicture\})'
     matches = list(re.finditer(pattern, content, re.DOTALL))
     
     if not matches:
@@ -425,7 +625,7 @@ def extract_and_replace_tikz(content, filename, save_dir):
                 else:
                     tikz_code = "% ⚠️ 找不到原文件内容\n"
         else:
-            tikz_code = match.group(2)
+            tikz_code = match.group(2) or match.group(3)
             
         tikz_filename = f"{base_name} 图{match_count}.tex"
         tikz_file_path = os.path.join(tikz_dir_path, tikz_filename)

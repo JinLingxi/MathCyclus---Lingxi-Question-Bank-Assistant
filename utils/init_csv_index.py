@@ -14,7 +14,7 @@ CSV_PATH = CSV_INDEX_PATH
 headers = [
     "题目ID", "文件名称", "相对文件路径", "年份", "试卷类型", "试卷名称", "原卷题号", "知识板块",
     "标签", "包含TikZ绘图", "题型", "难度星级", "包含解析", "组卷引用次数", "备注",
-    "初次录入的时间", "最后修改时间", "题干", "答案", "解析"
+    "来源题目ID", "挖空类型", "生成时间", "初次录入的时间", "最后修改时间", "题干", "答案", "解析"
 ]
 
 # 读取已有的 CSV 索引以保留题目ID和扩展标签
@@ -108,6 +108,9 @@ if os.path.exists(CHAPTERS_DIR):
             tags = meta_dict.get("标签", old_row.get("标签", ""))
             remark = meta_dict.get("备注", old_row.get("备注", ""))
             usage_cnt = meta_dict.get("组卷引用次数", old_row.get("组卷引用次数", 0))
+            source_question_id = meta_dict.get("来源题目ID", old_row.get("来源题目ID", ""))
+            cloze_type = meta_dict.get("挖空类型", old_row.get("挖空类型", ""))
+            generated_at = meta_dict.get("生成时间", old_row.get("生成时间", ""))
             
             # 如果初次录入时间已经存在，保留旧的时间以防文件被修改导致时间变动
             orig_c_time = old_row.get("初次录入的时间", c_time) if old_row.get("初次录入的时间") else c_time
@@ -128,6 +131,9 @@ if os.path.exists(CHAPTERS_DIR):
                 "包含解析": has_solution,
                 "组卷引用次数": usage_cnt,
                 "备注": remark,
+                "来源题目ID": source_question_id,
+                "挖空类型": cloze_type,
+                "生成时间": generated_at,
                 "初次录入的时间": orig_c_time,
                 "最后修改时间": m_time,
                 "题干": stem_text,

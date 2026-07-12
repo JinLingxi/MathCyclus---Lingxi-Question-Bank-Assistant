@@ -4,7 +4,22 @@ import base64
 import subprocess
 import shutil
 import uuid
+import re
 from .file_ops import ensure_dir
+
+
+def _looks_like_tikz_body(code):
+    return bool(re.search(r"\\(?:draw|coordinate|node|fill|path|foreach|clip|shade|def)\b", code or ""))
+
+
+def _normalize_tikz_code(tikz_code):
+    code = (tikz_code or "").strip()
+    code = re.sub(r"^\s*```(?:latex|tex|tikz)?\s*", "", code)
+    code = re.sub(r"\s*```\s*$", "", code)
+    if r"\begin{tikzpicture}" not in code and _looks_like_tikz_body(code):
+        code = "\\begin{tikzpicture}[line cap=round,line join=round]\n" + code + "\n\\end{tikzpicture}"
+    return code
+
 
 def get_tikz_image_b64(tikz_code, base_dir, source_tex_path=None, target_png_path=None):
     """
@@ -12,6 +27,7 @@ def get_tikz_image_b64(tikz_code, base_dir, source_tex_path=None, target_png_pat
     如果提供了 source_tex_path 和 target_png_path，则使用目标路径作为缓存，并基于文件修改时间更新。
     否则使用基于代码哈希的全局缓存。
     """
+    tikz_code = _normalize_tikz_code(tikz_code)
     needs_compile = True
     
     if source_tex_path and target_png_path:
@@ -49,15 +65,36 @@ def get_tikz_image_b64(tikz_code, base_dir, source_tex_path=None, target_png_pat
 \\usepackage{{ctex}}
 \\usepackage{{amsmath}}
 \\usepackage{{amssymb}}
+\\usepackage{{xcolor}}
 \\usepackage{{tikz}}
 \\usepackage{{pgfplots}}
 \\pgfplotsset{{compat=1.16}}
 \\usetikzlibrary{{patterns}}
 \\usetikzlibrary{{calc,positioning,intersections,arrows}}
 \\usetikzlibrary{{shapes.geometric,through,decorations.pathmorphing,arrows.meta,quotes,mindmap,shapes.symbols,shapes.arrows,automata,angles,3d,trees,shadows,shapes.callouts,decorations.pathreplacing,decorations.markings}}
+\\definecolor{{structure}}{{RGB}}{{34,94,168}}
+\\tikzset{{
+  cube/.style={{thick}},
+  hide/.style={{thick,dashed,dash pattern=on 3pt off 2pt,gray!70}},
+  hidden/.style={{thick,dashed,dash pattern=on 4pt off 2.4pt}},
+  sec/.style={{thick,red!70,dashed,dash pattern=on 3pt off 1.8pt}},
+  section/.style={{thick,red!70,dashed,dash pattern=on 4pt off 2.4pt}},
+  cut/.style={{thick,dashed,dash pattern=on 4pt off 2.4pt}},
+  aux/.style={{thick,dashed,dash pattern=on 4pt off 2.4pt}},
+  sph/.style={{thin,dashed,dash pattern=on 5pt off 2.5pt}},
+  plane/.style={{draw=black!65,fill=gray!10,fill opacity=0.2}},
+  edge/.style={{thick}},
+  dot/.style={{circle,fill,inner sep=1pt}},
+  inc/.style={{thick,->}},
+  inner/.style={{thin,dashed,dash pattern=on 3pt off 2pt}}
+}}
 \\begin{{document}}
 {tikz_code}
 \\end{{document}}"""
+
+    xelatex = shutil.which("xelatex")
+    if not xelatex:
+        return None, "MISSING_XELATEX"
 
     try:
         with open(tex_path, "w", encoding="utf-8") as f:
@@ -65,8 +102,8 @@ def get_tikz_image_b64(tikz_code, base_dir, source_tex_path=None, target_png_pat
             
         # 编译 PDF (调用系统的 xelatex)
         subprocess.run(
-            ["xelatex", "-interaction=nonstopmode", "-halt-on-error", "-output-directory", compile_dir, tex_path], 
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15
+            [xelatex, "-interaction=nonstopmode", "-halt-on-error", "-output-directory", ".", os.path.basename(tex_path)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, cwd=compile_dir
         )
         
         # 将 PDF 转为 PNG

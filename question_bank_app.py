@@ -10,6 +10,7 @@ import html
 import subprocess
 import shutil
 import uuid
+import sys
 from dotenv import load_dotenv, dotenv_values
 try:
     from PIL import ImageGrab
@@ -20,10 +21,12 @@ import streamlit.components.v1 as components
 import io
 from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
 from services.file_service import atomic_write_text, backup_existing_file, file_change_token
+from utils.runtime_files import ensure_log_csv
 
 # 加载根目录环境变量
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(APP_ROOT, ".env"))
+ensure_log_csv(APP_ROOT)
 
 from utils.core_config import *
 from utils.file_ops import *
@@ -32,6 +35,13 @@ from utils.latex_ops import *
 from utils.csv_ops import add_to_csv_index, update_csv_index_for_edit
 
 # ================= 工具函数 =================
+def _editable_paper_type_options(paper_type_scope=None):
+    """Keep WK confined to the dedicated cloze-question workspace."""
+    if paper_type_scope == "WK":
+        return ["WK"]
+    return [paper_type for paper_type in PAPER_TYPES if paper_type != "WK"]
+
+
 # 注入自定义 CSS
 def inject_custom_css():
     st.markdown("""
@@ -1630,10 +1640,12 @@ def render_delete_question_item(fpath: str, q_label: str = None, content: str = 
         else:
             confirm_delete_question_dialog(fpath, q_label, key_hash)
 
-def ocr_image_to_latex(images=None):
+def ocr_image_to_latex(images=None, max_image_size: int = 1024, max_tokens: int = 4096, spinner_text: str = "🤖 AI 正在识别中，请稍候..."):
     """调用 AI 接口识别图片中的数学公式 (支持多张)
     Args:
         images: List of PIL Image objects
+        max_image_size: 发送给视觉模型前的图片最长边限制。
+        max_tokens: 本次 OCR 请求允许返回的最大 token 数。
     """
     # 动态加载 .env 配置，支持热更新
     load_dotenv(_root_env_path(), override=True)
@@ -1668,10 +1680,9 @@ def ocr_image_to_latex(images=None):
         content_parts = [{"type": "text", "text": prompt}]
         
         for img in images:
-            # 限制最大边长为 1024px
-            max_size = 1024
-            if max(img.size) > max_size:
-                ratio = max_size / max(img.size)
+            # 限制最大边长，避免请求体过大；PDF 页面可使用更高分辨率。
+            if max(img.size) > max_image_size:
+                ratio = max_image_size / max(img.size)
                 new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
                 img = img.resize(new_size, Image.Resampling.LANCZOS)
             
@@ -1702,10 +1713,10 @@ def ocr_image_to_latex(images=None):
                     "content": content_parts
                 }
             ],
-            "max_tokens": 4096
+            "max_tokens": max_tokens
         }
         
-        with st.spinner("🤖 AI 正在识别中，请稍候..."):
+        with st.spinner(spinner_text):
             # 处理 URL: 兼容不同的 Base URL 写法
             url = normalize_chat_completions_url(base_url)
             
@@ -1735,6 +1746,34 @@ def ocr_image_to_latex(images=None):
                 
     except Exception as e:
         return f"❌ 发生错误: {str(e)}"
+
+def render_pdf_pages_to_images(pdf_bytes: bytes, page_numbers, dpi: int = 160):
+    """Render selected 1-based PDF pages into in-memory PIL images for OCR."""
+    try:
+        import fitz
+        from PIL import Image
+    except ImportError as e:
+        return [], f"缺少 PDF 识别依赖：{e}"
+
+    try:
+        images = []
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+            if pdf_doc.needs_pass:
+                return [], "PDF 已加密，暂不支持识别受密码保护的文件。"
+
+            for page_number in page_numbers:
+                if not 1 <= page_number <= pdf_doc.page_count:
+                    return [], f"页码 {page_number} 超出 PDF 的有效范围。"
+
+                page = pdf_doc.load_page(page_number - 1)
+                pix = page.get_pixmap(dpi=dpi, alpha=False)
+                with Image.open(io.BytesIO(pix.tobytes("png"))) as rendered_image:
+                    rendered_image.load()
+                    images.append(rendered_image.convert("RGB").copy())
+
+        return images, ""
+    except Exception as e:
+        return [], f"PDF 页面渲染失败：{e}"
 
 def ocr_solution_images_to_answer_solutions(images=None) -> dict:
     load_dotenv(_root_env_path(), override=True)
@@ -1879,6 +1918,193 @@ def _extract_env_block(tex: str, env_name: str) -> str:
         return ""
     m = re.search(rf"\\begin\{{{re.escape(env_name)}\}}[\s\S]*?\\end\{{{re.escape(env_name)}\}}", tex)
     return m.group(0).strip() if m else ""
+
+def _extract_env_inner_text(tex: str, env_pattern: str) -> str:
+    if not tex:
+        return ""
+    m = re.search(rf"\\begin\{{{env_pattern}\}}(?:\[[^\]]*\])?([\s\S]*?)\\end\{{{env_pattern}\}}", tex)
+    return (m.group(1) or "").strip() if m else ""
+
+def _has_nonempty_answer_and_solution(tex: str) -> bool:
+    answer_inner = _extract_env_inner_text(tex, "answer")
+    solution_inner = _extract_env_inner_text(tex, "solutions?")
+    return bool(answer_inner.strip()) and bool(solution_inner.strip())
+
+def _strip_label_data_for_export(tex: str) -> str:
+    try:
+        _, clean_content = parse_meta_data(tex or "")
+        return clean_content.strip()
+    except Exception:
+        return re.sub(
+            r'%(?: === Meta Data ===| === Begin Label Data ===)\r?\n([\s\S]*?)%(?: === End Meta ===| === End\s+Label Data ===)\r?\n',
+            '',
+            tex or '',
+            flags=re.DOTALL,
+        ).strip()
+
+def _sanitize_export_filename_component(value: str, fallback: str = "挖空题") -> str:
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value or ""))
+    text = re.sub(r"\s+", "_", text).strip("._ ")
+    return (text or fallback)[:80]
+
+def _build_question_image_tex(content: str) -> str:
+    body = _strip_label_data_for_export(content)
+
+    def _inline_input_file(match):
+        input_path = (match.group(1) or "").strip()
+        if not input_path:
+            return match.group(0)
+        candidate = input_path if os.path.isabs(input_path) else os.path.join(BASE_DIR, input_path)
+        if not candidate.endswith(".tex"):
+            candidate += ".tex"
+        if not os.path.exists(candidate):
+            return match.group(0)
+        try:
+            with open(candidate, "r", encoding="utf-8") as f:
+                return "\n" + f.read() + "\n"
+        except Exception:
+            return match.group(0)
+
+    body = re.sub(r"\\input\{([^}]+)\}", _inline_input_file, body)
+    preamble = r"""\documentclass[12pt]{ctexart}
+\usepackage[a4paper,margin=1.35cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{xparse}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\usepackage{tasks}
+\usepackage{enumitem}
+\usepackage{array,booktabs,graphicx,float,caption}
+\pgfplotsset{compat=1.16}
+\usetikzlibrary{patterns,calc,positioning,intersections,arrows,arrows.meta,quotes,angles,3d,trees,decorations.pathreplacing,decorations.markings,decorations.pathmorphing,shapes.geometric,through,shapes.symbols,shapes.arrows,automata,shadows,shapes.callouts}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.65em}
+\settasks{label=\Alph*.}
+\NewDocumentEnvironment{problem}{ m m m m m +b }{
+  \par\noindent\textbf{【#1~~#3，#4】}\par
+  #6
+  \par\vspace{0.3em}
+}{}
+\NewDocumentEnvironment{answer}{ O{【答案】} O{} O{} +b }{
+  \par\noindent\textbf{#1}\quad #4\par
+}{}
+\NewDocumentEnvironment{solutions}{ O{【解答】} O{} O{} +b }{
+  \par\noindent\textbf{#1}\quad #4\par
+}{}
+\NewDocumentEnvironment{solution}{ O{【解答】} O{} O{} +b }{
+  \par\noindent\textbf{#1}\quad #4\par
+}{}
+\NewDocumentEnvironment{choices}{ O{2} }{\begin{tasks}(#1)}{\end{tasks}}
+\NewDocumentCommand{\choice}{m}{\task #1}
+\newcommand{\circled}[1]{\tikz[baseline=(char.base)]{\node[shape=circle,draw,inner sep=1pt](char){#1};}}
+\newcommand{\jc}[1]{\textbf{#1}}
+\newcommand{\bj}[1]{\textbf{#1}}
+\begin{document}
+"""
+    return preamble + "\n" + body + "\n" + r"\end{document}" + "\n"
+
+def generate_question_png_from_latex(content: str, filename_hint: str = "挖空题", cloze_type: str = "") -> dict:
+    if not (content or "").strip():
+        return {"ok": False, "error": "当前内容为空，无法生成图片。"}
+
+    xelatex = shutil.which("xelatex")
+    if not xelatex:
+        return {"ok": False, "error": "未检测到 xelatex，无法将 LaTeX 编译为图片。"}
+
+    try:
+        import fitz
+        from PIL import Image
+    except ImportError as e:
+        return {"ok": False, "error": f"缺少图片导出依赖：{e}"}
+
+    export_dir = os.path.join(BASE_DIR, "cloze_exports")
+    compile_dir = os.path.join(export_dir, "_compile")
+    ensure_dir(export_dir)
+    ensure_dir(compile_dir)
+
+    unique_id = uuid.uuid4().hex
+    tex_name = f"{unique_id}.tex"
+    tex_path = os.path.join(compile_dir, tex_name)
+    pdf_path = os.path.join(compile_dir, f"{unique_id}.pdf")
+    tex_content = _build_question_image_tex(content)
+    last_output = ""
+
+    try:
+        with open(tex_path, "w", encoding="utf-8") as f:
+            f.write(tex_content)
+
+        completed = subprocess.run(
+            [
+                xelatex,
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                "-file-line-error",
+                tex_name,
+            ],
+            cwd=compile_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=90,
+        )
+        last_output = completed.stdout or ""
+        if completed.returncode != 0 or not os.path.exists(pdf_path):
+            return {
+                "ok": False,
+                "error": "LaTeX 编译失败，暂未生成图片。",
+                "log": last_output[-3000:],
+            }
+
+        doc = fitz.open(pdf_path)
+        page_images = []
+        try:
+            for page in doc:
+                pix = page.get_pixmap(dpi=180, alpha=False)
+                page_images.append(Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB"))
+        finally:
+            doc.close()
+
+        if not page_images:
+            return {"ok": False, "error": "PDF 中没有可导出的页面。"}
+
+        width = max(img.width for img in page_images)
+        height = sum(img.height for img in page_images)
+        combined = Image.new("RGB", (width, height), "white")
+        y = 0
+        for img in page_images:
+            x = (width - img.width) // 2
+            combined.paste(img, (x, y))
+            y += img.height
+
+        buffer = io.BytesIO()
+        combined.save(buffer, format="PNG", optimize=True)
+        png_bytes = buffer.getvalue()
+
+        safe_hint = _sanitize_export_filename_component(filename_hint, "挖空题")
+        safe_type = _sanitize_export_filename_component(cloze_type, "当前题目")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_name = f"{safe_hint}-{safe_type}-{timestamp}-{unique_id[:6]}.png"
+        out_path = os.path.join(export_dir, out_name)
+        with open(out_path, "wb") as f:
+            f.write(png_bytes)
+
+        return {"ok": True, "path": out_path, "filename": out_name, "bytes": png_bytes}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "LaTeX 编译超时，暂未生成图片。", "log": last_output[-3000:]}
+    except Exception as e:
+        return {"ok": False, "error": f"图片生成失败：{e}", "log": last_output[-3000:]}
+    finally:
+        for ext in (".tex", ".aux", ".log", ".out", ".pdf", ".xdv"):
+            temp_path = os.path.join(compile_dir, f"{unique_id}{ext}")
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
 
 def _replace_first_env_or_insert_after_problem(tex: str, env_name: str, new_block: str) -> str:
     new_block = (new_block or "").strip()
@@ -2063,6 +2289,272 @@ def _normalize_ai_generated_tex_for_preview(text: str) -> str:
     s = re.sub(r"\\begin\{solutions\}\s*", lambda _m: "\\begin{solutions}\n", s)
     s = re.sub(r"\s*\\end\{solutions\}", lambda _m: "\n\\end{solutions}", s)
     return s.strip()
+
+
+CLOZE_BLANK_TEX = r"\underline{\hspace{4em}}"
+CLOZE_GENERATION_RULES = {
+    "简单定义基础计算挖空": "只挖定义、直接使用的公式、基础计算结果与最终数值。保留关键推导结构，通常设置 $6$ 至 $10$ 个空。",
+    "基础推导与题意读取提炼挖空": "挖已知条件的关键转述、核心公式、必要的等价变形和中间结果。通常设置 $5$ 至 $8$ 个空，要求学生能完成完整推导。",
+    "关键思路抽象推导挖空": "挖方法选择、关键定理、核心转化、结论衔接和决定性推导。通常设置 $6$ 至 $8$ 个空，但不能把同一行或同一公式挖得无法作答。",
+}
+
+
+def _normalize_cloze_blank_markup(tex: str) -> str:
+    """Use one stable blank form so generated cloze questions render consistently."""
+    return re.sub(
+        r"\\underline\s*\{\s*\\hspace\*?\s*\{[^}]*\}\s*\}",
+        lambda _m: CLOZE_BLANK_TEX,
+        tex or "",
+    )
+
+
+def _normalize_cloze_generated_tex(text: str) -> str:
+    """Clean transport artifacts without changing the answer-key layout."""
+    tex = _repair_latex_from_json_escapes(text or "")
+    tex = tex.replace("```json", "").replace("```latex", "").replace("```", "").replace("`", "")
+    tex = re.sub(r"\\begin\{(problem|answer|solutions)\}\s*", lambda m: f"\\begin{{{m.group(1)}}}\n", tex)
+    tex = re.sub(r"\s*\\end\{(problem|answer|solutions)\}", lambda m: f"\n\\end{{{m.group(1)}}}", tex)
+    tex = re.sub(r"\n{3,}", "\n\n", tex)
+    return _normalize_cloze_blank_markup(tex.strip())
+
+
+def call_ai_for_cloze_question(source_tex: str, cloze_type: str) -> dict:
+    """Generate an editable student cloze version plus its answer and completed solution."""
+    load_dotenv(_root_env_path(), override=True)
+    api_key = os.getenv("AI_API_KEY")
+    base_url = os.getenv("AI_BASE_URL")
+    model_name = os.getenv("AI_SOLVER_MODEL_NAME") or os.getenv("AI_MODEL_NAME")
+
+    if not api_key or not base_url or not model_name:
+        return {"error": "AI 配置不完整，请检查 .env 文件"}
+
+    source_tex = _strip_label_data_for_export(source_tex)
+    if not source_tex or not _extract_problem_env(source_tex):
+        return {"error": "来源题目缺少完整的 problem 环境"}
+
+    rule = CLOZE_GENERATION_RULES.get(cloze_type, CLOZE_GENERATION_RULES["简单定义基础计算挖空"])
+    prompt = fr"""你是一名高中数学教研专家。请把下面的原题制作成可供学生练习的 LaTeX 挖空题。
+
+本次挖空类型：{cloze_type}
+具体要求：{rule}
+
+必须严格输出 JSON，且只包含一个字段 cloze_tex。cloze_tex 必须是完整的 LaTeX 题目，依次包含：
+1. 一个完整的 \\begin{{problem}}{{年份}}{{WK}}{{试卷名称}}{{题号}}{{知识板块}} ... \\end{{problem}}。题干必须保留原题的已知条件、小问、TikZ 图和其他必要排版；随后在 problem 内加入“解答过程：”，写出供学生填写的分步解答。
+2. 一个完整的 \\begin{{answer}} ... \\end{{answer}}，按空格出现顺序给出每个空对应的内容，并保留原题最终答案。
+3. 一个完整的 \\begin{{solutions}} ... \\end{{solutions}}，给出无挖空、完整且可核对的解答过程。
+
+强制规则：
+- 每一个空都必须且只能写为 `{CLOZE_BLANK_TEX}`，不得使用其他长度、\_\_\_、\verb|\blank|、\verb|\fillin| 等形式。
+- 不能只挖最终答案；空格要覆盖与本次类型相符的关键学习步骤。
+- 学生版的 problem 至少包含一个空，且解答过程应能独立作答。
+- solutions 中不得保留空格，必须写出完整内容。
+- 原题含有 TikZ、wrapfigure 或其他图形代码时，必须逐字保留原图代码，不能删改坐标、标注、样式或图形位置。
+- 不得输出 Markdown、反引号或 JSON 以外的说明。
+- LaTeX 命令在 JSON 字符串中必须正确转义，使用真实换行，不要输出文字 \\n。
+
+原题：
+{source_tex}"""
+
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": "You are a JSON output bot. You only output valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 5600,
+        "response_format": {"type": "json_object"} if "gpt" in model_name.lower() or "qwen" in model_name.lower() else None,
+    }
+
+    try:
+        response, _ = post_chat_completion(base_url, headers, payload, timeout=(10, 180))
+        if response.status_code != 200:
+            return {"error": f"API 请求失败: {response.status_code}\n{response.text[:500]}"}
+        result = response.json()
+        if "choices" not in result or not result["choices"]:
+            return {"error": "AI 未返回有效内容"}
+        try:
+            data = _extract_json_obj_from_text(result["choices"][0]["message"]["content"])
+        except Exception:
+            return {"error": "AI 返回格式解析失败（非 JSON）"}
+
+        cloze_tex = _normalize_cloze_generated_tex(str(data.get("cloze_tex", "")))
+        problem_tex = _extract_problem_env(cloze_tex)
+        answer_tex = _extract_env_block(cloze_tex, "answer")
+        solutions_tex = _extract_env_block(cloze_tex, "solutions")
+        if not problem_tex or not answer_tex or not solutions_tex:
+            return {"error": "AI 返回内容缺少完整的 problem、answer 或 solutions 环境"}
+        if CLOZE_BLANK_TEX not in problem_tex:
+            return {"error": "AI 未在学生版题目中生成统一格式的挖空"}
+        if CLOZE_BLANK_TEX in solutions_tex:
+            return {"error": "AI 在完整解析中保留了挖空，请重试"}
+        return {"cloze_tex": cloze_tex}
+    except requests.exceptions.Timeout:
+        return {"error": f"请求超时（模型：{model_name}），请重试"}
+    except Exception as e:
+        return {"error": f"请求发生异常: {str(e)}"}
+
+
+def _cloze_source_row_matches(row: dict, field: str, query: str) -> bool:
+    query = (query or "").strip()
+    if not query:
+        return True
+    values = {
+        "题目ID": row.get("题目ID", ""),
+        "题目类型": row.get("题型", ""),
+        "题目内容": row.get("题干", ""),
+        "解答内容": row.get("解析", ""),
+        "难度星级": row.get("难度星级", ""),
+        "标签": row.get("标签", ""),
+        "备注": row.get("备注", ""),
+    }
+    if field == "全文内容":
+        value = "\n".join(str(row.get(key, "") or "") for key in ("题干", "答案", "解析", "标签", "备注", "试卷名称", "知识板块"))
+    else:
+        value = values.get(field, "")
+    return query in str(value or "")
+
+
+def _cloze_source_label(row: dict) -> str:
+    question_id = (row.get("题目ID", "") or "").strip() or "未分配 ID"
+    year = (row.get("年份", "") or "").strip()
+    paper = (row.get("试卷名称", "") or "").strip()
+    number = (row.get("原卷题号", "") or "").strip()
+    subject = (row.get("知识板块", "") or "").strip()
+    return f"[{question_id}] {year} {paper} 第{number}题 | {subject}"
+
+
+def _cloze_source_sort_key(row: dict) -> int:
+    try:
+        return int(str(row.get("题目ID", "") or "").strip())
+    except (TypeError, ValueError):
+        return -1
+
+
+def _load_cloze_source_row(row: dict) -> str:
+    rel_path = (row.get("相对文件路径", "") or "").strip()
+    source_path = os.path.join(CHAPTERS_DIR, rel_path) if rel_path else ""
+    if not source_path or not os.path.exists(source_path):
+        raise FileNotFoundError("来源题目文件不存在，请先重建题库索引")
+    with open(source_path, "r", encoding="utf-8") as f:
+        source_tex = _strip_label_data_for_export(f.read())
+
+    fields = extract_problem_header_fields(source_tex) or {}
+    year = fields.get("year") or (row.get("年份", "") or "").strip()
+    paper = fields.get("paper") or (row.get("试卷名称", "") or "").strip()
+    number = fields.get("number") or (row.get("原卷题号", "") or "").strip()
+    subject_str = fields.get("subject_str") or (row.get("知识板块", "") or "").strip()
+    draft_tex = replace_problem_header(source_tex, year, "WK", paper, number, subject_str)
+
+    st.session_state["cloze_source_tex"] = source_tex
+    st.session_state["cloze_source_path"] = source_path
+    st.session_state["cloze_source_label"] = _cloze_source_label(row)
+    st.session_state["cloze_source_question_id"] = str(row.get("题目ID", "") or "")
+    st.session_state["entry_year"] = year
+    st.session_state["entry_p_type"] = "WK"
+    st.session_state["entry_paper_name"] = paper
+    st.session_state["entry_number"] = number
+    st.session_state["entry_subject_multi"] = [item.strip() for item in subject_str.split("，") if item.strip() in SUBJECTS]
+    st.session_state["entry_subject_user_locked"] = True
+    st.session_state["entry_content"] = draft_tex
+    st.session_state["cloze_image_result"] = None
+    return draft_tex
+
+
+def render_cloze_source_picker():
+    """Three-condition lookup limited to ordinary questions, then load a source into the draft."""
+    search_fields = ["全文内容", "题目ID", "题目类型", "题目内容", "解答内容", "难度星级", "标签", "备注"]
+    query_specs = []
+
+    with st.expander("选择来源原题", expanded=False):
+        search_cols = st.columns(3)
+        for index, column in enumerate(search_cols, start=1):
+            with column:
+                field = st.selectbox("检索字段", search_fields, key=f"cloze_source_field_{index}")
+                if field == "题目类型":
+                    query = st.selectbox("检索内容", ["", "选择题", "填空题", "解答题"], key=f"cloze_source_query_type_{index}")
+                else:
+                    query = st.text_input("检索内容", key=f"cloze_source_query_{index}")
+                query_specs.append((field, query))
+
+        try:
+            from utils.csv_ops import read_csv_index
+            source_rows = [
+                row for row in read_csv_index()
+                if (row.get("试卷类型", "") or "").strip() != "WK"
+                and _cloze_source_row_matches(row, query_specs[0][0], query_specs[0][1])
+                and _cloze_source_row_matches(row, query_specs[1][0], query_specs[1][1])
+                and _cloze_source_row_matches(row, query_specs[2][0], query_specs[2][1])
+            ]
+        except Exception as e:
+            st.error(f"读取来源题目索引失败：{e}")
+            source_rows = []
+
+        source_rows.sort(key=_cloze_source_sort_key, reverse=True)
+        source_rows = source_rows[:100]
+        if source_rows:
+            options_by_path = {}
+            for row in source_rows:
+                rel_path = (row.get("相对文件路径", "") or "").strip()
+                if rel_path:
+                    options_by_path[rel_path] = row
+            option_paths = list(options_by_path)
+            if not option_paths:
+                st.warning("匹配题目缺少文件路径，请先重建题库索引")
+                return
+            selected_key = "cloze_source_candidate_path"
+            if st.session_state.get(selected_key) not in option_paths:
+                st.session_state.pop(selected_key, None)
+            selected_path = st.selectbox(
+                "候选原题",
+                options=option_paths,
+                format_func=lambda path: _cloze_source_label(options_by_path[path]),
+                key=selected_key,
+            )
+            if st.button("载入原题", key="btn_load_cloze_source", use_container_width=True):
+                try:
+                    _load_cloze_source_row(options_by_path[selected_path])
+                    st.toast("已载入来源原题", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"载入来源原题失败：{e}")
+        else:
+            st.info("没有找到匹配的普通题目")
+
+    source_tex = st.session_state.get("cloze_source_tex", "")
+    if not source_tex:
+        return
+
+    st.caption(f"来源原题：{st.session_state.get('cloze_source_label', '')}")
+    generate_col, clear_col = st.columns([3, 1])
+    with generate_col:
+        if st.button("✨ 生成挖空题", key="btn_generate_cloze", type="primary", use_container_width=True):
+            cloze_type = st.session_state.get("cloze_generation_type", "简单定义基础计算挖空")
+            with st.spinner("AI 正在生成挖空题..."):
+                result = call_ai_for_cloze_question(source_tex, cloze_type)
+            if result.get("error"):
+                st.error(result["error"])
+            else:
+                fields = extract_problem_header_fields(source_tex) or {}
+                generated_tex = replace_problem_header(
+                    result["cloze_tex"],
+                    fields.get("year") or st.session_state.get("entry_year", ""),
+                    "WK",
+                    fields.get("paper") or st.session_state.get("entry_paper_name", ""),
+                    fields.get("number") or st.session_state.get("entry_number", ""),
+                    fields.get("subject_str") or "，".join(st.session_state.get("entry_subject_multi", [])),
+                )
+                st.session_state["entry_content"] = generated_tex
+                st.session_state["cloze_image_result"] = None
+                st.session_state["cloze_generated_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.toast("挖空题已生成，可继续人工修改", icon="✅")
+                st.rerun()
+    with clear_col:
+        if st.button("清除来源", key="btn_clear_cloze_source", use_container_width=True):
+            for key in ("cloze_source_tex", "cloze_source_path", "cloze_source_label", "cloze_source_question_id", "cloze_generated_at"):
+                st.session_state.pop(key, None)
+            st.rerun()
 
 def call_ai_for_answer_solutions(problem_tex: str, fast: bool = True) -> dict:
     load_dotenv(_root_env_path(), override=True)
@@ -2608,117 +3100,61 @@ def fix_problem_format(text):
     return text
 
 def process_batch_ocr_result(ocr_result, mode):
-    """处理批量模式下的OCR结果，智能解析多问题并转换格式"""
-    
+    """Normalize OCR output into one independently editable block per problem."""
+
     # 先修复 \begin{problem} 的非标准格式（AI可能返回 [xxx][yyy] ||zzz||www 格式）
     ocr_result = fix_problem_format(ocr_result)
-    
-    # 尝试检测是否包含多个问题（通过 ---文件名.tex--- 分隔符或多个 \begin{problem}）
-    has_file_separators = bool(re.search(r'---.+?\.tex---', ocr_result))
-    multiple_problems = len(re.findall(r'\\begin\{problem\}', ocr_result)) > 1
-    
+
+    # 以 problem 环境而非 AI 输出的文件分隔符作为唯一切分依据。模型可能只为第一题
+    # 输出分隔符，而每个 problem 都是完整题目的可靠边界。
+    problem_starts = list(re.finditer(r'\\begin\{problem\}', ocr_result))
+    if not problem_starts:
+        return ocr_result.strip()
+
     from utils.csv_ops import get_next_id
+
     current_id = get_next_id()
-    
-    def inject_label_data(match):
-        nonlocal current_id
-        template = f"% === Begin Label Data ===\n% ID: {current_id}\n% 难度星级: \n% 标签: \n% 备注: \n% 组卷引用次数: 0\n% === End  Label Data ==="
-        current_id += 1
-        return f"{match.group(1)}\n\n{template}\n\n"
-    
-    if has_file_separators or multiple_problems:
-        # 场景1: AI返回了带分隔符的多个问题（标准格式）
-        if has_file_separators:
-            # 同卷模式：保留完整的文件名格式（年份/类别/试卷由表单统一提供，但文件名保持完整）
-            if mode == "同卷试题录入":
-                converted = convert_to_same_paper_format(ocr_result)
-            # 批量模式：保留完整的 \begin{problem} 参数（年份/类别/试卷等信息来自文件名）
-            else:
-                converted = ocr_result
-            # 给每个 ---xxx.tex--- 后面加上自动分配 ID 的 Label Data
-            return re.sub(r'(---.*?---)\s*', inject_label_data, converted)
-        
-        # 场景2: AI返回了多个 \begin{problem} 但没有分隔符
-        elif multiple_problems:
-            converted = split_and_format_multiple_problems(ocr_result)
-            return re.sub(r'(---.*?---)\s*', inject_label_data, converted)
-    
-    # 场景3: 单个问题或无法自动分割，保持原样但尝试提取信息
-    extract_info_to_form(ocr_result)
-    # 给每个 ---xxx.tex--- 后面加上自动分配 ID 的 Label Data
-    return re.sub(r'(---.*?---)\s*', inject_label_data, ocr_result)
-
-def convert_to_same_paper_format(ocr_result):
-    """将完整的OCR结果转换为同卷试题录入格式（保留完整文件名）"""
-    parts = re.split(r'(---.+?\.tex---)', ocr_result)
-    
-    formatted_parts = []
-    first_problem_info = None
-    
-    for i, part in enumerate(parts):
-        if part.startswith('---') and part.endswith('---'):
-            # 提取文件名信息
-            fname = part.replace('---', '').replace('.tex', '')
-            segments = fname.split('-')
-            
-            # 从第一个问题中提取统一信息
-            if first_problem_info is None and len(segments) >= 5:
-                first_problem_info = {
-                    'year': segments[0],
-                    'type': segments[1],
-                    'paper': segments[2]
-                }
-            
-            # 保留完整的文件名格式（不再简化）
-            formatted_parts.append(part)
-        else:
-            # 保留内容原样
-            formatted_parts.append(part)
-    
-    # 如果提取到了信息，更新到表单
-    if first_problem_info:
-        update_batch_form_from_ocr(first_problem_info)
-    
-    result = ''.join(formatted_parts)
-    
-    # 确保每个问题之间有空行分隔
-    result = re.sub(r'(---.+?\.tex---)(?!\s*\n)', r'\1\n\n', result)
-    
-    return result
-
-def split_and_format_multiple_problems(ocr_result):
-    """分割多个连续的问题并添加分隔符"""
-    # 按 \begin{problem} 分割
-    problem_pattern = r'(\\begin\{problem\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}\{.*?\})'
-    problems = re.split(problem_pattern, ocr_result)
-    
-    formatted_result = ""
+    normalized_items = []
     first_info = None
-    
-    for i in range(len(problems)):
-        if re.match(r'\\begin\{problem\}', problems[i]):
-            # 提取问题信息
-            match = re.match(r'\\begin\{problem\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}', problems[i])
-            if match:
-                y, t, n, num, s = match.groups()
-                
-                # 记录第一个问题的信息
-                if first_info is None:
-                    first_info = {'year': y, 'type': t, 'paper': n}
-                
-                # 生成分隔符（简化格式）
-                formatted_result += f"\n\n---{num}-{s}.tex---\n"
-                # 使用简化的 \begin{problem}
-                formatted_result += "\\begin{problem}\n"
-        
-        elif problems[i].strip():  # 内容部分
-            formatted_result += problems[i]
-    
-    # 更新表单信息
+    ignored_prefix = ocr_result[:problem_starts[0].start()]
+    if ignored_prefix.strip() and not re.fullmatch(r'[\s\-\.\w\u4e00-\u9fff（）()]+', ignored_prefix.strip()):
+        print(f"忽略首个题目前的 OCR 内容：{ignored_prefix[:120]!r}")
+
+    for index, problem_start in enumerate(problem_starts):
+        problem_end = problem_starts[index + 1].start() if index + 1 < len(problem_starts) else len(ocr_result)
+        problem_block = ocr_result[problem_start.start():problem_end]
+
+        # 删除模型可能残留在当前题块尾部的下一题文件分隔符。
+        problem_block = re.sub(r'\n?---[^\n]*?\.tex---\s*$', '', problem_block).strip()
+        header_match = re.match(
+            r'\\begin\{problem\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}\{(.*?)\}',
+            problem_block,
+            re.DOTALL,
+        )
+        if not header_match:
+            continue
+
+        year, p_type, paper, number, subject = (value.strip() for value in header_match.groups())
+        if first_info is None:
+            first_info = {"year": year, "type": p_type, "paper": paper}
+
+        filename = generate_filename(year, p_type, paper, number, subject or "未分类")
+        label_data = (
+            "% === Begin Label Data ===\n"
+            f"% ID: {current_id}\n"
+            "% 难度星级: \n"
+            "% 标签: \n"
+            "% 备注: \n"
+            "% 组卷引用次数: 0\n"
+            "% === End  Label Data ==="
+        )
+        current_id += 1
+        normalized_items.append(f"---{filename}---\n\n{label_data}\n\n{problem_block}")
+
     if first_info:
         update_batch_form_from_ocr(first_info)
-    
-    return formatted_result.strip()
+
+    return "\n\n".join(normalized_items).strip() if normalized_items else ocr_result.strip()
 
 def extract_info_to_form(ocr_result):
     """从单个OCR结果中提取信息并更新到表单"""
@@ -2752,8 +3188,8 @@ def update_batch_form_from_ocr(info):
         print(f"更新表单信息时出错: {e}")
 
 # ================= 页面：新题录入 =================
-def page_entry():
-    st.header("📝 录入新题")
+def page_entry(force_single_mode: bool = False, cloze_mode: bool = False):
+    st.header("🧩 挖空题生成" if cloze_mode else "📝 录入新题")
     
     # 初始化 Session State
     if "entry_year" not in st.session_state: st.session_state["entry_year"] = "2024"
@@ -2765,7 +3201,38 @@ def page_entry():
     if "batch_content" not in st.session_state: st.session_state["batch_content"] = ""
     if "entry_subject_user_locked" not in st.session_state: st.session_state["entry_subject_user_locked"] = False
     
-    mode = st.radio("录入模式", ["单题录入", "批量试题录入", "同卷试题录入"], horizontal=True)
+    if force_single_mode:
+        mode = "单题录入"
+        if cloze_mode:
+            st.session_state["entry_p_type"] = "WK"
+            cloze_options = ["简单定义基础计算挖空", "基础推导与题意读取提炼挖空", "关键思路抽象推导挖空"]
+            if st.session_state.get("cloze_generation_type") not in cloze_options:
+                st.session_state["cloze_generation_type"] = cloze_options[0]
+            st.markdown("""
+            <style>
+            div[class*="st-key-btn_open_cloze_library"] button {
+                min-height: 48px !important;
+                font-size: 16px !important;
+                font-weight: 700 !important;
+                white-space: nowrap !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            cloze_mode_col, cloze_library_col = st.columns([3, 1.4])
+            with cloze_mode_col:
+                st.radio("挖空要求", cloze_options, key="cloze_generation_type", horizontal=True)
+            with cloze_library_col:
+                if st.button("📚 挖空题库", key="btn_open_cloze_library", use_container_width=True):
+                    st.session_state["tools_subpage"] = "cloze_library"
+                    st.session_state["adv_search_active"] = False
+                    for key in ("paper_type", "paper_year", "paper_name", "selected_q_idx"):
+                        st.session_state.pop(key, None)
+                    _clear_advanced_search_result_cache()
+                    st.rerun()
+            render_cloze_source_picker()
+            st.caption("选择普通题库中的原题后生成挖空版本；生成结果可在下方继续人工修改、预览与保存。")
+    else:
+        mode = st.radio("录入模式", ["单题录入", "批量试题录入", "同卷试题录入"], horizontal=True)
     
     if mode == "单题录入":
         col_left, col_mid, col_right = st.columns([1.5, 2, 2])
@@ -2774,7 +3241,7 @@ def page_entry():
     
     # === 左侧：AI 识别区 ===
     with col_left:
-        st.subheader("🖼️ AI 图片识别 (多图模式)")
+        st.subheader("🖼️ AI 图片 / PDF 识别")
         inject_custom_css() # 注入样式
         
         # 确保 Image 模块可用
@@ -2784,103 +3251,211 @@ def page_entry():
             st.error("缺少 PIL 库，请安装 pillow")
             return
 
-        # 初始化图片队列
+        # 初始化上传队列
         if "ocr_queue" not in st.session_state:
             st.session_state["ocr_queue"] = []
-        if "uploader_prev_files" not in st.session_state:
-            st.session_state["uploader_prev_files"] = []
+        if "pdf_queue" not in st.session_state:
+            st.session_state["pdf_queue"] = []
+        if "entry_upload_prev_files" not in st.session_state:
+            st.session_state["entry_upload_prev_files"] = []
 
-        # 1. 添加图片区域 (横向并列布局)
-        if len(st.session_state["ocr_queue"]) < 5:
-            st.markdown("##### 添加图片")
-            c_add_1, c_add_2 = st.columns([1, 1])
-            
-            with c_add_1:
-                # 粘贴/上传 (支持多选) - 本地文件
-                uploaded_files = st.file_uploader("📂 本地上传", type=["png", "jpg", "jpeg"], key="queue_uploader", accept_multiple_files=True)
-            
-            with c_add_2:
-                # 读取剪贴板按钮 - 稍微向下偏移以对齐
-                st.write("") 
-                st.write("")
-                def _read_clipboard_image_candidates():
-                    if not ImageGrab:
-                        st.error("缺少 PIL 库")
-                        return []
-                    clipboard_content = ImageGrab.grabclipboard()
-                    candidates = []
-                    if isinstance(clipboard_content, Image.Image):
-                        candidates.append({"label": "剪贴板图片 1", "image": clipboard_content.copy()})
-                    elif isinstance(clipboard_content, list):
-                        for item in clipboard_content:
-                            if isinstance(item, str) and os.path.isfile(item):
-                                try:
-                                    img = Image.open(item)
-                                    img.load()
-                                    candidates.append({"label": os.path.basename(item), "image": img.copy()})
-                                except Exception:
-                                    pass
-                    return candidates
+        max_pdf_files = 3
+        max_image_files = 5
+        pdf_ocr_batch_size = 2
 
-                def _append_clipboard_first_image():
+        def _upload_file_id(file_obj):
+            return f"{file_obj.name}_{file_obj.size}"
+
+        def _format_upload_size(size_bytes):
+            if size_bytes >= 1024 * 1024:
+                return f"{size_bytes / (1024 * 1024):.2f} MB"
+            return f"{size_bytes / 1024:.1f} KB"
+
+        def _get_pdf_page_count(pdf_bytes):
+            try:
+                import fitz
+                with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+                    return pdf_doc.page_count
+            except Exception:
+                return None
+
+        # 1. 统一文件上传区域：支持 PDF 与图片
+        st.markdown("##### 添加文件")
+        uploaded_files = st.file_uploader(
+            "📁 上传图片或 PDF",
+            type=["pdf", "png", "jpg", "jpeg"],
+            key="entry_file_uploader",
+            accept_multiple_files=True,
+            help="拖拽文件到此处或点击选择。图片最多 5 张，PDF 最多 3 个。"
+        )
+        st.caption("支持 PDF、PNG、JPG、JPEG；图片最多 5 张，PDF 最多 3 个。")
+
+        if uploaded_files:
+            current_file_ids = [_upload_file_id(f) for f in uploaded_files]
+            prev_file_ids = st.session_state["entry_upload_prev_files"]
+            queued_pdf_ids = {item["id"] for item in st.session_state["pdf_queue"]}
+            ignored_pdf_count = 0
+            ignored_image_count = 0
+            added_pdf_count = 0
+            added_image_count = 0
+
+            for uploaded_file in uploaded_files:
+                file_id = _upload_file_id(uploaded_file)
+                if file_id in prev_file_ids:
+                    continue
+
+                extension = os.path.splitext(uploaded_file.name)[1].lower()
+                if extension == ".pdf":
+                    if file_id in queued_pdf_ids or len(st.session_state["pdf_queue"]) >= max_pdf_files:
+                        ignored_pdf_count += 1
+                        continue
+                    pdf_bytes = uploaded_file.getvalue()
+                    page_count = _get_pdf_page_count(pdf_bytes)
+                    st.session_state["pdf_queue"].append({
+                        "id": file_id,
+                        "name": uploaded_file.name,
+                        "size": uploaded_file.size,
+                        "bytes": pdf_bytes,
+                        "page_count": page_count,
+                        "page_start": 1 if page_count else None,
+                        "page_end": page_count,
+                        "page_range": f"1-{page_count}" if page_count else "",
+                    })
+                    queued_pdf_ids.add(file_id)
+                    added_pdf_count += 1
+                else:
+                    if len(st.session_state["ocr_queue"]) >= max_image_files:
+                        ignored_image_count += 1
+                        continue
                     try:
-                        candidates = _read_clipboard_image_candidates()
+                        img = Image.open(uploaded_file)
+                        img.load()
+                        st.session_state["ocr_queue"].append(img.copy())
+                        added_image_count += 1
                     except Exception as e:
-                        st.error(f"剪贴板读取失败: {e}")
-                        return
-                    if not candidates:
-                        st.warning("剪贴板中没有图片或支持的图片文件")
-                        return
-                    item = candidates[0]
-                    count_added = 0
-                    if len(st.session_state["ocr_queue"]) < 5:
-                        st.session_state["ocr_queue"].append(item["image"])
-                        count_added = 1
-                    else:
-                        st.warning("队列已满，无法添加图片")
-                    if count_added > 0:
-                        st.toast(f"已从剪贴板添加 {count_added} 张图片", icon="✅")
-                        st.rerun()
-                    else:
-                        st.warning("队列已满或没有新图片")
+                        st.error(f"图片 {uploaded_file.name} 读取失败: {e}")
 
-                if st.button("📋 粘贴剪贴板首张图片", use_container_width=True):
-                    _append_clipboard_first_image()
-
-            # 处理上传的文件 (多文件，增量添加)
-            if uploaded_files:
-                # 构建当前文件的简单标识列表 (文件名_大小)
-                current_file_ids = [f"{f.name}_{f.size}" for f in uploaded_files]
-                prev_file_ids = st.session_state["uploader_prev_files"]
-                
-                new_added = False
-                for uf in uploaded_files:
-                    fid = f"{uf.name}_{uf.size}"
-                    if fid not in prev_file_ids:
-                        # 这是一个新文件，添加到队列
-                        if len(st.session_state["ocr_queue"]) < 5:
-                            try:
-                                img = Image.open(uf)
-                                st.session_state["ocr_queue"].append(img)
-                                new_added = True
-                            except Exception as e:
-                                st.error(f"图片 {uf.name} 读取失败: {e}")
-                        else:
-                            st.warning("队列已满，部分图片未添加")
-                
-                # 更新 prev state
-                st.session_state["uploader_prev_files"] = current_file_ids
-                
-                if new_added:
-                    st.rerun()
-            else:
-                # 如果用户清空了上传器，我们也清空记录
-                st.session_state["uploader_prev_files"] = []
-
+            st.session_state["entry_upload_prev_files"] = current_file_ids
+            if added_pdf_count or added_image_count:
+                added_parts = []
+                if added_image_count:
+                    added_parts.append(f"{added_image_count} 张图片")
+                if added_pdf_count:
+                    added_parts.append(f"{added_pdf_count} 个 PDF")
+                st.toast(f"已添加 {'、'.join(added_parts)}", icon="✅")
+            if ignored_image_count:
+                st.warning(f"图片最多上传 {max_image_files} 张，已忽略 {ignored_image_count} 张图片。")
+            if ignored_pdf_count:
+                st.warning(f"PDF 最多上传 {max_pdf_files} 个，已忽略 {ignored_pdf_count} 个文件。")
         else:
-            st.info("已达到最大图片数量 (5张)")
+            st.session_state["entry_upload_prev_files"] = []
 
-        # 2. 图片队列展示与管理
+        if st.session_state["pdf_queue"]:
+            c_pdf_header, c_pdf_clear = st.columns([3, 1])
+            with c_pdf_header:
+                st.write(f"当前 PDF: {len(st.session_state['pdf_queue'])}/{max_pdf_files} 个")
+            with c_pdf_clear:
+                if st.button("🗑️ 清空", key="clear_pdf_queue", use_container_width=True):
+                    st.session_state["pdf_queue"] = []
+                    st.rerun()
+
+            for i, pdf_item in enumerate(st.session_state["pdf_queue"]):
+                c_pdf_info, c_pdf_del = st.columns([4, 1])
+                with c_pdf_info:
+                    st.caption(f"{i + 1}. {pdf_item['name']} · {_format_upload_size(pdf_item['size'])}")
+                    page_count = pdf_item.get("page_count")
+                    if page_count:
+                        default_start = pdf_item.get("page_start") or 1
+                        default_end = pdf_item.get("page_end") or page_count
+                        c_range_label, c_page_start, c_range_separator, c_page_end, c_page_count = st.columns([1.5, 1, 0.3, 1, 0.45])
+                        with c_range_label:
+                            st.caption("扫描页面范围")
+                        with c_page_start:
+                            page_start = st.number_input(
+                                "起始页",
+                                min_value=1,
+                                max_value=page_count,
+                                value=min(max(default_start, 1), page_count),
+                                step=1,
+                                key=f"pdf_page_start_{pdf_item['id']}",
+                                label_visibility="collapsed",
+                            )
+                        with c_range_separator:
+                            st.markdown(
+                                "<div style='height: 2.35rem; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #4b5563;'>—</div>",
+                                unsafe_allow_html=True,
+                            )
+                        with c_page_end:
+                            page_end = st.number_input(
+                                "结束页",
+                                min_value=1,
+                                max_value=page_count,
+                                value=min(max(default_end, 1), page_count),
+                                step=1,
+                                key=f"pdf_page_end_{pdf_item['id']}",
+                                label_visibility="collapsed",
+                            )
+                        with c_page_count:
+                            st.markdown(
+                                f"<div style='height: 2.35rem; display: flex; align-items: center; font-size: 16px; color: #4b5563; white-space: nowrap;'>（最大页码：{page_count}）</div>",
+                                unsafe_allow_html=True,
+                            )
+                        if page_start > page_end:
+                            st.warning("起始页不能大于结束页。")
+                        else:
+                            pdf_item["page_start"] = page_start
+                            pdf_item["page_end"] = page_end
+                            pdf_item["page_range"] = f"{page_start}-{page_end}"
+                    else:
+                        st.caption("未能读取 PDF 页数，后续可重新上传该文件。")
+                with c_pdf_del:
+                    if st.button("删除", key=f"del_pdf_{i}", use_container_width=True):
+                        st.session_state["pdf_queue"].pop(i)
+                        st.rerun()
+
+        c_clipboard, _ = st.columns([1, 1])
+        with c_clipboard:
+            def _read_clipboard_image_candidates():
+                if not ImageGrab:
+                    st.error("缺少 PIL 库")
+                    return []
+                clipboard_content = ImageGrab.grabclipboard()
+                candidates = []
+                if isinstance(clipboard_content, Image.Image):
+                    candidates.append({"label": "剪贴板图片 1", "image": clipboard_content.copy()})
+                elif isinstance(clipboard_content, list):
+                    for item in clipboard_content:
+                        if isinstance(item, str) and os.path.isfile(item):
+                            try:
+                                img = Image.open(item)
+                                img.load()
+                                candidates.append({"label": os.path.basename(item), "image": img.copy()})
+                            except Exception:
+                                pass
+                return candidates
+
+            def _append_clipboard_first_image():
+                try:
+                    candidates = _read_clipboard_image_candidates()
+                except Exception as e:
+                    st.error(f"剪贴板读取失败: {e}")
+                    return
+                if not candidates:
+                    st.warning("剪贴板中没有图片或支持的图片文件")
+                    return
+                if len(st.session_state["ocr_queue"]) >= max_image_files:
+                    st.warning(f"图片最多上传 {max_image_files} 张。")
+                    return
+                st.session_state["ocr_queue"].append(candidates[0]["image"])
+                st.toast("已从剪贴板添加 1 张图片", icon="✅")
+                st.rerun()
+
+            if st.button("📋 粘贴剪贴板首张图片", use_container_width=True):
+                _append_clipboard_first_image()
+
+        st.divider()
+
+        # 3. 图片队列展示与管理
         if st.session_state["ocr_queue"]:
             c_q_header, c_q_clear = st.columns([3, 1])
             with c_q_header:
@@ -2888,8 +3463,6 @@ def page_entry():
             with c_q_clear:
                 if st.button("🗑️ 清空", key="clear_queue", use_container_width=True):
                     st.session_state["ocr_queue"] = []
-                    # 同时也建议用户手动清空上传器（无法程序化清空，但我们可以重置 prev_files 以允许重新添加）
-                    st.session_state["uploader_prev_files"] = [] 
                     st.rerun()
             
             for i, img in enumerate(st.session_state["ocr_queue"]):
@@ -2918,15 +3491,98 @@ def page_entry():
                         if st.button("🔍", key=f"zoom_{i}", help="放大"):
                             zoom_image(img)
             
+        if st.session_state["ocr_queue"] or st.session_state["pdf_queue"]:
             st.divider()
-            
-            # 3. 识别操作
-            if st.button("🚀 识别所有图片", type="primary", use_container_width=True):
-                 with st.spinner("🤖 AI 正在识别多张图片..."):
-                    ocr_result = ocr_image_to_latex(images=st.session_state["ocr_queue"])
-                    process_ocr_result(ocr_result, mode)
+
+            image_count = len(st.session_state["ocr_queue"])
+            pdf_page_count = sum(
+                max(0, (item.get("page_end") or 0) - (item.get("page_start") or 0) + 1)
+                for item in st.session_state["pdf_queue"]
+                if item.get("page_count") and (item.get("page_start") or 0) <= (item.get("page_end") or 0)
+            )
+            action_label = "🚀 识别已选图片和 PDF 页面" if image_count and pdf_page_count else (
+                "🚀 识别所有图片" if image_count else "🚀 识别所选 PDF 页面"
+            )
+            batch_hint = "单题模式会合并识别；批量模式每 2 页分批识别。"
+            st.caption(f"本次将识别 {image_count} 张图片、{pdf_page_count} 页 PDF；{batch_hint}")
+
+            if st.button(action_label, type="primary", use_container_width=True):
+                total_source_pages = image_count + pdf_page_count
+                if mode == "单题录入" and total_source_pages > max_image_files:
+                    st.warning("单题录入一次最多识别 5 张图片或页面；多页 PDF 请切换到“批量试题录入”或“同卷试题录入”。")
+                    st.stop()
+
+                ocr_batches = []
+                batch_labels = []
+                single_mode_images = []
+
+                if st.session_state["ocr_queue"]:
+                    if mode == "单题录入":
+                        single_mode_images.extend(st.session_state["ocr_queue"])
+                    else:
+                        ocr_batches.append(list(st.session_state["ocr_queue"]))
+                        batch_labels.append(f"图片 1-{image_count}")
+
+                for pdf_item in st.session_state["pdf_queue"]:
+                    page_start = pdf_item.get("page_start")
+                    page_end = pdf_item.get("page_end")
+                    if not pdf_item.get("page_count"):
+                        st.error(f"PDF {pdf_item['name']} 无法读取页数，不能识别。")
+                        continue
+                    if not page_start or not page_end or page_start > page_end:
+                        st.error(f"PDF {pdf_item['name']} 的扫描页面范围无效。")
+                        continue
+
+                    selected_pages = range(page_start, page_end + 1)
+                    with st.spinner(f"正在渲染 PDF：{pdf_item['name']}（第 {page_start}-{page_end} 页）..."):
+                        pdf_images, render_error = render_pdf_pages_to_images(pdf_item["bytes"], selected_pages)
+                    if render_error:
+                        st.error(f"PDF {pdf_item['name']}：{render_error}")
+                        continue
+
+                    if mode == "单题录入":
+                        single_mode_images.extend(pdf_images)
+                    else:
+                        for offset in range(0, len(pdf_images), pdf_ocr_batch_size):
+                            page_batch = pdf_images[offset:offset + pdf_ocr_batch_size]
+                            first_page = page_start + offset
+                            last_page = first_page + len(page_batch) - 1
+                            ocr_batches.append(page_batch)
+                            batch_labels.append(f"{pdf_item['name']} 第 {first_page}-{last_page} 页")
+
+                if mode == "单题录入" and single_mode_images:
+                    ocr_batches.append(single_mode_images)
+                    batch_labels.append(f"已选图片与 PDF 页面（共 {len(single_mode_images)} 页/张）")
+
+                if not ocr_batches:
+                    st.warning("没有可识别的图片或有效 PDF 页面。")
+                else:
+                    ocr_results = []
+                    progress = st.progress(0)
+                    status = st.empty()
+                    total_batches = len(ocr_batches)
+
+                    for batch_index, (image_batch, batch_label) in enumerate(zip(ocr_batches, batch_labels), start=1):
+                        status.text(f"正在识别 {batch_label}（{batch_index}/{total_batches}）")
+                        result = ocr_image_to_latex(
+                            images=image_batch,
+                            max_image_size=1600,
+                            max_tokens=8192,
+                            spinner_text=f"🤖 AI 正在识别 {batch_label}...",
+                        )
+                        if result.startswith("❌"):
+                            status.empty()
+                            progress.empty()
+                            st.error(f"{batch_label} 识别失败：{result}")
+                            break
+                        ocr_results.append(result.strip())
+                        progress.progress(batch_index / total_batches)
+                    else:
+                        status.empty()
+                        progress.empty()
+                        process_ocr_result("\n\n".join(ocr_results), mode)
         else:
-            st.info("请添加图片进行识别")
+            st.info("请添加图片或 PDF 进行识别")
 
         # 增加手动中断提示
         st.caption("提示: 如果 AI 响应时间过长，请直接刷新页面以中断。")
@@ -2989,14 +3645,17 @@ def page_entry():
                 subjects = st.session_state.get("entry_subject_multi") or []
                 subject = "，".join(subjects) if subjects else ""
             with c_r1_3:
-                type_opts = list(PAPER_TYPES.keys())
+                type_opts = _editable_paper_type_options("WK" if cloze_mode else None)
                 current_p_type = st.session_state.get("entry_p_type", "G")
                 if current_p_type not in type_opts:
-                    current_p_type = "G"
-                    st.session_state["entry_p_type"] = "G"
+                    current_p_type = type_opts[0]
+                    st.session_state["entry_p_type"] = current_p_type
                 default_type_idx = type_opts.index(current_p_type)
-                
-                st.selectbox("试卷类别", options=type_opts, index=default_type_idx, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})", key="entry_p_type", on_change=update_content_wrapper)
+
+                if cloze_mode:
+                    st.selectbox("试卷类别", options=type_opts, index=default_type_idx, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})", key="entry_p_type", disabled=True)
+                else:
+                    st.selectbox("试卷类别", options=type_opts, index=default_type_idx, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})", key="entry_p_type", on_change=update_content_wrapper)
                 p_type_code = st.session_state.get("entry_p_type", "G")
 
             c_r2_1, c_r2_2 = st.columns([3, 1])
@@ -3090,7 +3749,10 @@ def page_entry():
 
         if mode == "单题录入":
             st.markdown("##### ⚙️ 录入配置")
-            auto_solve_enabled = st.checkbox("本次录入同时生成解答", key="entry_auto_solve", value=False)
+            auto_solve_label = "如果识别内容缺少解答，则保存时 AI 生成解答" if cloze_mode else "本次录入同时生成解答"
+            auto_solve_default = True if cloze_mode else False
+            auto_solve_key = "cloze_auto_solve" if cloze_mode else "entry_auto_solve"
+            auto_solve_enabled = st.checkbox(auto_solve_label, key=auto_solve_key, value=auto_solve_default)
 
             render_find_replace("entry_content")
             
@@ -3285,7 +3947,7 @@ def page_entry():
                 c1, c2, c3, c4 = st.columns([1.5, 2, 1.5, 1])
                 batch_year = c1.text_input("统一年份", key="u_batch_year")
                 batch_pname = c2.text_input("统一试卷名称", key="u_batch_paper")
-                type_opts = list(PAPER_TYPES.keys())
+                type_opts = _editable_paper_type_options()
                 batch_ptype = c3.selectbox("统一试卷类别", options=type_opts, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})", key="u_batch_type")
                 
                 with c4:
@@ -3594,15 +4256,47 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
     # === 右侧：实时预览与保存（仅单题模式） ===
     with col_right:
         if mode == "单题录入":
-            c_preview_title, c_save_btn = st.columns([2, 1])
+            if cloze_mode:
+                c_preview_title, c_img_btn, c_save_btn = st.columns([2, 1, 1])
+            else:
+                c_preview_title, c_save_btn = st.columns([2, 1])
             with c_preview_title:
                 st.subheader("👁️ 实时预览与保存")
+            if cloze_mode:
+                with c_img_btn:
+                    def on_generate_cloze_image():
+                        current = st.session_state.get("entry_content", "").strip()
+                        fields = extract_problem_header_fields(current)
+                        hint = "挖空题"
+                        if fields:
+                            hint = generate_filename(
+                                fields.get("year") or st.session_state.get("entry_year", ""),
+                                fields.get("p_type") or st.session_state.get("entry_p_type", ""),
+                                fields.get("paper") or st.session_state.get("entry_paper_name", ""),
+                                fields.get("number") or st.session_state.get("entry_number", ""),
+                                fields.get("subject_str") or "未分类",
+                            ).replace(".tex", "")
+                        with st.spinner("正在生成当前挖空题图片..."):
+                            res = generate_question_png_from_latex(
+                                current,
+                                filename_hint=hint,
+                                cloze_type=st.session_state.get("cloze_generation_type", "挖空题"),
+                            )
+                        st.session_state["cloze_image_result"] = res
+                        if res.get("ok"):
+                            st.toast("挖空题图片已生成", icon="✅")
+                        else:
+                            st.toast(res.get("error", "图片生成失败"), icon="❌")
+                    st.button("🖼️ 生成图片", on_click=on_generate_cloze_image, use_container_width=True)
             with c_save_btn:
                 def on_save_entry():
                     s_content = st.session_state.get("entry_content", "")
+                    if cloze_mode:
+                        s_content = _normalize_cloze_blank_markup(s_content)
+                        st.session_state["entry_content"] = s_content
                     fields = extract_problem_header_fields(s_content)
                     s_year = (fields.get("year") if fields else "") or st.session_state.get("entry_year", "")
-                    s_type = (fields.get("p_type") if fields else "") or st.session_state.get("entry_p_type", "")
+                    s_type = "WK" if cloze_mode else ((fields.get("p_type") if fields else "") or st.session_state.get("entry_p_type", ""))
                     s_paper = (fields.get("paper") if fields else "") or st.session_state.get("entry_paper_name", "")
                     s_num = (fields.get("number") if fields else "") or st.session_state.get("entry_number", "")
                     s_subj_from_state = "，".join(st.session_state.get("entry_subject_multi", []) or []).strip()
@@ -3615,6 +4309,13 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                     if not s_content:
                         st.toast("题目内容不能为空", icon="⚠️")
                         return
+                    if cloze_mode and CLOZE_BLANK_TEX not in _extract_problem_env(s_content):
+                        st.toast("挖空题至少需要包含一个统一格式的挖空后才能保存", icon="⚠️")
+                        return
+                    if cloze_mode:
+                        cloze_type = st.session_state.get("cloze_generation_type", "挖空题")
+                        if cloze_type and cloze_type not in s_paper:
+                            s_paper = f"{s_paper}（{cloze_type}）"
                     full_text = normalize_single_problem_structure(s_content.strip(), s_year, s_type, s_paper, s_num, s_subj)
                     s_filename = generate_filename(s_year, s_type, s_paper, s_num, s_subj)
                     primary_subj = s_subj.split("，")[0]
@@ -3625,13 +4326,23 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                     from utils.csv_ops import get_next_id
                     new_id = get_next_id()
                     meta_dict = {"ID": new_id, "难度星级": s_diff, "标签": s_tag, "备注": s_rem, "组卷引用次数": 0}
+                    if cloze_mode:
+                        meta_dict.update({
+                            "来源题目ID": st.session_state.get("cloze_source_question_id", ""),
+                            "挖空类型": st.session_state.get("cloze_generation_type", ""),
+                            "生成时间": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        })
                     from utils.latex_ops import inject_meta_data
                     full_text = inject_meta_data(full_text, meta_dict)
                     try:
                         with open(s_file_path, "w", encoding="utf-8") as f:
                             f.write(full_text)
                         add_to_csv_index(s_file_path, full_text, s_year, s_type, s_paper, s_num, s_subj)
-                        if st.session_state.get("entry_auto_solve", False):
+                        solve_key = "cloze_auto_solve" if cloze_mode else "entry_auto_solve"
+                        should_auto_solve = st.session_state.get(solve_key, False)
+                        if cloze_mode:
+                            should_auto_solve = should_auto_solve and not _has_nonempty_answer_and_solution(full_text)
+                        if should_auto_solve:
                             problem_tex = _extract_problem_env(full_text)
                             with st.spinner("🤖 AI 正在生成解答..."):
                                 res = call_ai_for_answer_solutions(problem_tex, fast=False)
@@ -3661,6 +4372,24 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                 st.button("💾 保存题目", type="primary", on_click=on_save_entry, use_container_width=True)
             filename = generate_filename(year, p_type_code, paper_name, number, subject or "未分类")
             st.info(f"目标文件名: `{filename}`")
+            if cloze_mode:
+                img_res = st.session_state.get("cloze_image_result")
+                if img_res:
+                    if img_res.get("ok"):
+                        st.success(f"图片已生成：{img_res.get('path')}")
+                        st.download_button(
+                            "下载当前图片",
+                            data=img_res.get("bytes") or b"",
+                            file_name=img_res.get("filename") or "挖空题.png",
+                            mime="image/png",
+                            use_container_width=True,
+                            key="cloze_download_current_image",
+                        )
+                    else:
+                        st.warning(img_res.get("error", "图片生成失败"))
+                        if img_res.get("log"):
+                            with st.expander("查看 LaTeX 编译日志", expanded=False):
+                                st.code(img_res["log"])
             if content.strip():
                 st.markdown("---")
                 try:
@@ -3672,7 +4401,10 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
             st.empty()
                              
 # ================= 页面：浏览/编辑 =================
-def page_browse(is_exam_mode=False, is_delete_mode=False):
+def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None, page_title=None):
+    """Browse questions; default scope excludes WK, while the cloze library passes 'WK'."""
+    is_cloze_library = paper_type_scope == "WK"
+    page_title = page_title or ("🧩 挖空题库" if is_cloze_library else "🔍 全局浏览与编辑")
     if is_delete_mode:
         st.markdown("""
         <style>
@@ -3867,7 +4599,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
     elif not is_exam_mode:
         c_header, c_search = st.columns([1, 1.5])
         with c_header:
-            st.header("🔍 全局浏览与编辑")
+            st.header(page_title)
             st.subheader("浏览模式")
             if "browse_mode" not in st.session_state:
                 st.session_state["browse_mode"] = "按知识板块浏览"
@@ -3976,7 +4708,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                         cur_subjects = (parts[4] if len(parts) >= 5 else "").split("，")
                         valid_tags = [t for t in cur_subjects if t in SUBJECTS] or [SUBJECTS[0]]
                         fhash = hashlib.md5(fpath.encode()).hexdigest()[:10]
-                        type_opts = list(PAPER_TYPES.keys())
+                        type_opts = _editable_paper_type_options(paper_type_scope)
                         c_meta1, c_meta2 = st.columns([1, 1])
                         with c_meta1:
                             st.text_input("年份", value=str(cur_year), key=f"recent_meta_year_{fhash}")
@@ -3999,7 +4731,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
     # === 如果激活了搜索，优先显示搜索结果 ===
     if not is_exam_mode and st.session_state.get("adv_search_active"):
         if _adv_search_has_query():
-            render_advanced_search_results(is_delete_mode=is_delete_mode)
+            render_advanced_search_results(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope)
             return  # 搜索状态下，不显示下方的常规浏览内容
         st.session_state["adv_search_active"] = False
     
@@ -4093,7 +4825,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
             
             st.write("")
             st.write("")
-            years = get_years(subject)
+            years = get_years(subject, paper_type=paper_type_scope)
             if years:
                 # 2. 选择年份 (横向排列)
                 st.subheader("📅 选择年份")
@@ -4114,7 +4846,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                     # 获取该板块下所有年份的所有文件
                     files = []
                     for y in years:
-                        y_files = get_files(subject, y)
+                        y_files = get_files(subject, y, paper_type=paper_type_scope)
                         if y_files:
                             # 为了区分不同年份，我们在文件名列表中带上年份信息
                             files.extend([(y, f) for f in y_files])
@@ -4136,7 +4868,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                         )
                 else:
                     # 原来的单一年份逻辑
-                    files = get_files(subject, year)
+                    files = get_files(subject, year, paper_type=paper_type_scope)
                     if files:
                         st.subheader(f"📄 文件列表 ({subject} - {year})")
                         
@@ -4260,7 +4992,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                                             cur_subjects = (parts[4] if len(parts) >= 5 else "").split("，")
                                             valid_tags = [t for t in cur_subjects if t in SUBJECTS] or [SUBJECTS[0]]
                                             fhash = hashlib.md5(fpath.encode()).hexdigest()[:10]
-                                            type_opts = list(PAPER_TYPES.keys())
+                                            type_opts = _editable_paper_type_options(paper_type_scope)
                                             c_meta1, c_meta2 = st.columns([1, 1])
                                             with c_meta1:
                                                 st.text_input("年份", value=str(cur_year), key=f"subj_meta_year_{fhash}")
@@ -4418,7 +5150,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                                             cur_subjects = (parts[4] if len(parts) >= 5 else "").split("，")
                                             valid_tags = [t for t in cur_subjects if t in SUBJECTS] or [SUBJECTS[0]]
                                             fhash = hashlib.md5(fpath.encode()).hexdigest()[:10]
-                                            type_opts = list(PAPER_TYPES.keys())
+                                            type_opts = _editable_paper_type_options(paper_type_scope)
                                             c_meta1, c_meta2 = st.columns([1, 1])
                                             with c_meta1:
                                                 st.text_input("年份", value=str(cur_year), key=f"subj2_meta_year_{fhash}")
@@ -4481,8 +5213,8 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                 </style>
             """, unsafe_allow_html=True)
             
-            all_years = get_all_years_globally()
-            type_opts = list(PAPER_TYPES.keys())
+            all_years = get_all_years_globally(paper_type=paper_type_scope)
+            type_opts = ["WK"] if is_cloze_library else [key for key in PAPER_TYPES.keys() if key != "WK"]
             def _fmt_paper_type(x):
                 if x == "全部类型":
                     return "全部类型"
@@ -4511,7 +5243,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                 if paper_type != "全部类型":
                     papers = get_papers_by_year_and_type(year, paper_type)
                 else:
-                    papers = get_papers_by_year(year)
+                    papers = get_papers_by_year(year, paper_type=paper_type_scope)
                 if papers:
                     paper_name = st.selectbox("选择试卷", options=papers, key="paper_name", label_visibility="collapsed")
                 else:
@@ -4526,7 +5258,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                     if paper_type != "全部类型":
                         questions = get_questions_by_paper_and_type(year, paper_name, paper_type)
                     else:
-                        questions = get_questions_by_paper(year, paper_name)
+                        questions = get_questions_by_paper(year, paper_name, paper_type=paper_type_scope)
                     if questions and view_mode == "单题选择模式":
                         st.write("")
                         st.subheader("选择题目进行删除" if is_delete_mode else "选择题目进行编辑")
@@ -4706,7 +5438,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                                         cur_subjects = (parts[4] if len(parts) >= 5 else "").split("，")
                                         valid_tags = [t for t in cur_subjects if t in SUBJECTS] or [SUBJECTS[0]]
                                         fhash = hashlib.md5(q_path.encode()).hexdigest()[:10]
-                                        type_opts = list(PAPER_TYPES.keys())
+                                        type_opts = _editable_paper_type_options(paper_type_scope)
                                         c_meta1, c_meta2 = st.columns([1, 1])
                                         with c_meta1:
                                             st.text_input("年份", value=str(cur_year), key=f"paper_meta_year_{fhash}")
@@ -4768,7 +5500,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
             
             try:
                 from utils.csv_ops import read_csv_index
-                csv_data = read_csv_index()
+                csv_data = _filter_question_rows(read_csv_index(), paper_type_scope)
             except Exception as e:
                 csv_data = []
                 st.error(f"读取索引失败: {e}")
@@ -4976,7 +5708,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False):
                                     cur_num = parts[3] if len(parts) >= 5 else ""
                                     cur_subjects = (parts[4] if len(parts) >= 5 else "").split("，")
                                     valid_tags = [t for t in cur_subjects if t in SUBJECTS] or [SUBJECTS[0]]
-                                    type_opts = list(PAPER_TYPES.keys())
+                                    type_opts = _editable_paper_type_options(paper_type_scope)
                                     c_meta1, c_meta2 = st.columns([1, 1])
                                     with c_meta1:
                                         st.text_input("年份", value=str(cur_year), key=f"time_meta_year_{lazy_key}")
@@ -5448,7 +6180,7 @@ def page_exam_paper_generation():
                     with st.spinner("正在遍历题库并进行智能抽样..."):
                         # 执行基于规则的抽题算法
                         from utils.csv_ops import read_csv_index
-                        csv_data = read_csv_index()
+                        csv_data = _filter_question_rows(read_csv_index())
                         
                         if not csv_data:
                             st.error("题库为空或索引未建立，请先在工具页一键重建题库索引。")
@@ -6453,6 +7185,20 @@ def page_tools():
     if st.session_state.get("tools_subpage") == "delete_questions":
         page_browse(is_delete_mode=True)
         return
+    if st.session_state.get("tools_subpage") == "cloze_generator":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        page_entry(force_single_mode=True, cloze_mode=True)
+        return
+    if st.session_state.get("tools_subpage") == "cloze_library":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = "cloze_generator"
+            st.session_state["adv_search_active"] = False
+            _clear_advanced_search_result_cache()
+            st.rerun()
+        page_browse(paper_type_scope="WK", page_title="🧩 挖空题库")
+        return
     
     st.markdown("""
     <style>
@@ -6546,7 +7292,13 @@ def page_tools():
             with st.spinner("正在扫描所有目录并重建 CSV 索引..."):
                 try:
                     init_script = os.path.join(BASE_DIR, "utils", "init_csv_index.py")
-                    subprocess.run(["python", init_script], check=True, capture_output=True, text=True)
+                    subprocess.run(
+                        [sys.executable, init_script],
+                        cwd=BASE_DIR,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
                     clear_statistics_cache()
                     st.success("题库索引重建成功！")
                     st.toast("题库索引同步完成！", icon="✅")
@@ -6571,7 +7323,6 @@ def page_tools():
         if st.button("⚡ 执行更新章节索引", key="btn_update_idx", use_container_width=True):
             with st.spinner("正在运行更新脚本..."):
                 try:
-                    import sys
                     if BASE_DIR not in sys.path:
                         sys.path.append(BASE_DIR)
                     import utils.batch_gen as batch_gen
@@ -6651,6 +7402,27 @@ def page_tools():
             st.session_state["tools_subpage"] = "delete_questions"
             st.session_state["adv_search_active"] = False
             _clear_advanced_search_result_cache()
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 第三行工具
+    r3_c1, r3_c2, r3_c3 = st.columns([1, 1, 1])
+
+    with r3_c1:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🧩 7. 挖空题生成</div>
+            <div class="tool-desc">
+                上传或粘贴题目与解答，按预设要求生成挖空题。当前先沿用单题录入界面，支持实时预览、保存题目，并可导出当前挖空题图片；具体 AI 提示词与挖空生成策略后续补充。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_cloze_generator']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入挖空题生成界面", key="btn_tools_cloze_generator", use_container_width=True):
+            st.session_state["tools_subpage"] = "cloze_generator"
+            st.session_state["cloze_image_result"] = None
+            st.session_state.setdefault("cloze_auto_solve", True)
             st.rerun()
 
 def batch_fix_choice_formats():
@@ -6927,7 +7699,7 @@ def page_tag_edit():
         st.markdown('<div id="tag-edit-dir-label">年份</div>', unsafe_allow_html=True)
         year = st.selectbox("年份", options=all_years, key="te_year", label_visibility="collapsed")
 
-        type_opts = ["全部试卷类别"] + list(PAPER_TYPES.keys())
+        type_opts = ["全部试卷类别"] + _editable_paper_type_options()
         st.markdown('<div id="tag-edit-dir-label">试卷类别筛选</div>', unsafe_allow_html=True)
         ptype_filter = st.selectbox("试卷类别筛选", options=type_opts, key="te_ptype_filter", label_visibility="collapsed", format_func=lambda x: x if x == "全部试卷类别" else f"{x} ({PAPER_TYPES.get(x, '')})")
 
@@ -6938,7 +7710,7 @@ def page_tag_edit():
                 csv_rows = _csv_index_cached(csv_token)
             except Exception:
                 from utils.csv_ops import read_csv_index
-                csv_rows = read_csv_index()
+                csv_rows = _filter_question_rows(read_csv_index())
 
             papers_set = set()
             for row in csv_rows:
@@ -7055,7 +7827,7 @@ def page_tag_edit():
                 csv_rows = _csv_index_cached(csv_token)
             except Exception:
                 from utils.csv_ops import read_csv_index
-                csv_rows = read_csv_index()
+                csv_rows = _filter_question_rows(read_csv_index())
 
             results = []
             for row in csv_rows:
@@ -7100,7 +7872,7 @@ def page_tag_edit():
         cur_paper = (bulk_meta.get("paper") or "").strip()
         st.info(f"当前试卷：{cur_year} 年｜{cur_paper}｜共 {len(bulk_paths)} 题")
 
-        type_opts = list(PAPER_TYPES.keys())
+        type_opts = _editable_paper_type_options()
         with st.form("te_bulk_update_form"):
             new_year = st.text_input("统一年份", value=cur_year)
             new_type = st.selectbox("统一试卷类别", options=type_opts, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})")
@@ -7184,7 +7956,7 @@ def page_tag_edit():
             with st.form("te_meta_update_form"):
                 new_year = st.text_input("年份", value=current_meta.get("year", ""))
                 
-                type_opts = list(PAPER_TYPES.keys())
+                type_opts = _editable_paper_type_options()
                 default_type_idx = 0
                 if current_meta.get("type") in type_opts:
                     default_type_idx = type_opts.index(current_meta.get("type"))
@@ -7287,7 +8059,7 @@ def _tag_history_suggestions_cached(csv_token, limit=5):
     from utils.csv_ops import read_csv_index
 
     stats = {}
-    for row in read_csv_index():
+    for row in _filter_question_rows(read_csv_index()):
         row_time = max(
             _parse_tag_history_time(row.get("最后修改时间", "")),
             _parse_tag_history_time(row.get("初次录入的时间", "")),
@@ -7315,6 +8087,71 @@ def _append_tag_text(current_tags: str, tag: str) -> str:
 def _apply_tag_suggestion(input_key: str, tag: str):
     st.session_state[input_key] = _append_tag_text(st.session_state.get(input_key, ""), tag)
 
+
+@st.cache_data(show_spinner=False)
+def _cloze_source_lookup_cached(source_question_id: str, csv_token: str) -> dict:
+    """Resolve a WK source ID through the existing CSV index without exposing WK as a source."""
+    from utils.csv_ops import read_csv_index
+
+    source_question_id = str(source_question_id or "").strip()
+    if not source_question_id:
+        return {}
+
+    for row in read_csv_index():
+        if (row.get("试卷类型", "") or "").strip() == "WK":
+            continue
+        if str(row.get("题目ID", "") or "").strip() != source_question_id:
+            continue
+        rel_path = (row.get("相对文件路径", "") or "").strip()
+        source_path = os.path.join(CHAPTERS_DIR, rel_path) if rel_path else ""
+        return {
+            "path": source_path,
+            "label": _cloze_source_label(row),
+            "exists": bool(source_path and os.path.exists(source_path)),
+        }
+    return {}
+
+
+def render_cloze_source_trace(content: str, fpath: str, meta: dict):
+    """Show an on-demand source preview only for generated WK questions."""
+    fields = extract_problem_header_fields(content) or {}
+    if fields.get("p_type") != "WK":
+        return
+
+    source_question_id = str(meta.get("来源题目ID", "") or "").strip()
+    if not source_question_id:
+        st.caption("来源原题：未关联")
+        return
+
+    trace_key = f"cloze_source_trace_open_{hashlib.md5(fpath.encode()).hexdigest()[:12]}"
+    lookup = _cloze_source_lookup_cached(source_question_id, file_change_token(CSV_INDEX_PATH))
+    trace_label, trace_action = st.columns([4, 1])
+    with trace_label:
+        source_label = lookup.get("label") or f"题目 ID：{source_question_id}"
+        st.caption(f"来源原题：{source_label}")
+    with trace_action:
+        action_label = "收起原题" if st.session_state.get(trace_key) else "查看原题"
+        if st.button(action_label, key=f"btn_{trace_key}", use_container_width=True):
+            st.session_state[trace_key] = not st.session_state.get(trace_key, False)
+
+    if not st.session_state.get(trace_key):
+        return
+    if not lookup:
+        st.warning(f"未在题库索引中找到来源题目 ID：{source_question_id}")
+        return
+    if not lookup.get("exists"):
+        st.warning(f"来源题目文件已不存在：{lookup.get('label') or source_question_id}")
+        return
+
+    try:
+        with open(lookup["path"], "r", encoding="utf-8") as f:
+            source_content = f.read()
+        with st.expander(f"原题预览：{lookup['label']}", expanded=True):
+            st.markdown(latex_to_markdown(source_content, show_title=False), unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"打开来源原题失败：{e}")
+
+
 def render_question_header(q_label, content, fpath, extra_html_label=""):
     st.markdown(f"### {q_label} {extra_html_label}", unsafe_allow_html=True)
     
@@ -7323,6 +8160,7 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     diff = meta.get("难度星级", "").strip()
     tags = meta.get("标签", "").strip()
     remark = meta.get("备注", "").strip()
+    render_cloze_source_trace(content, fpath, meta)
 
     try:
         diff_val = float(diff)
@@ -7747,6 +8585,20 @@ import datetime
 def clear_statistics_cache():
     get_statistics.clear()
 
+
+def _filter_question_rows(rows, paper_type_scope=None):
+    """Keep WK indexed, but isolate it from ordinary question-bank workflows."""
+    filtered_rows = []
+    for row in rows or []:
+        paper_type = (row.get("试卷类型", "") or "").strip()
+        if paper_type_scope:
+            if paper_type != paper_type_scope:
+                continue
+        elif paper_type == "WK":
+            continue
+        filtered_rows.append(row)
+    return filtered_rows
+
 def _csv_index_cache_token():
     from utils.core_config import CSV_INDEX_PATH
     return file_change_token(CSV_INDEX_PATH)
@@ -7754,14 +8606,14 @@ def _csv_index_cache_token():
 @st.cache_data(show_spinner=False)
 def _csv_index_cached(csv_token):
     from utils.csv_ops import read_csv_index
-    return read_csv_index()
+    return _filter_question_rows(read_csv_index())
 
 @st.cache_data(show_spinner=False)
-def _advanced_search_index_cached(csv_token):
+def _advanced_search_index_cached(csv_token, paper_type_scope=None):
     from utils.csv_ops import read_csv_index
 
     index_rows = []
-    for row in read_csv_index():
+    for row in _filter_question_rows(read_csv_index(), paper_type_scope):
         rel_path = (row.get("相对文件路径", "") or "").strip()
         abs_path = os.path.join(CHAPTERS_DIR, rel_path) if rel_path else ""
         filename = (row.get("文件名称", "") or "").strip()
@@ -7813,7 +8665,7 @@ def get_statistics():
     # 优先尝试从 CSV 索引表读取（性能提升 100 倍）
     try:
         from utils.csv_ops import read_csv_index
-        csv_data = read_csv_index()
+        csv_data = _filter_question_rows(read_csv_index())
         if csv_data:
             stats["total_questions"] = len(csv_data)
             
@@ -7906,6 +8758,8 @@ def get_statistics():
             if not file.endswith(".tex"):
                 continue
             if file.startswith("content_"):
+                continue
+            if "-WK-" in file:
                 continue
                 
             file_path = os.path.join(root, file)
@@ -8477,7 +9331,7 @@ def render_advanced_search_inline():
             st.session_state["adv_search_active"] = False
             st.rerun()
 
-def render_advanced_search_results(is_delete_mode=False):
+def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
     st.markdown("### 🎯 查找结果")
     
     t1 = st.session_state.get("adv_t1", "全文内容")
@@ -8508,11 +9362,11 @@ def render_advanced_search_results(is_delete_mode=False):
             return s_query in item["full_text"]
         return False
 
-    query_key = (t1, q1, t2, q2, t3, q3, "delete" if is_delete_mode else "edit")
+    query_key = (t1, q1, t2, q2, t3, q3, paper_type_scope or "regular", "delete" if is_delete_mode else "edit")
     if st.session_state.get("adv_last_query") == query_key and st.session_state.get("adv_last_results") is not None:
         results = st.session_state.get("adv_last_results") or []
     else:
-        search_rows = _advanced_search_index_cached(_csv_index_cache_token())
+        search_rows = _advanced_search_index_cached(_csv_index_cache_token(), paper_type_scope)
 
         results = []
         with st.spinner("正在全库检索中..."):
@@ -8624,7 +9478,7 @@ def render_advanced_search_results(is_delete_mode=False):
                         cur_num = parts[3] if len(parts) >= 5 else ""
                         cur_subjects = (parts[4] if len(parts) >= 5 else "").split("，")
                         valid_tags = [t for t in cur_subjects if t in SUBJECTS] or [SUBJECTS[0]]
-                        type_opts = list(PAPER_TYPES.keys())
+                        type_opts = _editable_paper_type_options(paper_type_scope)
                         c_meta1, c_meta2 = st.columns([1, 1])
                         with c_meta1:
                             st.text_input("年份", value=str(cur_year), key=f"adv_meta_year_{fpath_hash}")

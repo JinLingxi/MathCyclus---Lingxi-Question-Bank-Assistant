@@ -9,7 +9,7 @@ from services.file_service import atomic_write_csv_rows
 CSV_HEADERS = [
     "题目ID", "文件名称", "相对文件路径", "年份", "试卷类型", "试卷名称", "原卷题号", "知识板块",
     "标签", "包含TikZ绘图", "题型", "难度星级", "包含解析", "组卷引用次数", "备注",
-    "初次录入的时间", "最后修改时间", "题干", "答案", "解析"
+    "来源题目ID", "挖空类型", "生成时间", "初次录入的时间", "最后修改时间", "题干", "答案", "解析"
 ]
 
 def read_csv_index():
@@ -154,6 +154,9 @@ def add_to_csv_index(file_path, content, year, ptype, pname, pnum, subj):
         "包含解析": has_solution,
         "组卷引用次数": meta.get("组卷引用次数", "0"),
         "备注": meta.get("备注", ""),
+        "来源题目ID": meta.get("来源题目ID", ""),
+        "挖空类型": meta.get("挖空类型", ""),
+        "生成时间": meta.get("生成时间", ""),
         "初次录入的时间": now_str,
         "最后修改时间": now_str,
         "题干": stem_text,
@@ -192,6 +195,9 @@ def update_csv_index_for_edit(old_file_path, new_file_path, new_content, new_yea
             row["包含解析"] = has_solution
             row["组卷引用次数"] = meta.get("组卷引用次数", row.get("组卷引用次数", "0"))
             row["备注"] = meta.get("备注", "")
+            row["来源题目ID"] = meta.get("来源题目ID", "")
+            row["挖空类型"] = meta.get("挖空类型", "")
+            row["生成时间"] = meta.get("生成时间", "")
             row["最后修改时间"] = now_str
             row["题干"] = stem_text
             row["答案"] = ans_text
