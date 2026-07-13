@@ -42,6 +42,12 @@ def _editable_paper_type_options(paper_type_scope=None):
     return [paper_type for paper_type in PAPER_TYPES if paper_type != "WK"]
 
 
+def render_question_preview(content: str, show_title: bool = False):
+    """Render a question preview with typography isolated from surrounding UI."""
+    st.markdown('<span class="mc-question-preview-anchor"></span>', unsafe_allow_html=True)
+    st.markdown(latex_to_markdown(content, show_title=show_title), unsafe_allow_html=True)
+
+
 # 注入自定义 CSS
 def inject_custom_css():
     st.markdown("""
@@ -67,39 +73,6 @@ def inject_custom_css():
         #MainMenu {
             visibility: hidden !important;
             height: 0 !important;
-        }
-        [data-testid="collapsedControl"],
-        [data-testid="stSidebarCollapsedControl"] {
-            display: block !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            position: fixed !important;
-            top: 0.75rem !important;
-            left: 0.75rem !important;
-            z-index: 2147483647 !important;
-            pointer-events: auto !important;
-            transform: none !important;
-            clip: auto !important;
-        }
-        [data-testid="collapsedControl"] button,
-        [data-testid="stSidebarCollapsedControl"] button {
-            visibility: visible !important;
-            opacity: 1 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            width: 2.5rem !important;
-            height: 2.5rem !important;
-            border-radius: 999px !important;
-            border: 1px solid rgba(109, 40, 217, 0.18) !important;
-            background: rgba(255, 255, 255, 0.94) !important;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08) !important;
-            pointer-events: auto !important;
-        }
-        [data-testid="collapsedControl"] button:hover,
-        [data-testid="stSidebarCollapsedControl"] button:hover {
-            border-color: rgba(109, 40, 217, 0.3) !important;
-            background: #ffffff !important;
         }
         .stApp {
             overflow-x: hidden;
@@ -239,6 +212,93 @@ def inject_custom_css():
             border-radius: 4px !important;
             padding: 2px 6px !important;
         }
+        div[data-testid="stMarkdownContainer"]:has(.mc-question-preview-anchor) {
+            display: none !important;
+        }
+        div[data-testid="column"]:has(.mc-question-preview-anchor):not(:has(div[data-testid="column"] .mc-question-preview-anchor)) div[data-testid="stMarkdownContainer"] {
+            font-size: 1rem !important;
+            line-height: 1.65 !important;
+        }
+        div[data-testid="column"]:has(.mc-question-preview-anchor):not(:has(div[data-testid="column"] .mc-question-preview-anchor)) div[data-testid="stMarkdownContainer"] p,
+        div[data-testid="column"]:has(.mc-question-preview-anchor):not(:has(div[data-testid="column"] .mc-question-preview-anchor)) div[data-testid="stMarkdownContainer"] li {
+            line-height: 1.65 !important;
+            margin-top: 0 !important;
+            margin-bottom: 0.7rem !important;
+        }
+        div[data-testid="column"]:has(.mc-question-preview-anchor):not(:has(div[data-testid="column"] .mc-question-preview-anchor)) .katex-display {
+            margin: 0.8rem 0 !important;
+        }
+        div[data-testid="column"]:has(.mc-question-preview-anchor):not(:has(div[data-testid="column"] .mc-question-preview-anchor)) .katex {
+            line-height: normal !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#left-panel-anchor),
+        div[data-testid="stHorizontalBlock"]:has(#paper-left-anchor),
+        div[data-testid="stHorizontalBlock"]:has(#time-left-anchor) {
+            display: flex !important;
+            flex-flow: row nowrap !important;
+            align-items: flex-start !important;
+            width: 100% !important;
+            gap: 1rem !important;
+            overflow: visible !important;
+        }
+        div[data-testid="column"]:has(#left-panel-anchor),
+        div[data-testid="column"]:has(#time-left-anchor) {
+            flex: 0 0 28% !important;
+            width: 28% !important;
+            max-width: 28% !important;
+        }
+        div[data-testid="column"]:has(#paper-left-anchor) {
+            flex: 0 0 21% !important;
+            width: 21% !important;
+            max-width: 21% !important;
+        }
+        div[data-testid="column"]:has(#right-panel-anchor),
+        div[data-testid="column"]:has(#time-right-anchor) {
+            flex: 0 0 70% !important;
+            width: 70% !important;
+            max-width: 70% !important;
+        }
+        div[data-testid="column"]:has(#paper-right-anchor) {
+            flex: 0 0 77% !important;
+            width: 77% !important;
+            max-width: 77% !important;
+        }
+        div[data-testid="column"]:has(#left-panel-anchor),
+        div[data-testid="column"]:has(#paper-left-anchor),
+        div[data-testid="column"]:has(#time-left-anchor),
+        div[data-testid="column"]:has(#right-panel-anchor),
+        div[data-testid="column"]:has(#paper-right-anchor),
+        div[data-testid="column"]:has(#time-right-anchor) {
+            min-width: 0 !important;
+            flex-shrink: 0 !important;
+            height: auto !important;
+            box-sizing: border-box !important;
+        }
+        div[data-testid="column"]:has(#left-panel-anchor),
+        div[data-testid="column"]:has(#paper-left-anchor),
+        div[data-testid="column"]:has(#time-left-anchor) {
+            overflow: visible !important;
+            padding-right: 1rem !important;
+        }
+        div[data-testid="column"]:has(#right-panel-anchor),
+        div[data-testid="column"]:has(#paper-right-anchor),
+        div[data-testid="column"]:has(#time-right-anchor) {
+            overflow: visible !important;
+            border-left: 1px solid #e1e4e8 !important;
+            padding-left: 1.5rem !important;
+        }
+        div[data-testid="column"]:has(#right-panel-anchor) > div[data-testid="stVerticalBlock"],
+        div[data-testid="column"]:has(#paper-right-anchor) > div[data-testid="stVerticalBlock"],
+        div[data-testid="column"]:has(#time-right-anchor) > div[data-testid="stVerticalBlock"],
+        div[data-testid="column"]:has(#right-panel-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
+        div[data-testid="column"]:has(#paper-right-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
+        div[data-testid="column"]:has(#time-right-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            align-self: stretch !important;
+            box-sizing: border-box !important;
+        }
         /* 调整 st.dialog 的背景遮罩透明度为 40% 黑色 */
         div[data-testid="stDialog"] > div:first-child {
             background-color: rgba(0, 0, 0, 0.4) !important;
@@ -252,324 +312,101 @@ def inject_custom_css():
         </style>
     """, unsafe_allow_html=True)
 
-def inject_sidebar_recovery_control():
+def inject_sidebar_layout_switch(layout: str):
+    """Keep the working layout switch in the sidebar header, not page flow."""
     components.html(
-        """
+        f"""
         <script>
-        (() => {
+        (() => {{
             const parentWindow = window.parent;
             const doc = parentWindow.document;
-            const buttonId = "mc-sidebar-reopen-button";
-            const styleId = "mc-sidebar-reopen-style";
-            const scriptVersion = "2026-06-26.6";
+            const buttonId = "mc-sidebar-layout-switch";
+            const nativeButtonLabel = "切换为顶部导航";
+            const layout = {layout!r};
 
-            if (parentWindow.__mcSidebarRecoveryObserver) {
-                parentWindow.__mcSidebarRecoveryObserver.disconnect();
-                delete parentWindow.__mcSidebarRecoveryObserver;
-            }
-            if (parentWindow.__mcSidebarRecoveryTimer) {
-                parentWindow.clearInterval(parentWindow.__mcSidebarRecoveryTimer);
-                delete parentWindow.__mcSidebarRecoveryTimer;
-            }
+            ["mc-sidebar-navigation-controls", "mc-navigation-layout-switch"].forEach((id) => {{
+                const legacy = doc.getElementById(id);
+                if (legacy) legacy.remove();
+            }});
 
-            doc.body.classList.remove(
-                "mc-force-sidebar-open",
-                "mc-sidebar-ready",
-                "mc-sidebar-user-collapsed"
-            );
+            const existing = doc.getElementById(buttonId);
+            if (layout !== "sidebar") {{
+                if (existing) existing.remove();
+                if (parentWindow.__mcLayoutSwitchObserver) {{
+                    parentWindow.__mcLayoutSwitchObserver.disconnect();
+                    delete parentWindow.__mcLayoutSwitchObserver;
+                }}
+                return;
+            }}
 
-            [
-                "mc-sidebar-toggle-button",
-                "mc-sidebar-toggle-style"
-            ].forEach((id) => {
-                const node = doc.getElementById(id);
-                if (node) {
-                    node.remove();
-                }
-            });
-            for (const id of [buttonId, styleId]) {
-                const node = doc.getElementById(id);
-                if (node && node.dataset.mcVersion !== scriptVersion) {
-                    node.remove();
-                }
-            }
+            function nativeButton() {{
+                return Array.from(doc.querySelectorAll("button")).find((candidate) =>
+                    candidate.id !== buttonId
+                    && candidate.textContent.trim() === nativeButtonLabel
+                ) || null;
+            }}
 
-            try {
-                parentWindow.localStorage.removeItem("mc-sidebar-user-collapsed");
-            } catch {
-                // Storage can be unavailable in some browser modes.
-            }
+            function hideNativeButton() {{
+                const native = nativeButton();
+                if (!native) return false;
+                const container = native.closest('[data-testid="stElementContainer"]');
+                (container || native).style.display = "none";
+                return true;
+            }}
 
-            function ensureStyle() {
-                if (doc.getElementById(styleId)) {
-                    return;
-                }
-                const style = doc.createElement("style");
-                style.id = styleId;
-                style.dataset.mcVersion = scriptVersion;
-                style.textContent = `
-                    #${buttonId} {
-                        position: fixed;
-                        top: 12px;
-                        left: 12px;
-                        z-index: 2147483647;
-                        width: 42px;
-                        height: 42px;
-                        border-radius: 999px;
-                        border: 1px solid rgba(109, 40, 217, 0.22);
-                        background: rgba(255, 255, 255, 0.96);
-                        color: #6d28d9;
-                        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
-                        display: none;
-                        align-items: center;
-                        justify-content: center;
-                        padding: 0;
-                        cursor: pointer;
-                    }
-                    #${buttonId}.mc-visible {
-                        display: flex;
-                    }
-                    #${buttonId}:hover {
-                        background: #ffffff;
-                        border-color: rgba(109, 40, 217, 0.38);
-                    }
-                    #${buttonId} svg {
-                        width: 22px;
-                        height: 22px;
-                        stroke: currentColor;
-                    }
-                    body.mc-force-sidebar-open [data-testid="stSidebar"] {
-                        display: block !important;
-                        visibility: visible !important;
-                        opacity: 1 !important;
-                        transform: translateX(0) !important;
-                        left: 0 !important;
-                        width: 110px !important;
-                        min-width: 110px !important;
-                        max-width: 110px !important;
-                        pointer-events: auto !important;
-                    }
-                    body.mc-force-sidebar-open #${buttonId},
-                    body.mc-force-sidebar-open [data-testid="collapsedControl"],
-                    body.mc-force-sidebar-open [data-testid="stSidebarCollapsedControl"] {
-                        display: none !important;
-                    }
-                `;
-                doc.head.appendChild(style);
-            }
+            if (parentWindow.__mcLayoutSwitchObserver) {{
+                parentWindow.__mcLayoutSwitchObserver.disconnect();
+            }}
+            if (!hideNativeButton()) {{
+                const observer = new parentWindow.MutationObserver(() => {{
+                    if (hideNativeButton()) {{
+                        observer.disconnect();
+                        delete parentWindow.__mcLayoutSwitchObserver;
+                    }}
+                }});
+                observer.observe(doc.body, {{ childList: true, subtree: true }});
+                parentWindow.__mcLayoutSwitchObserver = observer;
+            }}
 
-            function isVisible(el) {
-                if (!el) {
-                    return false;
-                }
-                const rect = el.getBoundingClientRect();
-                const style = parentWindow.getComputedStyle(el);
-                return rect.width > 0
-                    && rect.height > 0
-                    && style.display !== "none"
-                    && style.visibility !== "hidden"
-                    && style.opacity !== "0";
-            }
+            const button = existing || doc.createElement("button");
+            button.id = buttonId;
+            button.type = "button";
+            button.textContent = "⇄";
+            button.title = "切换为顶部导航";
+            button.setAttribute("aria-label", "切换为顶部导航");
+            Object.assign(button.style, {{
+                position: "fixed",
+                top: "2px",
+                left: "40px",
+                zIndex: "2147483647",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "31px",
+                height: "30px",
+                margin: "0",
+                padding: "0",
+                border: "1px solid rgba(109, 40, 217, 0.14)",
+                borderRadius: "5px 0 0 5px",
+                background: "transparent",
+                boxShadow: "none",
+                color: "#5b21b6",
+                fontFamily: "Arial, sans-serif",
+                fontSize: "16px",
+                fontWeight: "700",
+                lineHeight: "1",
+                cursor: "pointer"
+            }});
+            button.onmouseenter = () => {{ button.style.background = "rgba(109, 40, 217, 0.10)"; }};
+            button.onmouseleave = () => {{ button.style.background = "transparent"; }};
+            button.onclick = () => {{
+                const native = nativeButton();
+                button.remove();
+                if (native) native.click();
+            }};
 
-            function sidebarIsVisible() {
-                const sidebar = doc.querySelector('[data-testid="stSidebar"]');
-                if (!sidebar || !isVisible(sidebar)) {
-                    return false;
-                }
-                const rect = sidebar.getBoundingClientRect();
-                return rect.width > 40 && rect.right > 40;
-            }
-
-            function isRecoveryButton(el) {
-                return el && (el.id === buttonId || Boolean(el.closest(`#${buttonId}`)));
-            }
-
-            function nativeExpandButton() {
-                const directSelectors = [
-                    '[data-testid="collapsedControl"] button',
-                    '[data-testid="stSidebarCollapsedControl"] button',
-                    'button[data-testid="collapsedControl"]',
-                    'button[data-testid="stSidebarCollapsedControl"]',
-                    '[data-testid="collapsedControl"] [role="button"]',
-                    '[data-testid="stSidebarCollapsedControl"] [role="button"]',
-                    'button[aria-label*="sidebar" i]',
-                    'button[title*="sidebar" i]',
-                    'button[aria-label*="side bar" i]',
-                    'button[title*="side bar" i]',
-                    'button[aria-label*="展开"]',
-                    'button[title*="展开"]',
-                    'button[aria-label*="侧边"]',
-                    'button[title*="侧边"]',
-                    'button[aria-label*="侧栏"]',
-                    'button[title*="侧栏"]'
-                ];
-                for (const selector of directSelectors) {
-                    let el = null;
-                    try {
-                        el = doc.querySelector(selector);
-                    } catch {
-                        el = null;
-                    }
-                    if (el && !isRecoveryButton(el) && !el.closest('[data-testid="stSidebar"]')) {
-                        return el;
-                    }
-                }
-
-                const candidates = Array.from(doc.querySelectorAll('button, [role="button"]'));
-                return candidates.find((el) => {
-                    if (isRecoveryButton(el) || el.closest('[data-testid="stSidebar"]')) {
-                        return false;
-                    }
-                    const rect = el.getBoundingClientRect();
-                    if (rect.left > 120 || rect.top > 100 || rect.width > 80 || rect.height > 80) {
-                        return false;
-                    }
-                    const label = [
-                        el.getAttribute("aria-label") || "",
-                        el.getAttribute("title") || "",
-                        el.textContent || "",
-                        el.outerHTML || ""
-                    ].join(" ");
-                    return /sidebar|side bar|侧边|侧栏|展开|expand|open|chevron.*right|right.*chevron|arrow.*right|right.*arrow/i.test(label);
-                }) || null;
-            }
-
-            function pressButton(el) {
-                if (!el) {
-                    return;
-                }
-                const eventInit = { bubbles: true, cancelable: true, view: parentWindow };
-                for (const type of ["pointerdown", "mousedown", "mouseup"]) {
-                    const EventCtor = type.startsWith("pointer") && parentWindow.PointerEvent
-                        ? parentWindow.PointerEvent
-                        : parentWindow.MouseEvent;
-                    el.dispatchEvent(new EventCtor(type, eventInit));
-                }
-                el.click();
-            }
-
-            function purgeSidebarState(storage) {
-                if (!storage) {
-                    return;
-                }
-                const keys = [];
-                for (let i = 0; i < storage.length; i += 1) {
-                    const key = storage.key(i);
-                    if (!key) {
-                        continue;
-                    }
-                    let value = "";
-                    try {
-                        value = storage.getItem(key) || "";
-                    } catch {
-                        value = "";
-                    }
-                    if (
-                        /sidebar|sideBar|SideBar/i.test(key)
-                        || (/sidebar/i.test(value) && /collapse|collapsed/i.test(value))
-                    ) {
-                        keys.push(key);
-                    }
-                }
-                keys.forEach((key) => storage.removeItem(key));
-            }
-
-            function bindForceOpenCleanup() {
-                const selectors = [
-                    '[data-testid="stSidebarCollapseButton"]',
-                    '[data-testid="stSidebar"] button[aria-label*="collapse" i]',
-                    '[data-testid="stSidebar"] button[title*="collapse" i]',
-                    '[data-testid="stSidebar"] button[aria-label*="close" i]',
-                    '[data-testid="stSidebar"] button[title*="close" i]',
-                    '[data-testid="stSidebar"] button[aria-label*="收起"]',
-                    '[data-testid="stSidebar"] button[title*="收起"]',
-                    '[data-testid="stSidebar"] button[aria-label*="隐藏"]',
-                    '[data-testid="stSidebar"] button[title*="隐藏"]'
-                ];
-                selectors.forEach((selector) => {
-                    let nodes = [];
-                    try {
-                        nodes = Array.from(doc.querySelectorAll(selector));
-                    } catch {
-                        nodes = [];
-                    }
-                    nodes.forEach((node) => {
-                        if (node.dataset.mcSidebarCleanupBound === "1") {
-                            return;
-                        }
-                        node.dataset.mcSidebarCleanupBound = "1";
-                        node.addEventListener("click", () => {
-                            doc.body.classList.remove("mc-force-sidebar-open");
-                        }, { capture: true });
-                    });
-                });
-            }
-
-            function openSidebarWithoutReload() {
-                purgeSidebarState(parentWindow.localStorage);
-                purgeSidebarState(parentWindow.sessionStorage);
-                doc.body.classList.add("mc-force-sidebar-open");
-                bindForceOpenCleanup();
-                parentWindow.setTimeout(update, 150);
-            }
-
-            function ensureButton() {
-                ensureStyle();
-                let button = doc.getElementById(buttonId);
-                if (button) {
-                    return button;
-                }
-                button = doc.createElement("button");
-                button.id = buttonId;
-                button.type = "button";
-                button.dataset.mcVersion = scriptVersion;
-                button.title = "展开侧边栏";
-                button.setAttribute("aria-label", "展开侧边栏");
-                button.innerHTML = `
-                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="m7 6 6 6-6 6"></path>
-                        <path d="m13 6 6 6-6 6"></path>
-                    </svg>
-                `;
-                button.addEventListener("click", (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.stopImmediatePropagation();
-
-                    doc.body.classList.remove(
-                        "mc-force-sidebar-open",
-                        "mc-sidebar-ready",
-                        "mc-sidebar-user-collapsed"
-                    );
-
-                    const native = nativeExpandButton();
-                    if (native) {
-                        pressButton(native);
-                        parentWindow.setTimeout(update, 350);
-                        return;
-                    }
-
-                    openSidebarWithoutReload();
-                });
-                doc.body.appendChild(button);
-                return button;
-            }
-
-            function update() {
-                bindForceOpenCleanup();
-                const button = ensureButton();
-                button.classList.toggle("mc-visible", !sidebarIsVisible() && !doc.body.classList.contains("mc-force-sidebar-open"));
-            }
-
-            update();
-            parentWindow.__mcSidebarRecoveryObserver = new parentWindow.MutationObserver(update);
-            parentWindow.__mcSidebarRecoveryObserver.observe(doc.body, {
-                attributes: true,
-                childList: true,
-                subtree: true
-            });
-            parentWindow.__mcSidebarRecoveryTimer = parentWindow.setInterval(update, 500);
-        })();
+            if (!existing) doc.body.appendChild(button);
+        }})();
         </script>
         """,
         height=0,
@@ -2699,17 +2536,30 @@ def _ai_sol_keys(fpath: str, key_prefix: str):
     editor_key = f"ai_sol_editor_{fhash}"
     return fhash, data_key, editor_key
 
-def render_ai_solution_generate_button(fpath: str, current_content: str, key_prefix: str, use_container_width: bool = True):
+def render_ai_solution_generate_button(
+    fpath: str,
+    current_content: str,
+    key_prefix: str,
+    use_container_width: bool = True,
+    compact: bool = False,
+):
     fhash, data_key, editor_key = _ai_sol_keys(fpath, key_prefix)
-    c_ai, c_img = st.columns([1, 1])
     do = None
-    with c_ai:
+    upload_open_key = f"ai_sol_upload_open_{fhash}"
+
+    if compact:
         if st.button("🤖 AI生成解答", key=f"ai_sol_gen_{fhash}", type="primary", use_container_width=use_container_width):
             do = "ai"
-    upload_open_key = f"ai_sol_upload_open_{fhash}"
-    with c_img:
         if st.button("🖼️ 解答图片识别", key=f"ai_sol_img_toggle_{fhash}", type="secondary", use_container_width=use_container_width):
             st.session_state[upload_open_key] = not st.session_state.get(upload_open_key, False)
+    else:
+        c_ai, c_img = st.columns([1, 1])
+        with c_ai:
+            if st.button("🤖 AI生成解答", key=f"ai_sol_gen_{fhash}", type="primary", use_container_width=use_container_width):
+                do = "ai"
+        with c_img:
+            if st.button("🖼️ 解答图片识别", key=f"ai_sol_img_toggle_{fhash}", type="secondary", use_container_width=use_container_width):
+                st.session_state[upload_open_key] = not st.session_state.get(upload_open_key, False)
 
     if do:
         problem_tex = _extract_problem_env(current_content)
@@ -4144,7 +3994,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                         c_msg, c_jump = st.columns([3, 1])
                         c_msg.success(f"处理完成，共保存 {count} 个文件")
                         def _jump_to_browse_same_paper():
-                            st.session_state["main_sidebar_radio"] = "🔍\n全局浏览与编辑"
+                            st.session_state["main_sidebar_radio"] = "🔍\n全局浏览\n与编辑"
                             st.session_state["adv_search_active"] = False
                             st.session_state["recent_saved_active"] = True
                             st.session_state["recent_saved_paths"] = [log.get("path") for log in log_msg if log.get("status") == "success" and log.get("path")]
@@ -4230,7 +4080,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                         c_msg, c_jump = st.columns([3, 1])
                         c_msg.success(f"处理完成，共保存 {count} 个文件")
                         def _jump_to_browse_batch():
-                            st.session_state["main_sidebar_radio"] = "🔍\n全局浏览与编辑"
+                            st.session_state["main_sidebar_radio"] = "🔍\n全局浏览\n与编辑"
                             st.session_state["adv_search_active"] = False
                             st.session_state["recent_saved_active"] = True
                             st.session_state["recent_saved_paths"] = [log.get("path") for log in log_msg if log.get("status") == "success" and log.get("path")]
@@ -4597,17 +4447,15 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         manage_backup_questions_dialog()
 
     elif not is_exam_mode:
-        c_header, c_search = st.columns([1, 1.5])
-        with c_header:
-            st.header(page_title)
-            st.subheader("浏览模式")
-            if "browse_mode" not in st.session_state:
-                st.session_state["browse_mode"] = "按知识板块浏览"
-            browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览", "按录入顺序浏览"], horizontal=True, label_visibility="collapsed", key="browse_mode")
-            
-        with c_search:
-            # 嵌入三级查找栏
-            render_advanced_search_inline()
+        st.header(page_title)
+        st.subheader("浏览模式")
+        if "browse_mode" not in st.session_state:
+            st.session_state["browse_mode"] = "按知识板块浏览"
+        browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览", "按录入顺序浏览"], horizontal=True, label_visibility="collapsed", key="browse_mode")
+
+        # The search panel has its own nested columns, so it must render at
+        # the page root rather than inside the header column.
+        render_advanced_search_inline()
             
     else:
         if "browse_mode" not in st.session_state:
@@ -4645,7 +4493,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
             fname = os.path.basename(fpath)
             q_label = format_question_title(fname)
             render_question_header(q_label, content, fpath)
-            c_l, c_r = st.columns([1, 1])
+            c_l, c_r = st.columns([0.85, 1.15])
             edit_mode_key = f"recent_saved_edit_mode_{fpath}"
             with c_l:
                 mtime_token = int(os.path.getmtime(fpath)) if os.path.exists(fpath) else 0
@@ -4721,7 +4569,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         st.multiselect("知识板块 (首个为主)", options=SUBJECTS, default=valid_tags, key=f"recent_saved_tag_select_{fhash}")
             with c_r:
                 try:
-                    st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+                    render_question_preview(content, show_title=False)
                 except Exception as e:
                     st.error(f"渲染错误: {e}")
             render_ai_solution_panel(fpath, q_label, key_prefix="ai_solution_recent_saved")
@@ -4749,26 +4597,6 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
             # 使用自定义 CSS 优化按钮样式 (圆角、紧凑) 以及固定左栏
             st.markdown("""
                 <style>
-                /* 固定左侧整栏 (吸顶悬浮效果) */
-                /* 修复 Streamlit 的 column 高度机制导致 sticky 失效的问题 */
-                div[data-testid="stHorizontalBlock"]:has(#left-panel-anchor) {
-                    align-items: flex-start !important;
-                }
-                div[data-testid="column"]:has(#left-panel-anchor) {
-                    position: -webkit-sticky !important;
-                    position: sticky !important;
-                    top: 2rem !important;
-                    height: calc(100vh - 2rem) !important;
-                    overflow-y: auto !important;
-                    padding-right: 1rem !important;
-                }
-                
-                /* 右侧栏恢复正常流 */
-                div[data-testid="column"]:has(#right-panel-anchor) {
-                    border-left: 1px solid #e1e4e8 !important;
-                    padding-left: 1.5rem !important;
-                }
-                
                 /* 隐藏左侧栏的滚动条以便美观 */
                 div[data-testid="column"]:has(#left-panel-anchor)::-webkit-scrollbar {
                     width: 4px;
@@ -4863,6 +4691,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         selected_option = st.selectbox(
                             "3. 选择文件 (支持输入搜索)", 
                             options=file_options,
+                            index=1 if len(file_options) > 1 else 0,
                             key=f"browse_file_select_{subject}_all",
                             label_visibility="collapsed"
                         )
@@ -4878,6 +4707,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         selected_option = st.selectbox(
                             "3. 选择文件 (支持输入搜索)", 
                             options=file_options,
+                            index=1 if len(file_options) > 1 else 0,
                             key=f"browse_file_select_{subject}_{year}",
                             label_visibility="collapsed"
                         )
@@ -4926,7 +4756,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     st.divider()
                                     continue
                                 
-                                c1, c2 = st.columns([1, 1])
+                                c1, c2 = st.columns([0.85, 1.15])
                                 edit_mode_key = f"browse_edit_mode_{fpath}"
                                 
                                 with c1:
@@ -4944,7 +4774,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                         tag_edit_key = f"tag_edit_mode_{fpath}"
                                         is_tag_editing = st.session_state.get(tag_edit_key, False)
                                         
-                                        btn_c1, btn_c2, btn_c3 = st.columns(3)
+                                        btn_c1, btn_c2, btn_c3 = st.container(), st.container(), st.container()
                                         with btn_c1:
                                             if st.button("✏️ 开始修改tex内容", key=f"subj_start_btn_{fpath}"):
                                                 st.session_state[text_area_key] = content
@@ -4979,7 +4809,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                                     st.session_state[tag_edit_key] = True
                                                     st.rerun()
                                         with btn_c3:
-                                            render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1")
+                                            render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1", compact=True)
                                         render_ai_solution_image_ocr_section(fpath, key_prefix="ai_solution_v1")
                                                 
                                         if is_tag_editing:
@@ -5006,7 +4836,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
 
                                 with c2:
                                     try:
-                                        st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+                                        render_question_preview(content)
                                     except Exception as e:
                                         st.error(f"渲染错误: {e}")
                                 
@@ -5065,7 +4895,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     continue
                                 
                                 # 左右布局: 编辑 vs 预览
-                                c1, c2 = st.columns([1, 1])
+                                c1, c2 = st.columns([0.85, 1.15])
                                 
                                 # 编辑模式状态 key
                                 edit_mode_key = f"browse_edit_mode_{fpath}"
@@ -5103,7 +4933,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                         tag_edit_key = f"tag_edit_mode_{fpath}"
                                         is_tag_editing = st.session_state.get(tag_edit_key, False)
                                         
-                                        btn_c1, btn_c2, btn_c3 = st.columns(3)
+                                        btn_c1, btn_c2, btn_c3 = st.container(), st.container(), st.container()
                                         with btn_c1:
                                             if st.button("✏️ 开始修改tex内容", key=f"subj_start_btn_{fpath}"):
                                                 st.session_state[edit_mode_key] = True
@@ -5137,7 +4967,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                                     st.session_state[tag_edit_key] = True
                                                     st.rerun()
                                         with btn_c3:
-                                            render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1")
+                                            render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1", compact=True)
                                         render_ai_solution_image_ocr_section(fpath, key_prefix="ai_solution_v1")
                                                 
                                         if is_tag_editing:
@@ -5164,7 +4994,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
 
                                 with c2:
                                     try:
-                                        st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+                                        render_question_preview(content)
                                     except Exception as e:
                                         st.error(f"渲染错误: {e}")
                                 
@@ -5185,33 +5015,6 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
         
         with col_nav:
             st.markdown('<div id="paper-left-anchor"></div>', unsafe_allow_html=True)
-            
-            st.markdown("""
-                <style>
-                div[data-testid="stHorizontalBlock"]:has(#paper-left-anchor) {
-                    height: calc(100vh - 150px) !important;
-                    align-items: stretch !important;
-                    overflow: hidden !important;
-                }
-                .stApp { overflow-y: hidden !important; }
-                
-                div[data-testid="column"]:has(#paper-left-anchor) {
-                    height: 100% !important; 
-                    overflow-y: auto !important;
-                    padding-right: 1rem !important;
-                }
-                
-                div[data-testid="column"]:has(#paper-right-anchor) {
-                    height: 100% !important;
-                    overflow-y: auto !important;
-                    border-left: 1px solid #e1e4e8 !important;
-                    padding-left: 1.5rem !important;
-                }
-                
-                div[data-testid="column"]::-webkit-scrollbar { width: 4px; }
-                div[data-testid="column"]::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 4px; }
-                </style>
-            """, unsafe_allow_html=True)
             
             all_years = get_all_years_globally(paper_type=paper_type_scope)
             type_opts = ["WK"] if is_cloze_library else [key for key in PAPER_TYPES.keys() if key != "WK"]
@@ -5351,7 +5154,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 continue
                                 
                             # 左右布局
-                            c1, c2 = st.columns([1, 1])
+                            c1, c2 = st.columns([0.85, 1.15])
                             
                             # 编辑模式状态 key
                             edit_mode_key = f"browse_paper_edit_mode_{q_path}"
@@ -5391,7 +5194,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     tag_edit_key = f"tag_edit_mode_{q_path}"
                                     is_tag_editing = st.session_state.get(tag_edit_key, False)
                                     
-                                    btn_c1, btn_c2, btn_c3 = st.columns(3)
+                                    btn_c1, btn_c2, btn_c3 = st.container(), st.container(), st.container()
                                     with btn_c1:
                                         if st.button("✏️ 开始修改tex内容", key=f"start_btn_{q_path}"):
                                             st.session_state[edit_mode_key] = True
@@ -5425,7 +5228,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                                 st.session_state[tag_edit_key] = True
                                                 st.rerun()
                                     with btn_c3:
-                                        render_ai_solution_generate_button(q_path, content, key_prefix="ai_solution_v1")
+                                        render_ai_solution_generate_button(q_path, content, key_prefix="ai_solution_v1", compact=True)
                                     render_ai_solution_image_ocr_section(q_path, key_prefix="ai_solution_v1")
                                             
                                     if is_tag_editing:
@@ -5451,7 +5254,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                         st.multiselect("知识板块 (首个为主)", options=SUBJECTS, default=valid_tags, key=f"tag_select_{fhash}")
     
                             with c2:
-                                st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+                                render_question_preview(content)
                             
                             render_ai_solution_panel(q_path, q_label, key_prefix="ai_solution_v1")
                             
@@ -5464,33 +5267,6 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
         with col_nav:
             st.markdown('<div id="time-left-anchor"></div>', unsafe_allow_html=True)
             st.markdown("### 🕒 浏览设置")
-            
-            st.markdown("""
-                <style>
-                div[data-testid="stHorizontalBlock"]:has(#time-left-anchor) {
-                    height: calc(100vh - 150px) !important;
-                    align-items: stretch !important;
-                    overflow: hidden !important;
-                }
-                .stApp { overflow-y: hidden !important; }
-                
-                div[data-testid="column"]:has(#time-left-anchor) {
-                    height: 100% !important; 
-                    overflow-y: auto !important;
-                    padding-right: 1rem !important;
-                }
-                
-                div[data-testid="column"]:has(#time-right-anchor) {
-                    height: 100% !important;
-                    overflow-y: auto !important;
-                    border-left: 1px solid #e1e4e8 !important;
-                    padding-left: 1.5rem !important;
-                }
-                
-                div[data-testid="column"]::-webkit-scrollbar { width: 4px; }
-                div[data-testid="column"]::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.15); border-radius: 4px; }
-                </style>
-            """, unsafe_allow_html=True)
             
             # 排序选项
             st.subheader("排序方式")
@@ -5594,7 +5370,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         st.divider()
                         continue
                     
-                    c1, c2 = st.columns([1, 1])
+                    c1, c2 = st.columns([0.85, 1.15])
                     edit_mode_key = f"time_edit_mode_{fpath}"
                     
                     with c1:
@@ -5662,7 +5438,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 mtime_token = int(os.path.getmtime(fpath)) if os.path.exists(fpath) else 0
                                 st.text_area("源码", value=content, height=est_height, disabled=True, key=f"{text_area_key}_readonly_{mtime_token}")
 
-                                btn_c1, btn_c2, btn_c3 = st.columns(3)
+                                btn_c1, btn_c2, btn_c3 = st.container(), st.container(), st.container()
                                 with btn_c1:
                                     if st.button("✏️ 改tex内容", key=f"time_start_btn_{fpath}", use_container_width=True):
                                         st.session_state[text_area_key] = content
@@ -5696,7 +5472,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                             st.session_state[tag_edit_key] = True
                                             st.rerun()
                                 with btn_c3:
-                                    render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1")
+                                    render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1", compact=True)
                                 render_ai_solution_image_ocr_section(fpath, key_prefix="ai_solution_v1")
 
                                 if is_tag_editing:
@@ -5748,7 +5524,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                             if sol.strip():
                                 preview_tex += f"\n\n\\begin{{solutions}}\n{sol}\n\\end{{solutions}}"
                             try:
-                                st.markdown(latex_to_markdown(preview_tex), unsafe_allow_html=True)
+                                render_question_preview(preview_tex)
                             except Exception as e:
                                 st.error(f"渲染错误: {e}")
                     
@@ -5812,18 +5588,14 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                     editor_key = f"editor_{selected_file_path}"
                     st.text_area("源码", value=current_content, height=600, key=editor_key, label_visibility="collapsed")
                     new_content = st.session_state.get(editor_key, current_content)
-                    s1, s2 = st.columns(2)
-                    with s1:
-                        st.button("💾 保存修改", type="primary", key=f"save_{selected_file_path}", use_container_width=True, on_click=_save_tex_from_widget, args=(selected_file_path, editor_key, "", "文件已保存！"))
-                    with s2:
-                        render_ai_solution_generate_button(selected_file_path, new_content, key_prefix="ai_solution_v1", use_container_width=True)
+                    st.button("💾 保存修改", type="primary", key=f"save_{selected_file_path}", use_container_width=True, on_click=_save_tex_from_widget, args=(selected_file_path, editor_key, "", "文件已保存！"))
+                    render_ai_solution_generate_button(selected_file_path, new_content, key_prefix="ai_solution_v1", use_container_width=True, compact=True)
                     render_ai_solution_image_ocr_section(selected_file_path, key_prefix="ai_solution_v1")
                         
                 with col_preview:
                     try:
                         # 尝试渲染
-                        md_content = latex_to_markdown(new_content)
-                        st.markdown(md_content, unsafe_allow_html=True)
+                        render_question_preview(new_content)
                     except Exception as e:
                         st.error(f"预览渲染出错: {e}")
                 
@@ -9199,7 +8971,8 @@ def render_advanced_search_inline():
     <style>
     /* 隐藏多余的 Markdown 占位符防止把高度撑开 */
     div[data-testid="stMarkdownContainer"]:has(#adv-search-inputs-anchor),
-    div[data-testid="stMarkdownContainer"]:has(#adv-search-btn-anchor) {
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-btn-anchor),
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-info-anchor) {
         display: none !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -9209,9 +8982,17 @@ def render_advanced_search_inline():
     /* 去除列之间的默认间距，防止按钮被挤下来 */
     div[data-testid="column"]:has(#adv-search-btn-anchor) {
         display: flex !important;
-        align-items: flex-start !important; /* 顶部对齐 */
+        align-items: stretch !important;
         justify-content: center !important;
-        height: 100% !important;
+        flex: 0 0 72px !important;
+        width: 72px !important;
+        min-width: 72px !important;
+        max-width: 72px !important;
+        align-self: flex-start !important;
+        height: 136px !important;
+        min-height: 136px !important;
+        max-height: 136px !important;
+        position: relative !important;
         margin-top: 0 !important;
         padding-top: 0 !important;
     }
@@ -9219,22 +9000,54 @@ def render_advanced_search_inline():
         height: 100% !important;
         width: 100% !important;
         display: flex !important;
-        justify-content: flex-start !important;
+        justify-content: center !important;
         gap: 0 !important;
         margin: 0 !important;
         padding: 0 !important;
     }
+    div[data-testid="column"]:has(#adv-search-info-anchor) {
+        display: flex !important;
+        align-items: flex-start !important;
+        height: 136px !important;
+        min-height: 136px !important;
+        max-height: 136px !important;
+        padding: 0 !important;
+    }
+    div[data-testid="column"]:has(#adv-search-info-anchor) > div[data-testid="stVerticalBlock"] {
+        height: 100% !important;
+        display: flex !important;
+        justify-content: center !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
+        min-height: 64px !important;
+        height: 64px !important;
+        max-height: 64px !important;
+        margin: 0 !important;
+        padding: 0.35rem 0.65rem !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        display: flex !important;
+        align-items: center !important;
+        box-sizing: border-box !important;
+        line-height: 1.25 !important;
+        overflow: hidden !important;
+    }
     div[data-testid="column"]:has(#adv-search-btn-anchor) button {
-        height: 152px !important; /* 精确计算：3行输入框(40px*3) + 2行间隙(16px*2) = 152px */
-        min-height: 152px !important;
-        max-height: 152px !important;
-        width: 100% !important;
+        height: 64px !important;
+        min-height: 64px !important;
+        max-height: 64px !important;
+        width: 54px !important;
+        min-width: 54px !important;
+        max-width: 54px !important;
         padding: 0 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        border-radius: 8px !important;
+        border-radius: 7px !important;
         margin: 0px !important;
         background-color: #ffffff !important; /* 白色底色 */
         border: 1px solid #d0d7de !important; /* 浅灰色边框 */
@@ -9248,13 +9061,13 @@ def render_advanced_search_inline():
     div[data-testid="column"]:has(#adv-search-btn-anchor) button p {
         writing-mode: horizontal-tb !important; /* 恢复水平书写模式 */
         text-orientation: mixed !important;
-        letter-spacing: 2px !important;
-        line-height: 1.8 !important; /* 调整行高让三行字间距更合理 */
+        letter-spacing: 0 !important;
+        line-height: 1.35 !important;
         margin: 0 !important;
-        font-size: 16px !important;
+        font-size: 13px !important;
         font-weight: bold !important;
         white-space: pre-wrap !important; /* 强制保留换行符 */
-        word-break: break-word !important;
+        word-break: keep-all !important;
         text-align: center !important;
         display: block !important;
     }
@@ -9276,7 +9089,7 @@ def render_advanced_search_inline():
 
     search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
     
-    col_inputs, col_btn, col_info = st.columns([2.5, 0.3, 2.3])
+    col_inputs, col_btn, col_info = st.columns([2.5, 0.26, 2.3])
     
     with col_inputs:
         st.markdown('<div id="adv-search-inputs-anchor"></div>', unsafe_allow_html=True)
@@ -9309,9 +9122,10 @@ def render_advanced_search_inline():
     
     with col_btn:
         st.markdown('<div id="adv-search-btn-anchor"></div>', unsafe_allow_html=True)
-        st.button("🔎  \n开 始  \n查 找", use_container_width=True, type="secondary", on_click=on_adv_search)
+        st.button("🔎\n开始查找", use_container_width=False, type="secondary", on_click=on_adv_search)
 
     with col_info:
+        st.markdown('<span id="adv-search-info-anchor"></span>', unsafe_allow_html=True)
         q1 = st.session_state.get("adv_q1_sel" if t1 == "题目类型" else "adv_q1", "")
         q2 = st.session_state.get("adv_q2_sel" if t2 == "题目类型" else "adv_q2", "")
         q3 = st.session_state.get("adv_q3_sel" if t3 == "题目类型" else "adv_q3", "")
@@ -9415,7 +9229,7 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
 
             render_question_header(q_label, content, fpath)
             
-            c1, c2 = st.columns([1, 1])
+            c1, c2 = st.columns([0.85, 1.15])
             with c1:
                 fpath_hash = hashlib.md5(fpath.encode()).hexdigest()
                 edit_mode_key = f"adv_edit_mode_{fpath_hash}"
@@ -9491,7 +9305,7 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
                         st.multiselect("知识板块 (首个为主)", options=SUBJECTS, default=valid_tags, key=f"adv_tag_select_{fpath_hash}")
             with c2:
                 try:
-                    st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+                    render_question_preview(content, show_title=False)
                 except Exception as e:
                     st.error(f"渲染错误: {e}")
 
@@ -9522,7 +9336,91 @@ def main():
     st.set_page_config(page_title="高中数学题库管理系统", layout="wide", initial_sidebar_state="expanded")
     
     inject_custom_css()
-    inject_sidebar_recovery_control()
+
+    api_nav_option = "🔑\nAPI设置"
+    exam_nav_option = "🖨️\n组卷服务\n(完善中)"
+    browse_nav_option = "🔍\n全局浏览\n与编辑"
+    legacy_browse_nav_option = "🔍\n全局浏览与编辑"
+    nav_options = [
+        api_nav_option,
+        "📊\n数据统计",
+        "📝\n录入新题",
+        browse_nav_option,
+        exam_nav_option,
+        "🛠️\n工具箱",
+        "🔎\n三级查找",
+        "📘\n项目介绍",
+        "📖\n规范说明",
+    ]
+    default_nav_option = "📊\n数据统计"
+
+    for state_key in ("main_nav_selection", "main_sidebar_radio"):
+        if st.session_state.get(state_key) == legacy_browse_nav_option:
+            st.session_state[state_key] = browse_nav_option
+    if "main_nav_selection" not in st.session_state:
+        st.session_state["main_nav_selection"] = default_nav_option
+    if "main_sidebar_radio" not in st.session_state:
+        st.session_state["main_sidebar_radio"] = st.session_state["main_nav_selection"]
+    if "navigation_layout" not in st.session_state:
+        st.session_state["navigation_layout"] = "sidebar"
+
+    def _select_main_navigation(selection):
+        if selection == api_nav_option:
+            st.session_state["api_settings_dialog_requested"] = True
+            previous_nav = st.session_state.get("main_nav_selection", default_nav_option)
+            if previous_nav not in nav_options or previous_nav == api_nav_option:
+                previous_nav = default_nav_option
+            st.session_state["main_nav_selection"] = previous_nav
+            st.session_state["main_sidebar_radio"] = previous_nav
+            return
+
+        if selection not in nav_options:
+            return
+
+        st.session_state["main_nav_selection"] = selection
+        st.session_state["main_sidebar_radio"] = selection
+        if selection == browse_nav_option:
+            st.session_state["adv_search_active"] = False
+            st.session_state["browse_mode"] = "按知识板块浏览"
+        elif selection != "🔎\n三级查找":
+            st.session_state["adv_search_active"] = False
+        if selection != "🛠️\n工具箱":
+            st.session_state["tools_subpage"] = None
+
+    # Existing workflows can set the sidebar widget key directly before rerun.
+    # Keep those jumps working when the top navigation is active.
+    pending_nav = st.session_state.get("main_sidebar_radio")
+    if (
+        pending_nav in nav_options
+        and pending_nav != api_nav_option
+        and pending_nav != st.session_state.get("main_nav_selection")
+    ):
+        _select_main_navigation(pending_nav)
+
+    def _on_main_sidebar_nav_change():
+        _select_main_navigation(st.session_state.get("main_sidebar_radio"))
+
+    top_nav_items = [
+        ("📊 数据统计", "📊\n数据统计"),
+        ("📝 录入新题", "📝\n录入新题"),
+        ("🔍 全局浏览\n与编辑", browse_nav_option),
+        ("🖨️ 组卷服务", exam_nav_option),
+        ("🛠️ 工具箱", "🛠️\n工具箱"),
+        ("🔎 三级查找", "🔎\n三级查找"),
+        ("📘 项目介绍", "📘\n项目介绍"),
+        ("📖 规范说明", "📖\n规范说明"),
+    ]
+    top_nav_value_by_label = dict(top_nav_items)
+    top_nav_label_by_value = {value: label for label, value in top_nav_items}
+
+    def _on_top_nav_change():
+        _select_main_navigation(top_nav_value_by_label.get(st.session_state.get("top_nav_radio"), default_nav_option))
+
+    navigation_layout = st.session_state["navigation_layout"]
+    if navigation_layout == "sidebar":
+        if st.button("切换为顶部导航", key="sidebar_layout_toggle"):
+            st.session_state["navigation_layout"] = "top"
+            st.rerun()
     if _query_param_enabled("mathcyclus_intro"):
         st.session_state["mathcyclus_intro_requested"] = True
         _remove_query_param("mathcyclus_intro")
@@ -9534,7 +9432,7 @@ def main():
         <style>
         /* 隐藏默认顶部的 padding */
         .block-container {
-            padding-top: 2rem !important;
+            padding-top: 0.5rem !important;
         }
         
         /* ================= 侧边栏重构 (SolEdu / 暗紫色居中极简风格) ================= */
@@ -9554,28 +9452,73 @@ def main():
             justify-content: flex-start !important;
         }
         
-        /* 隐藏侧边栏默认组件的 Resizer，保留 Collapse 按钮并变白 */
+        /* 顶部操作直接使用 Streamlit 原生按钮，避免点击代理带来的状态不同步。 */
         [data-testid="stSidebarResizer"] {
             display: none !important;
         }
-        /* 强力覆盖折叠按钮颜色 */
-        [data-testid="stSidebarCollapseButton"],
-        [data-testid="stSidebarCollapseButton"]:hover {
+        [data-testid="stSidebarCollapseButton"] {
+            position: fixed !important;
+            top: 2px !important;
+            left: 70px !important;
+            z-index: 2147483647 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 31px !important;
+            height: 30px !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            transform: none !important;
+        }
+        [data-testid="stSidebarCollapseButton"] button {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 31px !important;
+            height: 30px !important;
+            min-height: 30px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            border: 1px solid rgba(109, 40, 217, 0.14) !important;
+            border-left: 0 !important;
+            border-radius: 0 5px 5px 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
             color: #5b21b6 !important;
         }
-        [data-testid="stSidebarCollapseButton"] svg,
-        [data-testid="stSidebarCollapseButton"] svg path,
-        [data-testid="stSidebar"] button svg,
-        [data-testid="stSidebar"] button svg path,
-        [data-testid="collapsedControl"] svg,
-        [data-testid="collapsedControl"] svg path,
-        [data-testid="stSidebarCollapsedControl"] svg,
-        [data-testid="stSidebarCollapsedControl"] svg path {
-            fill: #5b21b6 !important;
-            color: #5b21b6 !important;
-            stroke: #5b21b6 !important;
+        [data-testid="stSidebarCollapseButton"] button:hover {
+            background: rgba(109, 40, 217, 0.10) !important;
         }
-        
+        [data-testid="stSidebarCollapseButton"] button svg {
+            display: none !important;
+        }
+        [data-testid="stSidebarCollapseButton"] button::before {
+            content: "<<";
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1;
+        }
+        [data-testid="collapsedControl"] button svg,
+        [data-testid="stSidebarCollapsedControl"] button svg {
+            display: none !important;
+        }
+        [data-testid="collapsedControl"] button::before,
+        [data-testid="stSidebarCollapsedControl"] button::before {
+            content: ">>";
+            color: #6e6e73;
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1;
+        }
+        [data-testid="stSidebar"] {
+            position: relative !important;
+        }
         /* Logo 样式：白色居中 */
         .sol-logo {
             color: #5b21b6;
@@ -9696,7 +9639,11 @@ def main():
             margin: 0 !important;
             padding: 0 !important;
             line-height: 1.6 !important;
-            white-space: pre-wrap !important;
+            /* Keep each navigation label together; only the explicit \n in an
+               option may create a new line. */
+            white-space: pre !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
             width: 100% !important;
             color: #5b21b6 !important;
         }
@@ -9708,107 +9655,238 @@ def main():
         }
         </style>
     """, unsafe_allow_html=True)
-    
-    # --- 最左侧：全局导航 (SolEdu / 居中极简风格) ---
-    with st.sidebar:
-        logo_img_path = os.path.join(BASE_DIR, "fig", "MathCyclus_logo.png")
-        if os.path.exists(logo_img_path):
-            st.image(logo_img_path, width=72)
-        # 使用 <br> 让 MathCyclus 分成两行，避免挤出边框
-        st.markdown(
-            '<a class="sol-logo sol-logo-link" href="?mathcyclus_intro=1" target="_self" '
-            'title="打开 MathCyclus 题库介绍" style="margin-bottom:0; padding-bottom:0;">'
-            'Math<br><span>Cyclus</span></a>',
-            unsafe_allow_html=True,
-        )
-            
+
+    if navigation_layout == "top":
         st.markdown("""
         <style>
-        [data-testid="stSidebar"] div[data-testid="stImage"] {
-            display: flex !important;
-            justify-content: center !important;
-            margin: 0 auto 4px auto !important;
-        }
-        [data-testid="stSidebar"] div[data-testid="stImage"] img {
-            width: 72px !important;
-            max-width: 72px !important;
-            height: auto !important;
-        }
-        .sol-logo-link,
-        .sol-logo-link:visited,
-        .sol-logo-link:hover,
-        .sol-logo-link:active {
-            display: block !important;
-            text-decoration: none !important;
-            color: #5b21b6 !important;
-            cursor: pointer !important;
-        }
-        .sol-logo-link span,
-        .sol-logo-link:visited span,
-        .sol-logo-link:hover span,
-        .sol-logo-link:active span {
-            color: #c084fc !important;
-        }
-        /* 隐藏侧边栏的规范说明菜单项 */
-        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(9) {
+        [data-testid="stSidebar"],
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapsedControl"] {
             display: none !important;
+        }
+        .block-container {
+            max-width: none !important;
+            padding: 0 1.5rem 2rem !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 100 !important;
+            margin: -2.875rem -1.5rem 0.9rem !important;
+            padding: 0.42rem 1.5rem !important;
+            background: #ffffff !important;
+            display: flex;
+            align-items: center;
+            gap: 0.2rem !important;
+            min-width: 0 !important;
+            overflow: visible !important;
+            border: 0 !important;
+            border-bottom: 1px solid rgba(109, 40, 217, 0.16) !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[data-testid="column"] {
+            min-width: 0 !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[data-testid="stRadio"] > div,
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap !important;
+            min-width: 0 !important;
+            gap: 0.18rem !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] {
+            width: 100% !important;
+            overflow-x: auto !important;
+            scrollbar-width: none;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"]::-webkit-scrollbar {
+            display: none;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label {
+            flex: 0 0 auto !important;
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            min-height: 3.2rem;
+            margin: 0 !important;
+            padding: 0 0.78rem !important;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            color: #5b21b6 !important;
+            cursor: pointer;
+            transition: background 0.14s ease, color 0.14s ease;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label > div:first-child {
+            display: none !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label p {
+            margin: 0 !important;
+            color: inherit !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif !important;
+            font-size: 0.98rem !important;
+            font-weight: 720 !important;
+            line-height: 1.22 !important;
+            text-align: center !important;
+            white-space: pre-line !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label:hover {
+            background: rgba(109, 40, 217, 0.06) !important;
+            color: #4c1d95 !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label:has(input:checked) {
+            background: transparent !important;
+            color: #4c1d95 !important;
+            border-bottom-color: #6d28d9 !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label:has(input:checked):hover {
+            background: rgba(109, 40, 217, 0.06) !important;
+        }
+        div[class*="st-key-top-nav-layout-toggle"] button,
+        div[class*="st-key-top-nav-api-settings"] button {
+            min-height: 3.2rem !important;
+            padding: 0 0.76rem !important;
+            border: 0 !important;
+            border-radius: 4px !important;
+            background: transparent !important;
+            color: #5b21b6 !important;
+            box-shadow: none !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif !important;
+            font-size: 0.98rem !important;
+            font-weight: 720 !important;
+            white-space: nowrap !important;
+        }
+        div[class*="st-key-top-nav-layout-toggle"] button {
+            width: 2.65rem !important;
+            padding: 0 !important;
+            font-family: Arial, sans-serif !important;
+            font-size: 1.03rem !important;
+        }
+        div[class*="st-key-top-nav-layout-toggle"] button:hover,
+        div[class*="st-key-top-nav-api-settings"] button:hover {
+            background: rgba(109, 40, 217, 0.09) !important;
+            color: #4c1d95 !important;
+            transform: none !important;
+        }
+        div[class*="st-key-top-nav-api-settings"] button {
+            justify-content: center !important;
+        }
+        @media (max-width: 760px) {
+            .block-container {
+                padding-left: 0.7rem !important;
+                padding-right: 0.7rem !important;
+            }
+            div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) {
+                margin-left: -0.7rem !important;
+                margin-right: -0.7rem !important;
+                padding: 0.42rem 0.7rem !important;
+            }
+            div[class*="st-key-top-nav-api-settings"] button {
+                width: 2.65rem !important;
+                padding: 0 !important;
+                font-size: 0 !important;
+            }
+            div[class*="st-key-top-nav-api-settings"] button::before {
+                content: "⚙";
+                font-size: 1rem;
+            }
         }
         </style>
         """, unsafe_allow_html=True)
-        
-        # 恢复为上下结构的图标+文字
-        api_nav_option = "🔑\nAPI设置"
-        exam_nav_option = "🖨️\n组卷服务\n(完善中)"
-        nav_options = [
-            api_nav_option,
-            "📊\n数据统计", 
-            "📝\n录入新题", 
-            "🔍\n全局浏览与编辑", 
-            exam_nav_option,
-            "🛠️\n工具箱",
-            "🔎\n三级查找",
-            "📘\n项目介绍",
-            "📖\n规范说明"
-        ]
-        
-        if "main_nav_selection" not in st.session_state:
-            st.session_state["main_nav_selection"] = "📊\n数据统计"
-        if "main_sidebar_radio" not in st.session_state:
-            st.session_state["main_sidebar_radio"] = st.session_state["main_nav_selection"]
 
-        def _on_main_sidebar_nav_change():
-            sel = st.session_state.get("main_sidebar_radio")
-            if sel == api_nav_option:
-                st.session_state["api_settings_dialog_requested"] = True
-                previous_nav = st.session_state.get("main_nav_selection", "📊\n数据统计")
-                if previous_nav == api_nav_option or previous_nav not in nav_options:
-                    previous_nav = "📊\n数据统计"
-                st.session_state["main_sidebar_radio"] = previous_nav
-                return
-            if sel == "🔍\n全局浏览与编辑":
-                st.session_state["adv_search_active"] = False
-                st.session_state["browse_mode"] = "按知识板块浏览"
-            elif sel != "🔎\n三级查找":
-                st.session_state["adv_search_active"] = False
-            if sel != "🛠️\n工具箱":
-                st.session_state["tools_subpage"] = None
-            
-        selected_nav = st.radio("工作流导航", nav_options, label_visibility="collapsed", key="main_sidebar_radio", on_change=_on_main_sidebar_nav_change)
-        if st.session_state.get("api_settings_dialog_requested"):
-            api_settings_dialog()
-            st.session_state["api_settings_dialog_requested"] = False
-            selected_nav = st.session_state.get("main_sidebar_radio", st.session_state.get("main_nav_selection", "📊\n数据统计"))
-        elif selected_nav == api_nav_option:
-            selected_nav = st.session_state.get("main_nav_selection", "📊\n数据统计")
-        else:
-            st.session_state["main_nav_selection"] = selected_nav
+        selected_top_label = top_nav_label_by_value.get(st.session_state["main_nav_selection"], top_nav_items[0][0])
+        if st.session_state.get("top_nav_radio") != selected_top_label:
+            st.session_state["top_nav_radio"] = selected_top_label
+
+        top_nav_column, top_layout_column, top_api_column = st.columns([12, 0.62, 1.25], gap="small")
+        with top_nav_column:
+            st.markdown('<span id="mc-top-nav-anchor"></span>', unsafe_allow_html=True)
+            st.radio(
+                "主导航",
+                [label for label, _ in top_nav_items],
+                horizontal=True,
+                label_visibility="collapsed",
+                key="top_nav_radio",
+                on_change=_on_top_nav_change,
+            )
+        with top_layout_column:
+            if st.button("⇄", key="top_nav_layout_toggle", help="切换为左侧导航", use_container_width=True):
+                st.session_state["navigation_layout"] = "sidebar"
+                st.rerun()
+        with top_api_column:
+            if st.button("🔑 API设置", key="top_nav_api_settings", use_container_width=True):
+                _select_main_navigation(api_nav_option)
+    else:
+        # --- 左侧：全局导航 ---
+        with st.sidebar:
+            logo_img_path = os.path.join(BASE_DIR, "fig", "MathCyclus_logo.png")
+            if os.path.exists(logo_img_path):
+                st.image(logo_img_path, width=72)
+            st.markdown(
+                '<a class="sol-logo sol-logo-link" href="?mathcyclus_intro=1" target="_self" '
+                'title="打开 MathCyclus 题库介绍" style="margin-bottom:0; padding-bottom:0;">'
+                'Math<br><span>Cyclus</span></a>',
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("""
+            <style>
+            [data-testid="stSidebar"] div[data-testid="stImage"] {
+                display: flex !important;
+                justify-content: center !important;
+                margin: 0 auto 4px auto !important;
+            }
+            [data-testid="stSidebar"] div[data-testid="stImage"] img {
+                width: 72px !important;
+                max-width: 72px !important;
+                height: auto !important;
+            }
+            .sol-logo-link,
+            .sol-logo-link:visited,
+            .sol-logo-link:hover,
+            .sol-logo-link:active {
+                display: block !important;
+                text-decoration: none !important;
+                color: #5b21b6 !important;
+                cursor: pointer !important;
+            }
+            .sol-logo-link span,
+            .sol-logo-link:visited span,
+            .sol-logo-link:hover span,
+            .sol-logo-link:active span {
+                color: #c084fc !important;
+            }
+            [data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(9) {
+                display: none !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            st.radio(
+                "工作流导航",
+                nav_options,
+                label_visibility="collapsed",
+                key="main_sidebar_radio",
+                on_change=_on_main_sidebar_nav_change,
+            )
+            inject_sidebar_layout_switch(navigation_layout)
+
+    if st.session_state.get("api_settings_dialog_requested"):
+        api_settings_dialog()
+        st.session_state["api_settings_dialog_requested"] = False
+    selected_nav = st.session_state.get("main_nav_selection", default_nav_option)
 
     # --- 主内容区路由 ---
     if selected_nav == "📊\n数据统计":
         render_statistics_dashboard()
     elif selected_nav == "📝\n录入新题":
         page_entry()
-    elif selected_nav == "🔍\n全局浏览与编辑":
+    elif selected_nav == browse_nav_option:
         page_browse()
     elif selected_nav == exam_nav_option:
         page_exam_paper_generation()

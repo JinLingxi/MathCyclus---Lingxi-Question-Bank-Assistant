@@ -60,6 +60,7 @@ cloze_exports/
 *-XS-*.tex
 *-QJ-*.tex
 *-JS-*.tex
+*-WK-*.tex
 
 # 管理备份问题：本地自动备份，不上传到 GitHub
 .backups/

@@ -1,5 +1,26 @@
-streamlit>=1.36
-python-dotenv>=1.0
-requests>=2.31
-Pillow>=10.0
-PyMuPDF>=1.24
+# MathCyclus deployment manifest
+#
+# Deployment baseline
+# - Tested interpreter: CPython 3.12.7 on Windows x64
+# - Entry point: question_bank_app.py
+# - Local launcher: the batch file in the project root.
+# - Optional system dependency: TeX Live or MiKTeX with `xelatex` on PATH.
+#   It is required only for TikZ preview and automatic PDF compilation.
+# - Required local configuration: copy env.example to .env and provide the AI
+#   service settings when AI functions are needed. Never commit .env.
+#
+# Version policy
+# - The versions below are the deployable baseline. Do not replace `==` with
+#   `>=`; a newer Streamlit release can change internal markup and break the
+#   custom UI CSS.
+# - Before changing a version: test question browsing, entry, paper export,
+#   AI configuration, and the desktop/mobile sidebar; then update the release
+#   baseline after validating the complete application workflow.
+# - The launcher creates .venv automatically and installs this file on first
+#   run, so users do not need to activate a virtual environment manually.
+
+streamlit==1.37.1
+python-dotenv==0.21.0
+requests==2.32.3
+Pillow==10.4.0
+PyMuPDF==1.24.10

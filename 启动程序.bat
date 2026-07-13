@@ -1,32 +1,76 @@
-echo off
-chcp 65001 >nul
-title 高中数学题库管理助手
-cd /d "%~dp0"
+@echo off
+setlocal EnableExtensions DisableDelayedExpansion
+title MathCyclus Question Bank
+
+set "PROJECT_DIR=%~dp0"
+pushd "%PROJECT_DIR%" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Cannot open the folder containing this launcher.
+    pause
+    exit /b 1
+)
+set "VENV_DIR=%CD%\.venv"
+set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
+set "MAIN_APP=%CD%\question_bank_app.py"
+set "REQUIREMENTS=%CD%\requirements.txt"
 
 echo ========================================================
-echo           高中数学题库管理助手 (Math Question Bank)
+echo              MathCyclus Question Bank
 echo ========================================================
 echo.
-echo [1/2] 正在初始化环境...
-echo [2/2] 启动 Streamlit 服务...
-echo.
-echo 浏览器即将自动打开...
-echo 如需关闭程序，请直接关闭此命令行窗口。
-echo.
 
-:: 启动 Streamlit
-streamlit run question_bank_app.py
-
-:: 如果启动失败，尝试使用 python -m 方式
-if %errorlevel% neq 0 (
-    echo.
-    echo 尝试使用 python -m streamlit 启动...
-    python -m streamlit run question_bank_app.py
+if not exist "%MAIN_APP%" (
+    echo [ERROR] question_bank_app.py was not found.
+    echo Keep this launcher in the project root folder.
+    pause
+    exit /b 1
 )
 
-if %errorlevel% neq 0 (
+if not exist "%REQUIREMENTS%" (
+    echo [ERROR] requirements.txt was not found.
+    pause
+    exit /b 1
+)
+
+if not exist "%VENV_PYTHON%" (
+    echo [1/3] First run: creating a Python 3.10 - 3.12 virtual environment...
+    py -3.12 -m venv "%VENV_DIR%" >nul 2>&1
+    if exist "%VENV_PYTHON%" goto :venv_ready
+
+    py -3.11 -m venv "%VENV_DIR%" >nul 2>&1
+    if exist "%VENV_PYTHON%" goto :venv_ready
+
+    py -3.10 -m venv "%VENV_DIR%" >nul 2>&1
+    if exist "%VENV_PYTHON%" goto :venv_ready
+
+    echo [ERROR] Python 3.10 - 3.12 was not found.
+    echo Install 64-bit Python 3.12 and select Python Launcher during setup.
+    pause
+    exit /b 1
+)
+
+:venv_ready
+echo [2/3] Synchronizing locked dependencies...
+"%VENV_PYTHON%" -m pip install --disable-pip-version-check --requirement "%REQUIREMENTS%"
+if errorlevel 1 (
     echo.
-    echo [错误] 启动失败。
-    echo 请确认已安装 streamlit (pip install streamlit)
+    echo [ERROR] Dependency installation failed.
+    echo On first run, confirm that the Python package index is reachable.
+    pause
+    exit /b 1
+)
+
+echo [3/3] Starting Streamlit...
+echo The browser should open automatically. Close this window to stop the service.
+echo.
+"%VENV_PYTHON%" -m streamlit run "%MAIN_APP%" --server.port=8501 --server.headless=false
+set "EXIT_CODE=%ERRORLEVEL%"
+
+if not "%EXIT_CODE%"=="0" (
+    echo.
+    echo [ERROR] The service stopped with exit code %EXIT_CODE%.
     pause
 )
+
+popd
+exit /b %EXIT_CODE%
