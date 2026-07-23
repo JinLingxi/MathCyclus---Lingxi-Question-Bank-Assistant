@@ -417,7 +417,11 @@ AI_ENV_DEFAULTS = {
     "AI_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AI_MODEL_NAME": "qwen-vl-plus",
     "AI_SOLVER_MODEL_NAME": "qwen3.6-flash",
-    "AI_OCR_PROMPT": "请识别这张图片中的数学题，并严格按照 LaTeX 格式输出。",
+    "AI_OCR_PROMPT": (
+        "请识别图片中的数学题，并严格按照 LaTeX 格式输出。"
+        "如果图片中有多道独立题目，必须逐题输出独立的文件名分隔符和完整 problem、answer、solutions 环境，"
+        "禁止把多道题合并进同一个 problem 环境。"
+    ),
 }
 
 AI_ENV_WRITE_ORDER = (
@@ -2668,7 +2672,7 @@ def render_ai_solution_image_ocr_section(fpath: str, key_prefix: str, max_images
         cols = st.columns(min(max_images, len(imgs)))
         for i, img in enumerate(list(imgs)):
             with cols[i % len(cols)]:
-                st.image(img, use_container_width=True)
+                st.image(img, use_column_width=True)
                 if st.button("🗑️ 删除", key=f"ai_sol_img_del_{fhash}_{i}", use_container_width=True):
                     try:
                         st.session_state[queue_key].pop(i)
@@ -2949,6 +2953,47 @@ def fix_problem_format(text):
     
     return text
 
+def _increment_question_number(number: str, offset: int = 1) -> str:
+    """Increment numeric question numbers while keeping non-numeric labels editable."""
+    value = str(number or "").strip()
+    if value.isdigit():
+        return str(int(value) + offset)
+    return f"{value}-{offset + 1}" if value else str(offset + 1)
+
+def _split_problem_block_by_choices(problem_block: str) -> list[str]:
+    """Split an OCR block only when repeated choice environments give clear boundaries."""
+    choices = list(re.finditer(r"\\begin\{choices\}", problem_block or ""))
+    if len(choices) < 2:
+        return [problem_block]
+
+    # Do not guess where provided answers or solutions belong.
+    for env_name in ("answer", "solutions", "solution"):
+        match = re.search(rf"\\begin\{{{env_name}\}}(.*?)\\end\{{{env_name}\}}", problem_block or "", re.DOTALL)
+        if match and match.group(1).strip():
+            return [problem_block]
+
+    boundaries = []
+    for choice_start in choices[1:]:
+        previous_end = problem_block.rfind(r"\end{choices}", 0, choice_start.start())
+        if previous_end < 0:
+            return [problem_block]
+        boundary = previous_end + len(r"\end{choices}")
+        between = problem_block[boundary:choice_start.start()]
+        # There must be real text between two choice groups; otherwise this may be
+        # a malformed single question rather than two questions.
+        if not re.search(r"[^\s\\{}%]", between):
+            return [problem_block]
+        boundaries.append(boundary)
+
+    pieces = []
+    starts = [0] + boundaries
+    ends = boundaries + [len(problem_block)]
+    for start, end in zip(starts, ends):
+        piece = problem_block[start:end].strip()
+        if piece:
+            pieces.append(piece)
+    return pieces if len(pieces) == len(choices) else [problem_block]
+
 def process_batch_ocr_result(ocr_result, mode):
     """Normalize OCR output into one independently editable block per problem."""
 
@@ -2988,18 +3033,36 @@ def process_batch_ocr_result(ocr_result, mode):
         if first_info is None:
             first_info = {"year": year, "type": p_type, "paper": paper}
 
-        filename = generate_filename(year, p_type, paper, number, subject or "未分类")
-        label_data = (
-            "% === Begin Label Data ===\n"
-            f"% ID: {current_id}\n"
-            "% 难度星级: \n"
-            "% 标签: \n"
-            "% 备注: \n"
-            "% 组卷引用次数: 0\n"
-            "% === End  Label Data ==="
-        )
-        current_id += 1
-        normalized_items.append(f"---{filename}---\n\n{label_data}\n\n{problem_block}")
+        fragments = _split_problem_block_by_choices(problem_block)
+        used_numbers = set()
+        for fragment_index, fragment in enumerate(fragments):
+            fragment_number = number if fragment_index == 0 else _increment_question_number(number, fragment_index)
+            while fragment_number in used_numbers:
+                fragment_number = _increment_question_number(fragment_number)
+            used_numbers.add(fragment_number)
+            if len(fragments) == 1:
+                fragment_content = fragment
+            else:
+                fragment_content = normalize_single_problem_structure(
+                    fragment,
+                    year,
+                    p_type,
+                    paper,
+                    fragment_number,
+                    subject or "未分类",
+                )
+            filename = generate_filename(year, p_type, paper, fragment_number, subject or "未分类")
+            label_data = (
+                "% === Begin Label Data ===\n"
+                f"% ID: {current_id}\n"
+                "% 难度星级: \n"
+                "% 标签: \n"
+                "% 备注: \n"
+                "% 组卷引用次数: 0\n"
+                "% === End  Label Data ==="
+            )
+            current_id += 1
+            normalized_items.append(f"---{filename}---\n\n{label_data}\n\n{fragment_content}")
 
     if first_info:
         update_batch_form_from_ocr(first_info)
@@ -3210,58 +3273,56 @@ def page_entry(force_single_mode: bool = False, cloze_mode: bool = False):
                     st.rerun()
 
             for i, pdf_item in enumerate(st.session_state["pdf_queue"]):
-                c_pdf_info, c_pdf_del = st.columns([4, 1])
-                with c_pdf_info:
-                    st.caption(f"{i + 1}. {pdf_item['name']} · {_format_upload_size(pdf_item['size'])}")
-                    page_count = pdf_item.get("page_count")
-                    if page_count:
-                        default_start = pdf_item.get("page_start") or 1
-                        default_end = pdf_item.get("page_end") or page_count
-                        c_range_label, c_page_start, c_range_separator, c_page_end, c_page_count = st.columns([1.5, 1, 0.3, 1, 0.45])
-                        with c_range_label:
-                            st.caption("扫描页面范围")
-                        with c_page_start:
-                            page_start = st.number_input(
-                                "起始页",
-                                min_value=1,
-                                max_value=page_count,
-                                value=min(max(default_start, 1), page_count),
-                                step=1,
-                                key=f"pdf_page_start_{pdf_item['id']}",
-                                label_visibility="collapsed",
-                            )
-                        with c_range_separator:
-                            st.markdown(
-                                "<div style='height: 2.35rem; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #4b5563;'>—</div>",
-                                unsafe_allow_html=True,
-                            )
-                        with c_page_end:
-                            page_end = st.number_input(
-                                "结束页",
-                                min_value=1,
-                                max_value=page_count,
-                                value=min(max(default_end, 1), page_count),
-                                step=1,
-                                key=f"pdf_page_end_{pdf_item['id']}",
-                                label_visibility="collapsed",
-                            )
-                        with c_page_count:
-                            st.markdown(
-                                f"<div style='height: 2.35rem; display: flex; align-items: center; font-size: 16px; color: #4b5563; white-space: nowrap;'>（最大页码：{page_count}）</div>",
-                                unsafe_allow_html=True,
-                            )
-                        if page_start > page_end:
-                            st.warning("起始页不能大于结束页。")
-                        else:
-                            pdf_item["page_start"] = page_start
-                            pdf_item["page_end"] = page_end
-                            pdf_item["page_range"] = f"{page_start}-{page_end}"
+                st.caption(f"{i + 1}. {pdf_item['name']} · {_format_upload_size(pdf_item['size'])}")
+                page_count = pdf_item.get("page_count")
+                if page_count:
+                    default_start = pdf_item.get("page_start") or 1
+                    default_end = pdf_item.get("page_end") or page_count
+                    c_range_label, c_page_start, c_range_separator, c_page_end, c_page_count, c_pdf_del = st.columns([1.5, 1, 0.3, 1, 0.7, 0.8])
+                    with c_range_label:
+                        st.caption("扫描页面范围")
+                    with c_page_start:
+                        page_start = st.number_input(
+                            "起始页",
+                            min_value=1,
+                            max_value=page_count,
+                            value=min(max(default_start, 1), page_count),
+                            step=1,
+                            key=f"pdf_page_start_{pdf_item['id']}",
+                            label_visibility="collapsed",
+                        )
+                    with c_range_separator:
+                        st.markdown(
+                            "<div style='height: 2.35rem; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #4b5563;'>—</div>",
+                            unsafe_allow_html=True,
+                        )
+                    with c_page_end:
+                        page_end = st.number_input(
+                            "结束页",
+                            min_value=1,
+                            max_value=page_count,
+                            value=min(max(default_end, 1), page_count),
+                            step=1,
+                            key=f"pdf_page_end_{pdf_item['id']}",
+                            label_visibility="collapsed",
+                        )
+                    with c_page_count:
+                        st.caption(f"最大 {page_count} 页")
+                    with c_pdf_del:
+                        delete_pdf = st.button("删除", key=f"del_pdf_{i}", use_container_width=True)
+                    if page_start > page_end:
+                        st.warning("起始页不能大于结束页。")
                     else:
-                        st.caption("未能读取 PDF 页数，后续可重新上传该文件。")
-                with c_pdf_del:
-                    if st.button("删除", key=f"del_pdf_{i}", use_container_width=True):
-                        st.session_state["pdf_queue"].pop(i)
-                        st.rerun()
+                        pdf_item["page_start"] = page_start
+                        pdf_item["page_end"] = page_end
+                        pdf_item["page_range"] = f"{page_start}-{page_end}"
+                else:
+                    st.caption("未能读取 PDF 页数，后续可重新上传该文件。")
+                    delete_pdf = st.button("删除", key=f"del_pdf_{i}")
+
+                if delete_pdf:
+                    st.session_state["pdf_queue"].pop(i)
+                    st.rerun()
 
         c_clipboard, _ = st.columns([1, 1])
         with c_clipboard:
@@ -3316,30 +3377,27 @@ def page_entry(force_single_mode: bool = False, cloze_mode: bool = False):
                     st.rerun()
             
             for i, img in enumerate(st.session_state["ocr_queue"]):
-                c_img, c_ctrl = st.columns([1, 2])
-                with c_img:
-                    st.image(img, use_container_width=True)
-                with c_ctrl:
-                    st.caption(f"图片 {i+1}")
-                    # 按钮组：上移 下移 删除 放大
-                    c_btn1, c_btn2, c_btn3, c_btn4 = st.columns(4)
-                    with c_btn1:
-                        if i > 0:
-                            if st.button("⬆️", key=f"mv_up_{i}", help="前移"):
-                                st.session_state["ocr_queue"][i], st.session_state["ocr_queue"][i-1] = st.session_state["ocr_queue"][i-1], st.session_state["ocr_queue"][i]
-                                st.rerun()
-                    with c_btn2:
-                        if i < len(st.session_state["ocr_queue"]) - 1:
-                            if st.button("⬇️", key=f"mv_down_{i}", help="后移"):
-                                st.session_state["ocr_queue"][i], st.session_state["ocr_queue"][i+1] = st.session_state["ocr_queue"][i+1], st.session_state["ocr_queue"][i]
-                                st.rerun()
-                    with c_btn3:
-                        if st.button("🗑️", key=f"del_{i}", help="删除"):
-                            st.session_state["ocr_queue"].pop(i)
+                st.caption(f"图片 {i+1}")
+                st.image(img, width=190)
+                # 当前区域已位于 col_left 中，操作按钮只再嵌套一层列。
+                c_btn1, c_btn2, c_btn3, c_btn4 = st.columns(4)
+                with c_btn1:
+                    if i > 0:
+                        if st.button("⬆️", key=f"mv_up_{i}", help="前移"):
+                            st.session_state["ocr_queue"][i], st.session_state["ocr_queue"][i-1] = st.session_state["ocr_queue"][i-1], st.session_state["ocr_queue"][i]
                             st.rerun()
-                    with c_btn4:
-                        if st.button("🔍", key=f"zoom_{i}", help="放大"):
-                            zoom_image(img)
+                with c_btn2:
+                    if i < len(st.session_state["ocr_queue"]) - 1:
+                        if st.button("⬇️", key=f"mv_down_{i}", help="后移"):
+                            st.session_state["ocr_queue"][i], st.session_state["ocr_queue"][i+1] = st.session_state["ocr_queue"][i+1], st.session_state["ocr_queue"][i]
+                            st.rerun()
+                with c_btn3:
+                    if st.button("🗑️", key=f"del_{i}", help="删除"):
+                        st.session_state["ocr_queue"].pop(i)
+                        st.rerun()
+                with c_btn4:
+                    if st.button("🔍", key=f"zoom_{i}", help="放大"):
+                        zoom_image(img)
             
         if st.session_state["ocr_queue"] or st.session_state["pdf_queue"]:
             st.divider()
@@ -3701,6 +3759,130 @@ def page_entry(force_single_mode: bool = False, cloze_mode: bool = False):
             def _sync_batch_content_from_items():
                 _set_batch_content_and_hash(_join_batch_items(_current_items_from_state()))
 
+            def _manual_split_candidates(content):
+                lines = (content or "").splitlines()
+                substantive = []
+                previous_nonempty = ""
+                for line_index, raw_line in enumerate(lines):
+                    stripped = raw_line.strip()
+                    if not stripped:
+                        continue
+                    excluded = (
+                        stripped.startswith("%")
+                        or stripped.startswith(r"\begin{")
+                        or stripped.startswith(r"\end{")
+                        or stripped.startswith(r"\choice")
+                        or stripped.startswith("---")
+                    )
+                    if not excluded:
+                        substantive.append((line_index, stripped, previous_nonempty))
+                    previous_nonempty = stripped
+
+                # The first substantive line is the current question stem, not a split point.
+                candidates = substantive[1:]
+                strong = []
+                remaining = []
+                for line_index, text, previous in candidates:
+                    item = (line_index, text[:90])
+                    if previous in {r"\end{choices}", r"\end{problem}", r"\end{answer}", r"\end{solutions}"}:
+                        strong.append(item)
+                    else:
+                        remaining.append(item)
+                return strong + remaining
+
+            def _split_batch_item_at_line(item_index, line_index):
+                from utils.csv_ops import get_next_id
+                from utils.latex_ops import inject_meta_data, parse_meta_data
+
+                current_items = _current_items_from_state()
+                if not (0 <= item_index < len(current_items)):
+                    return False, "未找到需要拆分的题目。"
+
+                source_item = current_items[item_index]
+                source_content = source_item.get("content") or ""
+                source_lines = source_content.splitlines()
+                if not (0 < line_index < len(source_lines)):
+                    return False, "拆分位置无效。"
+
+                head_raw = "\n".join(source_lines[:line_index]).strip()
+                tail_raw = "\n".join(source_lines[line_index:]).strip()
+                original_meta, clean_source = parse_meta_data(source_content)
+                _, clean_head = parse_meta_data(head_raw)
+                _, clean_tail = parse_meta_data(tail_raw)
+                if not clean_head.strip() or not clean_tail.strip():
+                    return False, "拆分位置前后都必须有题目内容。"
+
+                fields = extract_problem_header_fields(clean_source) or {}
+                filename = os.path.basename(source_item.get("filename") or "").removesuffix(".tex")
+                filename_parts = filename.split("-")
+                fallback = {
+                    "year": filename_parts[0] if len(filename_parts) >= 5 else "?",
+                    "p_type": filename_parts[1] if len(filename_parts) >= 5 else "?",
+                    "paper": filename_parts[2] if len(filename_parts) >= 5 else "?",
+                    "number": filename_parts[3] if len(filename_parts) >= 5 else "?",
+                    "subject_str": "-".join(filename_parts[4:]) if len(filename_parts) >= 5 else "未分类",
+                }
+                year = fields.get("year") or fallback["year"]
+                p_type = fields.get("p_type") or fallback["p_type"]
+                paper = fields.get("paper") or fallback["paper"]
+                number = fields.get("number") or fallback["number"]
+                subject = fields.get("subject_str") or fallback["subject_str"] or "未分类"
+
+                used_numbers = set()
+                used_ids = set()
+                for current_item in current_items:
+                    current_name = os.path.basename(current_item.get("filename") or "").removesuffix(".tex")
+                    current_parts = current_name.split("-")
+                    if len(current_parts) >= 5:
+                        used_numbers.add(current_parts[3])
+                    current_meta, _ = parse_meta_data(current_item.get("content") or "")
+                    current_id = str(current_meta.get("ID", "")).strip()
+                    if current_id.isdigit():
+                        used_ids.add(int(current_id))
+
+                next_number = _increment_question_number(number)
+                while next_number in used_numbers:
+                    next_number = _increment_question_number(next_number)
+
+                next_id = get_next_id()
+                while next_id in used_ids:
+                    next_id += 1
+
+                head_content = normalize_single_problem_structure(clean_head, year, p_type, paper, number, subject)
+                tail_content = normalize_single_problem_structure(clean_tail, year, p_type, paper, next_number, subject)
+                head_meta = {
+                    "ID": original_meta.get("ID") or str(next_id),
+                    "难度星级": original_meta.get("难度星级", ""),
+                    "标签": original_meta.get("标签", ""),
+                    "备注": original_meta.get("备注", ""),
+                    "组卷引用次数": original_meta.get("组卷引用次数", "0"),
+                }
+                if not original_meta.get("ID"):
+                    used_ids.add(next_id)
+                    next_id += 1
+                    while next_id in used_ids:
+                        next_id += 1
+                tail_meta = {
+                    "ID": str(next_id),
+                    "难度星级": "",
+                    "标签": "",
+                    "备注": "",
+                    "组卷引用次数": "0",
+                }
+
+                current_items[item_index] = {
+                    "filename": generate_filename(year, p_type, paper, number, subject),
+                    "content": inject_meta_data(head_content, head_meta),
+                }
+                current_items.insert(item_index + 1, {
+                    "filename": generate_filename(year, p_type, paper, next_number, subject),
+                    "content": inject_meta_data(tail_content, tail_meta),
+                })
+                new_text = _join_batch_items(current_items)
+                _set_batch_content_and_hash(new_text)
+                _write_batch_items_state(current_items, st.session_state["batch_items_src_hash"])
+                return True, f"已拆分为两题，新题暂定为第 {next_number} 题。"
+
             def _apply_same_paper_meta_to_items(items, year, p_type, paper):
                 synced = []
                 for it in items or []:
@@ -3879,32 +4061,36 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
     border-color: #dc3545 !important;
 }
 </style>
-""", unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
                 for idx, it in enumerate(items):
                     st.markdown('<hr style="border-top: 1px solid #e1e4e8; margin-top: 14px; margin-bottom: 14px;">', unsafe_allow_html=True)
+                    def _apply_batch_fname():
+                        _sync_batch_content_from_items()
+                        st.toast("已应用文件名修改", icon="✅")
+                        st.rerun()
+
+                    def _discard_batch_item(_idx=idx):
+                        # 从 batch_content 中移除该题目
+                        current_items = _current_items_from_state()
+                        if 0 <= _idx < len(current_items):
+                            current_items.pop(_idx)
+                            new_text = _join_batch_items(current_items)
+                            _set_batch_content_and_hash(new_text)
+                            _write_batch_items_state(current_items, st.session_state["batch_items_src_hash"])
+                            st.toast("已放弃该题目")
+                        st.rerun()
+
+                    # 文件名操作栏与源码/预览栏平级，兼容 Streamlit 1.37 的列嵌套限制。
+                    c_fn_1, c_btn_1, c_btn_2 = st.columns([3, 1, 1], vertical_alignment="bottom")
+                    with c_fn_1:
+                        st.text_input("文件名", key=f"batch_item_name_{idx}", on_change=_sync_batch_content_from_items)
+                    with c_btn_1:
+                        st.button("应用标题", key=f"batch_apply_fname_{idx}", use_container_width=True, on_click=_apply_batch_fname)
+                    with c_btn_2:
+                        st.button("放弃本题×", key=f"batch_discard_fname_{idx}", use_container_width=True, on_click=_discard_batch_item, type="secondary")
+
                     c_src, c_prev = st.columns([1, 1])
                     with c_src:
-                        c_fn_1, c_btn_1, c_btn_2 = st.columns([3, 1, 1], vertical_alignment="bottom")
-                        with c_fn_1:
-                            st.text_input("文件名", key=f"batch_item_name_{idx}", on_change=_sync_batch_content_from_items)
-                        with c_btn_1:
-                            def _apply_batch_fname():
-                                _sync_batch_content_from_items()
-                                st.toast("已应用文件名修改", icon="✅")
-                                st.rerun()
-                            st.button("应用标题", key=f"batch_apply_fname_{idx}", use_container_width=True, on_click=_apply_batch_fname)
-                        with c_btn_2:
-                            def _discard_batch_item(_idx=idx):
-                                # 从 batch_content 中移除该题目
-                                items = _current_items_from_state()
-                                if 0 <= _idx < len(items):
-                                    items.pop(_idx)
-                                    new_text = _join_batch_items(items)
-                                    _set_batch_content_and_hash(new_text)
-                                    _write_batch_items_state(items, st.session_state["batch_items_src_hash"])
-                                    st.toast("已放弃该题目")
-                                st.rerun()
-                            st.button("放弃本题×", key=f"batch_discard_fname_{idx}", use_container_width=True, on_click=_discard_batch_item, type="secondary")
                         st.text_area("题目源码", height=240, key=f"batch_item_text_{idx}", label_visibility="collapsed", on_change=_sync_batch_content_from_items)
                         st.caption("提示：编辑后点击空白处或按 Ctrl+Enter 以应用更新。")
                     with c_prev:
@@ -3915,6 +4101,27 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                             st.markdown(latex_to_markdown(preview_src, show_title=False), unsafe_allow_html=True)
                         except Exception as e:
                             st.error(f"预览渲染出错: {e}")
+
+                    split_source = st.session_state.get(f"batch_item_text_{idx}", it.get("content") or "") or ""
+                    split_candidates = _manual_split_candidates(split_source)
+                    if split_candidates:
+                        with st.expander("✂️ 手动拆题", expanded=False):
+                            candidate_lines = [line_index for line_index, _ in split_candidates]
+                            candidate_labels = {line_index: preview for line_index, preview in split_candidates}
+                            selected_line = st.selectbox(
+                                "下一题起始行",
+                                options=candidate_lines,
+                                format_func=lambda line_index: f"第 {line_index + 1} 行 · {candidate_labels[line_index]}",
+                                key=f"batch_split_line_{idx}_{hashlib.md5(split_source.encode('utf-8', errors='ignore')).hexdigest()[:8]}",
+                                help="选择下一道题题干开始的那一行。明确边界会优先显示。",
+                            )
+                            if st.button("从选中行拆分", key=f"batch_split_apply_{idx}", type="primary"):
+                                split_ok, split_message = _split_batch_item_at_line(idx, selected_line)
+                                if split_ok:
+                                    st.toast(split_message, icon="✂️")
+                                    st.rerun()
+                                else:
+                                    st.error(split_message)
                 _sync_batch_content_from_items()
 
             st.markdown('<hr style="border-top: 1px solid #e1e4e8; margin-top: 12px; margin-bottom: 16px;">', unsafe_allow_html=True)
