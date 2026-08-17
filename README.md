@@ -83,7 +83,7 @@
    ```
    配置 embedding 模型后，在“工具箱 → 语义搜索索引”中更新索引；留空时系统继续使用原有精确筛选。
 4. 如需使用 TikZ 几何图预览，请安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），并确认 `xelatex` 已加入系统环境变量。项目会通过 `PyMuPDF` 将编译结果转为 PNG 预览。
-5. 首次使用或批量导入题目后，建议重建题库索引：
+5. 首次启动时如果本地没有 `utils/题库索引表.csv`，程序会根据当前电脑上的 `chapters/` 自动生成；首次使用或批量导入题目后，也可以手动重建题库索引：
 
    ```bash
    python utils/init_csv_index.py
@@ -127,7 +127,8 @@ streamlit run question_bank_app.py
 
 ## 🧹 仓库维护说明
 
-- `utils/题库索引表.csv` 是可重建的高速索引，题库内容变化后可运行 `python utils/init_csv_index.py` 刷新。
+- `utils/题库索引表.csv` 是每台电脑独立生成的高速索引，不提交到 Git；题库内容变化后可运行 `python utils/init_csv_index.py` 刷新。
+- `utils/local_stats.sqlite3` 保存本机新增、修改和活跃度统计，不提交到 Git。首次建立索引只记录本地基线，不会把仓库历史题目算作当前用户的新增。
 - `utils/semantic_index.sqlite3` 是可选且可重建的语义索引，不应提交到 Git；题目保存、删除或重命名后，对应旧向量会自动失效。
 - `log.csv` 是批量导入脚本的运行日志输出；`old_app.py`、`question_bank_app000.py` 和 `SolaireEPDA-master/` 属于历史产物或外部参考内容。当前 `.gitignore` 已将同类文件排除，后续如需清理 Git 跟踪记录，建议单独开 PR 处理。
 - TikZ 预览依赖本机 `xelatex`，若未安装 LaTeX，题库浏览与普通组卷仍可使用，但几何图实时预览会受限。

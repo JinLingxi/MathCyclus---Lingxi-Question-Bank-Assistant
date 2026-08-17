@@ -29,6 +29,7 @@ from services.semantic_search_service import (
     search as semantic_search,
 )
 from utils.runtime_files import ensure_log_csv
+from utils.local_stats import sync_question_activity
 
 # 加载根目录环境变量
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -8769,53 +8770,18 @@ def get_statistics():
         "difficulty_count": 0
     }
     
-    today_str = datetime.date.today().isoformat()
-    
     # 优先尝试从 CSV 索引表读取（性能提升 100 倍）
     try:
         from utils.csv_ops import read_csv_index
         csv_data = _filter_question_rows(read_csv_index())
-        if csv_data:
+        if csv_data is not None:
             stats["total_questions"] = len(csv_data)
+            stats.update(sync_question_activity(csv_data))
             
             for row in csv_data:
-                # 统计新增和修改
-                c_time = row.get("初次录入的时间", "")
-                m_time = row.get("最后修改时间", "")
-                
-                c_date = c_time.split(" ")[0] if c_time else ""
-                m_date = m_time.split(" ")[0] if m_time else ""
-                
-                # 记录小时活跃度
-                if c_time and " " in c_time:
-                    c_hour = c_time.split(" ")[1].split(":")[0]
-                    if c_date not in stats["hourly_activity_by_day"]:
-                        stats["hourly_activity_by_day"][c_date] = {str(i).zfill(2): 0 for i in range(24)}
-                    stats["hourly_activity_by_day"][c_date][c_hour] += 1
-                if m_time and " " in m_time and m_time != c_time:
-                    m_hour = m_time.split(" ")[1].split(":")[0]
-                    if m_date not in stats["hourly_activity_by_day"]:
-                        stats["hourly_activity_by_day"][m_date] = {str(i).zfill(2): 0 for i in range(24)}
-                    stats["hourly_activity_by_day"][m_date][m_hour] += 1
-                
-                if c_date == today_str:
-                    stats["today_new_questions"] += 1
-                elif m_date == today_str:
-                    stats["today_mod_questions"] += 1
-                    
-                # 记录每日活跃度 (热力图)
-                if c_date:
-                    stats["daily_activity"][c_date] = stats["daily_activity"].get(c_date, 0) + 1
-                if m_date and m_date != c_date:
-                    stats["daily_activity"][m_date] = stats["daily_activity"].get(m_date, 0) + 1
-                    
                 # 统计包含 TikZ 的题目
                 if row.get("包含TikZ绘图") == "是":
                     stats["total_tikz"] += 1
-                    if c_date == today_str:
-                        stats["today_new_tikz"] += 1
-                    elif m_date == today_str:
-                        stats["today_mod_tikz"] += 1
                         
                 # 新增统计：各板块分布
                 subj = row.get("知识板块", "").split("，")[0] if row.get("知识板块") else "未分类"

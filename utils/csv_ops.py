@@ -14,6 +14,7 @@ CSV_HEADERS = [
 
 def read_csv_index():
     """读取整个CSV索引到内存"""
+    ensure_csv_index()
     if not os.path.exists(CSV_INDEX_PATH):
         return []
     data = []
@@ -22,6 +23,19 @@ def read_csv_index():
         for row in reader:
             data.append(row)
     return data
+
+
+def ensure_csv_index():
+    """Create the local derived index when a fresh checkout has no CSV yet."""
+    if os.path.exists(CSV_INDEX_PATH) and os.path.getsize(CSV_INDEX_PATH) > 0:
+        return
+
+    import runpy
+
+    runpy.run_path(
+        os.path.join(os.path.dirname(__file__), "init_csv_index.py"),
+        run_name="__main__",
+    )
 
 def write_csv_index(data):
     """将数据全量写回CSV"""

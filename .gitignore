@@ -22,7 +22,10 @@ log.csv
 # 自己加的东西
 更新信息.txt
 ocr_prompt.txt
+utils/题库索引表.csv
 utils/semantic_index.sqlite3
+utils/local_stats.sqlite3
+utils/local_stats.sqlite3-*
 AutoTikz.md
 debug.log
 ocr的备份.txt
