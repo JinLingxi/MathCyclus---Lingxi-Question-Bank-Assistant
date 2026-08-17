@@ -34,19 +34,7 @@ if not exist "%REQUIREMENTS%" (
 
 if not exist "%VENV_PYTHON%" (
     echo [1/3] First run: creating a Python 3.10 - 3.12 virtual environment...
-    py -3.12 -m venv "%VENV_DIR%" >nul 2>&1
-    if exist "%VENV_PYTHON%" goto :venv_ready
-
-    py -3.11 -m venv "%VENV_DIR%" >nul 2>&1
-    if exist "%VENV_PYTHON%" goto :venv_ready
-
-    py -3.10 -m venv "%VENV_DIR%" >nul 2>&1
-    if exist "%VENV_PYTHON%" goto :venv_ready
-
-    echo [ERROR] Python 3.10 - 3.12 was not found.
-    echo Install 64-bit Python 3.12 and select Python Launcher during setup.
-    pause
-    exit /b 1
+    goto :find_python
 )
 
 :venv_ready
@@ -74,3 +62,57 @@ if not "%EXIT_CODE%"=="0" (
 
 popd
 exit /b %EXIT_CODE%
+
+:find_python
+rem Prefer the Windows Python Launcher so a supported version is selected
+rem even when another Python version appears first on PATH.
+for %%V in (3.12 3.11 3.10) do (
+    py -%%V -c "import sys; sys.exit(0 if sys.maxsize > 2**32 else 1)" >nul 2>&1
+    if not errorlevel 1 (
+        set "PYTHON_COMMAND=py -%%V"
+        goto :create_venv
+    )
+)
+
+rem A Python installation can be usable even if the optional Launcher was not
+rem installed. Accept a supported, 64-bit interpreter available on PATH.
+python -c "import sys; sys.exit(0 if (3, 10) <= sys.version_info[:2] <= (3, 12) and sys.maxsize > 2**32 else 1)" >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON_COMMAND=python"
+    goto :create_venv
+)
+
+echo [ERROR] A usable 64-bit CPython 3.10 - 3.12 was not found.
+echo This launcher checked Python Launcher versions and the python command on PATH.
+echo.
+echo Open Command Prompt and run these commands to diagnose the installation:
+echo   py --list
+echo   py -3.12 --version
+echo.
+echo If py is not recognized or does not list Python 3.12, modify the official
+echo Python 3.12 installation and select "Python Launcher" and "Add python.exe to PATH".
+pause
+exit /b 1
+
+:create_venv
+echo Using:
+%PYTHON_COMMAND% --version
+echo Creating the virtual environment...
+%PYTHON_COMMAND% -m venv "%VENV_DIR%"
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Python was found, but the virtual environment could not be created.
+    echo Read the error above. Common causes are a protected project folder,
+    echo an incomplete Python installation, or security software blocking the operation.
+    pause
+    exit /b 1
+)
+
+if not exist "%VENV_PYTHON%" (
+    echo.
+    echo [ERROR] The virtual environment was created without Scripts\python.exe.
+    echo Delete the incomplete .venv folder, then run this launcher again.
+    pause
+    exit /b 1
+)
+goto :venv_ready

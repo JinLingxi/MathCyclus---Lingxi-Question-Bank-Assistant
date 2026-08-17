@@ -21,6 +21,13 @@ import streamlit.components.v1 as components
 import io
 from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
 from services.file_service import atomic_write_text, backup_existing_file, file_change_token
+from services.semantic_search_service import (
+    SemanticSearchError,
+    build_index as build_semantic_index,
+    invalidate_path as invalidate_semantic_path,
+    index_status as semantic_index_status,
+    search as semantic_search,
+)
 from utils.runtime_files import ensure_log_csv
 
 # 加载根目录环境变量
@@ -252,7 +259,11 @@ def inject_custom_css():
             width: 21% !important;
             max-width: 21% !important;
         }
-        div[data-testid="column"]:has(#right-panel-anchor),
+        div[data-testid="column"]:has(#right-panel-anchor) {
+            flex: 1 1 0% !important;
+            width: auto !important;
+            max-width: none !important;
+        }
         div[data-testid="column"]:has(#time-right-anchor) {
             flex: 0 0 70% !important;
             width: 70% !important;
@@ -417,6 +428,7 @@ AI_ENV_DEFAULTS = {
     "AI_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "AI_MODEL_NAME": "qwen-vl-plus",
     "AI_SOLVER_MODEL_NAME": "qwen3.6-flash",
+    "AI_EMBEDDING_MODEL_NAME": "",
     "AI_OCR_PROMPT": (
         "请识别图片中的数学题，并严格按照 LaTeX 格式输出。"
         "如果图片中有多道独立题目，必须逐题输出独立的文件名分隔符和完整 problem、answer、solutions 环境，"
@@ -429,6 +441,7 @@ AI_ENV_WRITE_ORDER = (
     "AI_BASE_URL",
     "AI_MODEL_NAME",
     "AI_SOLVER_MODEL_NAME",
+    "AI_EMBEDDING_MODEL_NAME",
 )
 
 def _root_env_path() -> str:
@@ -548,6 +561,12 @@ def api_settings_dialog():
             value=config.get("AI_SOLVER_MODEL_NAME", AI_ENV_DEFAULTS["AI_SOLVER_MODEL_NAME"]),
             placeholder="qwen3.6-flash",
         )
+        embedding_model = st.text_input(
+            "Embedding 模型（可选；用于语义/混合搜索）",
+            value=config.get("AI_EMBEDDING_MODEL_NAME", AI_ENV_DEFAULTS["AI_EMBEDDING_MODEL_NAME"]),
+            placeholder="例如 text-embedding-v4",
+            help="留空即可继续使用精确搜索；填写后可在搜索页启用语义检索。",
+        )
         ocr_prompt = st.text_area(
             "OCR 提示词（保存到 ocr_prompt.txt）",
             value=ocr_prompt_value,
@@ -575,6 +594,7 @@ def api_settings_dialog():
                 "AI_BASE_URL": base_url.strip(),
                 "AI_MODEL_NAME": model_name.strip(),
                 "AI_SOLVER_MODEL_NAME": solver_model.strip(),
+                "AI_EMBEDDING_MODEL_NAME": embedding_model.strip(),
             })
             _write_ocr_prompt_file(ocr_prompt)
             st.success(".env 与 ocr_prompt.txt 已保存，当前会话已重新加载 API 配置。")
@@ -683,6 +703,8 @@ def apply_meta_rename_and_update(old_path: str, new_year: str, new_type: str, ne
         os.remove(old_path)
 
     update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, new_num, new_subject_str)
+    _invalidate_semantic_for_file(old_path)
+    _invalidate_semantic_for_file(new_path)
     clear_statistics_cache()
     _clear_advanced_search_result_cache()
     return new_path, new_content
@@ -800,7 +822,52 @@ def _adv_search_queries_from_session():
 
 def _adv_search_has_query():
     q1, q2, q3 = _adv_search_queries_from_session()
-    return bool(str(q1).strip() or str(q2).strip() or str(q3).strip())
+    search_mode = st.session_state.get("adv_search_mode", "精确筛选")
+    semantic_query = st.session_state.get("adv_semantic_query", "") if search_mode != "精确筛选" else ""
+    return bool(str(q1).strip() or str(q2).strip() or str(q3).strip() or str(semantic_query).strip())
+
+
+def _semantic_api_config() -> dict:
+    config = _read_root_ai_env_config()
+    return {
+        "base_url": config.get("AI_BASE_URL", ""),
+        "api_key": config.get("AI_API_KEY", ""),
+        "model_name": config.get("AI_EMBEDDING_MODEL_NAME", ""),
+    }
+
+
+def _semantic_lexical_boost(text: str, query: str) -> float:
+    """Small lexical boost keeps exact terminology ahead of merely related text."""
+    haystack = (text or "").casefold()
+    needle = (query or "").strip().casefold()
+    if not needle:
+        return 0.0
+    score = 0.25 if needle in haystack else 0.0
+    tokens = re.findall(r"[A-Za-z0-9_]+", needle)
+    for chinese_run in re.findall(r"[\u4e00-\u9fff]{2,}", needle):
+        tokens.extend(chinese_run[index:index + 2] for index in range(len(chinese_run) - 1))
+    if tokens:
+        matched_ratio = sum(token in haystack for token in tokens) / len(tokens)
+        score += 0.2 * matched_ratio
+    return score
+
+
+def _semantic_item_text(item: dict) -> str:
+    return "\n".join([
+        item["full_text"],
+        item["type"],
+        item["file"],
+        item["row"].get("知识板块", "") or "",
+    ])
+
+
+def _invalidate_semantic_for_file(file_path: str) -> None:
+    try:
+        relative_path = os.path.relpath(file_path, CHAPTERS_DIR)
+        invalidate_semantic_path(relative_path)
+    except Exception:
+        # Semantic search is optional and must never block a normal save/delete.
+        pass
 
 def _clear_advanced_search_result_cache():
     st.session_state.pop("adv_last_query", None)
@@ -819,6 +886,7 @@ def save_modified_tex_file(file_path, new_content):
     
     # 直接写入包含原生 TikZ 的内容
     atomic_write_text(file_path, final_content, backup=True)
+    _invalidate_semantic_for_file(file_path)
         
     return final_content
 
@@ -967,6 +1035,7 @@ def delete_question_file_and_sync(file_path: str):
     except Exception as e:
         st.toast(f"题目已删除，但相关图目录未能删除：{e}", icon="⚠️")
     _forget_deleted_question_path(abs_path)
+    _invalidate_semantic_for_file(abs_path)
     _clear_advanced_search_result_cache()
     clear_statistics_cache()
 
@@ -4619,7 +4688,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
         }
         </style>
         """, unsafe_allow_html=True)
-        c_header, c_search, c_actions = st.columns([1, 1.2, 1.4])
+        c_header, c_actions = st.columns([1, 1.4])
         with c_header:
             st.header("🗑️ 删除题库问题")
             st.subheader("删除模式")
@@ -4627,31 +4696,28 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                 st.session_state["browse_mode"] = "按知识板块浏览"
             browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览", "按录入顺序浏览"], horizontal=True, label_visibility="collapsed", key="browse_mode")
 
-        with c_search:
-            render_advanced_search_inline()
-
         with c_actions:
             st.write("")
             st.write("")
             exit_btn_col, restore_btn_col, backup_btn_col = st.columns([1, 1, 1])
             with exit_btn_col:
                 st.markdown('<span class="delete-exit-btn-hook"></span>', unsafe_allow_html=True)
-                with st.container(key="delete_mode_exit_btn_wrap"):
-                    if st.button("退出\n删除模式", key="delete_mode_exit_btn", type="secondary", use_container_width=True):
-                        st.session_state["tools_subpage"] = None
-                        st.session_state["adv_search_active"] = False
-                        _clear_advanced_search_result_cache()
-                        st.rerun()
+                if st.button("退出\n删除模式", key="delete_mode_exit_btn", type="secondary", use_container_width=True):
+                    st.session_state["tools_subpage"] = None
+                    st.session_state["adv_search_active"] = False
+                    _clear_advanced_search_result_cache()
+                    st.rerun()
             with restore_btn_col:
                 st.markdown('<span class="delete-restore-btn-hook"></span>', unsafe_allow_html=True)
-                with st.container(key="delete_mode_restore_btn_wrap"):
-                    if st.button("恢复\n误删题目", key="delete_mode_restore_btn", type="primary", use_container_width=True):
-                        restore_deleted_questions_dialog()
+                if st.button("恢复\n误删题目", key="delete_mode_restore_btn", type="primary", use_container_width=True):
+                    restore_deleted_questions_dialog()
             with backup_btn_col:
                 st.markdown('<span class="backup-manage-btn-hook"></span>', unsafe_allow_html=True)
-                with st.container(key="delete_mode_backup_manager_btn_wrap"):
-                    if st.button("管理\n备份问题", key="delete_mode_backup_manager_btn", type="secondary", use_container_width=True):
-                        manage_backup_questions_dialog()
+                if st.button("管理\n备份问题", key="delete_mode_backup_manager_btn", type="secondary", use_container_width=True):
+                    manage_backup_questions_dialog()
+
+        # The search panel contains nested columns and must stay at page root.
+        render_advanced_search_inline()
 
     elif not is_exam_mode:
         st.header(page_title)
@@ -7404,6 +7470,67 @@ def page_tools():
             st.session_state.setdefault("cloze_auto_solve", True)
             st.rerun()
 
+    with r3_c2:
+        try:
+            semantic_status = semantic_index_status()
+            semantic_status_error = ""
+        except SemanticSearchError as exc:
+            semantic_status = {"count": 0, "model_name": ""}
+            semantic_status_error = str(exc)
+        status_text = "未建立"
+        if semantic_status.get("count"):
+            status_text = f"{semantic_status['count']} 道题"
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🧠 8. 语义搜索索引</div>
+            <div class="tool-desc">
+                使用可配置的 embedding 模型建立题干语义索引，供高级搜索中的“混合搜索”和“语义搜索”使用。索引是可重建的派生数据，不会修改题目文件或 CSV。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption(f"当前状态：{status_text} · 模型：{semantic_status.get('model_name') or '未配置'}")
+        if semantic_status_error:
+            st.warning(f"索引状态读取失败：{semantic_status_error}")
+        force_rebuild = st.checkbox("强制重新生成已有向量", key="semantic_force_rebuild")
+        st.markdown("<style>div:has(> button[key='btn_rebuild_semantic']) { margin-top: -24px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("🔄 更新语义索引", key="btn_rebuild_semantic", use_container_width=True):
+            config = _semantic_api_config()
+            progress_bar = st.progress(0)
+
+            def _semantic_progress(done, total):
+                progress_bar.progress(1.0 if total <= 0 else min(1.0, done / total))
+
+            try:
+                rows = _csv_index_cached(_csv_index_cache_token())
+                with st.spinner("正在生成题目 embedding，请稍候..."):
+                    result = build_semantic_index(
+                        rows,
+                        config["base_url"],
+                        config["api_key"],
+                        config["model_name"],
+                        force=force_rebuild,
+                        progress=_semantic_progress,
+                    )
+                progress_bar.empty()
+                _clear_advanced_search_result_cache()
+                st.success(f"语义索引已更新：处理 {result['updated']} 道，当前共 {result['total']} 道。")
+            except SemanticSearchError as exc:
+                progress_bar.empty()
+                st.error(str(exc))
+            except Exception as exc:
+                progress_bar.empty()
+                st.error(f"语义索引更新失败：{exc}")
+
+    with r3_c3:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🔎 9. 搜索模式说明</div>
+            <div class="tool-desc">
+                精确筛选适合题号、年份、题型等明确条件；混合搜索在语义相关度基础上优先展示关键词命中的题目；语义搜索适合用自然语言描述考点。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 def batch_fix_choice_formats():
     import re
     updated_files = []
@@ -7979,6 +8106,8 @@ def page_tag_edit():
                             
                         # 同步更新到 CSV 索引
                         update_csv_index_for_edit(file_path, new_path, new_full_text, new_year, new_type, new_name, new_num, new_subject_str)
+                        _invalidate_semantic_for_file(file_path)
+                        _invalidate_semantic_for_file(new_path)
                             
                         st.success(f"更新成功！\n旧: {os.path.basename(file_path)}\n新: {new_filename}")
                         clear_statistics_cache()
@@ -7996,6 +8125,7 @@ def update_question_meta(fpath, key, value):
     fm[key] = value
     new_fc = inject_meta_data(fc, fm)
     atomic_write_text(fpath, new_fc, backup=True)
+    _invalidate_semantic_for_file(fpath)
     try:
         from utils.csv_ops import update_csv_index_for_edit
         # 从文件名解析基础信息
@@ -9189,17 +9319,11 @@ def render_advanced_search_inline():
     /* 去除列之间的默认间距，防止按钮被挤下来 */
     div[data-testid="column"]:has(#adv-search-btn-anchor) {
         display: flex !important;
-        align-items: stretch !important;
+        align-items: center !important;
         justify-content: center !important;
-        flex: 0 0 72px !important;
-        width: 72px !important;
-        min-width: 72px !important;
-        max-width: 72px !important;
-        align-self: flex-start !important;
-        height: 136px !important;
-        min-height: 136px !important;
-        max-height: 136px !important;
-        position: relative !important;
+        height: 196px !important;
+        min-height: 196px !important;
+        max-height: 196px !important;
         margin-top: 0 !important;
         padding-top: 0 !important;
     }
@@ -9207,6 +9331,7 @@ def render_advanced_search_inline():
         height: 100% !important;
         width: 100% !important;
         display: flex !important;
+        align-items: center !important;
         justify-content: center !important;
         gap: 0 !important;
         margin: 0 !important;
@@ -9215,9 +9340,9 @@ def render_advanced_search_inline():
     div[data-testid="column"]:has(#adv-search-info-anchor) {
         display: flex !important;
         align-items: flex-start !important;
-        height: 136px !important;
-        min-height: 136px !important;
-        max-height: 136px !important;
+        height: 196px !important;
+        min-height: 196px !important;
+        max-height: 196px !important;
         padding: 0 !important;
     }
     div[data-testid="column"]:has(#adv-search-info-anchor) > div[data-testid="stVerticalBlock"] {
@@ -9243,9 +9368,9 @@ def render_advanced_search_inline():
         overflow: hidden !important;
     }
     div[data-testid="column"]:has(#adv-search-btn-anchor) button {
-        height: 64px !important;
-        min-height: 64px !important;
-        max-height: 64px !important;
+        height: 176px !important;
+        min-height: 176px !important;
+        max-height: 176px !important;
         width: 54px !important;
         min-width: 54px !important;
         max-width: 54px !important;
@@ -9294,6 +9419,21 @@ def render_advanced_search_inline():
             return
         st.session_state["adv_search_active"] = True
 
+    search_mode = st.radio(
+        "检索模式",
+        ["精确筛选", "混合搜索", "语义搜索"],
+        horizontal=True,
+        key="adv_search_mode",
+        help="精确筛选使用字段匹配；混合搜索和语义搜索需要配置 embedding 模型。",
+    )
+    if search_mode != "精确筛选":
+        st.text_input(
+            "语义描述",
+            placeholder="例如：含参数的函数单调性与最值问题",
+            key="adv_semantic_query",
+            on_change=on_adv_search,
+        )
+
     search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
     
     col_inputs, col_btn, col_info = st.columns([2.5, 0.26, 2.3])
@@ -9336,8 +9476,9 @@ def render_advanced_search_inline():
         q1 = st.session_state.get("adv_q1_sel" if t1 == "题目类型" else "adv_q1", "")
         q2 = st.session_state.get("adv_q2_sel" if t2 == "题目类型" else "adv_q2", "")
         q3 = st.session_state.get("adv_q3_sel" if t3 == "题目类型" else "adv_q3", "")
+        semantic_query = st.session_state.get("adv_semantic_query", "") if search_mode != "精确筛选" else ""
         
-        if not (st.session_state.get("adv_search_active") and (q1 or q2 or q3)):
+        if not (st.session_state.get("adv_search_active") and (q1 or q2 or q3 or semantic_query)):
             st.info("👈 请在左侧输入查找条件，点击“开始查找”或回车即可在下方显示结果。")
             return
         
@@ -9346,6 +9487,8 @@ def render_advanced_search_inline():
         if q1: search_info.append(f"{t1}: `{q1}`")
         if q2: search_info.append(f"{t2}: `{q2}`")
         if q3: search_info.append(f"{t3}: `{q3}`")
+        if semantic_query: search_info.append(f"语义: `{semantic_query}`")
+        search_info.append(f"模式: `{search_mode}`")
         search_str = " | ".join(search_info)
         st.markdown(f"**检索条件**: {search_str}")
         if st.button("❌ 退出搜索状态"):
@@ -9354,6 +9497,8 @@ def render_advanced_search_inline():
 
 def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
     st.markdown("### 🎯 查找结果")
+    search_mode = st.session_state.get("adv_search_mode", "精确筛选")
+    semantic_query = (st.session_state.get("adv_semantic_query", "") or "").strip() if search_mode != "精确筛选" else ""
     
     t1 = st.session_state.get("adv_t1", "全文内容")
     t2 = st.session_state.get("adv_t2", "全文内容")
@@ -9383,7 +9528,18 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
             return s_query in item["full_text"]
         return False
 
-    query_key = (t1, q1, t2, q2, t3, q3, paper_type_scope or "regular", "delete" if is_delete_mode else "edit")
+    query_key = (
+        search_mode,
+        semantic_query,
+        t1,
+        q1,
+        t2,
+        q2,
+        t3,
+        q3,
+        paper_type_scope or "regular",
+        "delete" if is_delete_mode else "edit",
+    )
     if st.session_state.get("adv_last_query") == query_key and st.session_state.get("adv_last_results") is not None:
         results = st.session_state.get("adv_last_results") or []
     else:
@@ -9391,6 +9547,7 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
 
         results = []
         with st.spinner("正在全库检索中..."):
+            filtered_items = []
             for item in search_rows:
                 if q1 and not _row_match(item, t1, q1): 
                     continue
@@ -9401,7 +9558,62 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
                 fpath = item["path"]
                 if not fpath or not os.path.exists(fpath):
                     continue
-                results.append({"file": item["file"] or os.path.basename(fpath), "path": fpath})
+                filtered_items.append(item)
+
+            if search_mode == "精确筛选" or not semantic_query:
+                results = [
+                    {
+                        "file": item["file"] or os.path.basename(item["path"]),
+                        "path": item["path"],
+                        "reason": "字段匹配",
+                    }
+                    for item in filtered_items
+                ]
+            elif filtered_items:
+                config = _semantic_api_config()
+                row_map = {
+                    (item["row"].get("相对文件路径", "") or "").replace("/", "\\"): item
+                    for item in filtered_items
+                }
+                try:
+                    semantic_matches = semantic_search(
+                        semantic_query,
+                        [item["row"] for item in filtered_items],
+                        config["base_url"],
+                        config["api_key"],
+                        config["model_name"],
+                        top_k=max(1, len(filtered_items)),
+                    )
+                    for match in semantic_matches:
+                        relative_path = (match.get("path") or "").replace("/", "\\")
+                        item = row_map.get(relative_path)
+                        if not item:
+                            continue
+                        boost = _semantic_lexical_boost(_semantic_item_text(item), semantic_query) if search_mode == "混合搜索" else 0.0
+                        results.append({
+                            "file": item["file"] or os.path.basename(item["path"]),
+                            "path": item["path"],
+                            "score": match["score"] + boost,
+                            "semantic_score": match["score"],
+                            "reason": "语义 + 关键词" if boost else "语义相似",
+                        })
+                    results.sort(key=lambda result: result.get("score", 0.0), reverse=True)
+                except SemanticSearchError as exc:
+                    if search_mode == "混合搜索":
+                        st.warning(f"语义检索暂不可用，已退回关键词匹配：{exc}")
+                        for item in filtered_items:
+                            fallback_score = _semantic_lexical_boost(_semantic_item_text(item), semantic_query)
+                            if fallback_score <= 0:
+                                continue
+                            results.append({
+                                "file": item["file"] or os.path.basename(item["path"]),
+                                "path": item["path"],
+                                "score": fallback_score,
+                                "reason": "关键词回退",
+                            })
+                        results.sort(key=lambda result: result.get("score", 0.0), reverse=True)
+                    else:
+                        st.error(f"语义检索不可用：{exc}")
 
         st.session_state["adv_last_query"] = query_key
         st.session_state["adv_last_results"] = results
@@ -9428,6 +9640,10 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
                 content = f.read()
                 
             q_label = format_question_title(fname)
+            if res.get("semantic_score") is not None:
+                st.caption(f"{res.get('reason', '语义相似')} · 相关度 {max(-1.0, min(1.0, res['semantic_score'])):.0%}")
+            elif res.get("reason") == "关键词回退":
+                st.caption("关键词回退匹配")
 
             if is_delete_mode:
                 render_delete_question_item(fpath, q_label, content, key_prefix="delete_search")
@@ -9522,18 +9738,15 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
         st.warning("未找到匹配的题目。")
 
 def page_advanced_search():
-    c_left, c_right = st.columns([1, 1.5])
-    with c_left:
-        st.header("🔎 三级查找")
-        t1, t2, t3 = st.columns(3)
-        with t1:
-            st.markdown("**一级提示**\n\n先选检索字段\n\n再填关键词")
-        with t2:
-            st.markdown("**二级提示**\n\n可留空\n\n可继续细化")
-        with t3:
-            st.markdown("**三级提示**\n\n可留空\n\n可进一步过滤")
-    with c_right:
-        render_advanced_search_inline()
+    st.header("🔎 三级查找")
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        st.markdown("**一级提示**\n\n先选检索字段，再填关键词")
+    with t2:
+        st.markdown("**二级提示**\n\n可留空，也可继续细化")
+    with t3:
+        st.markdown("**三级提示**\n\n可留空，也可进一步过滤")
+    render_advanced_search_inline()
     st.markdown('<hr style="border-top: 1px solid #e1e4e8; margin-top: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
     if st.session_state.get("adv_search_active") and _adv_search_has_query():
         render_advanced_search_results()

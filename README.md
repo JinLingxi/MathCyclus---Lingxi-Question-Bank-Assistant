@@ -31,6 +31,7 @@
 从题库中按条件筛选、抽样并生成试卷。
 
 - 支持题型、年份、板块、标签、难度与全文检索。
+- 支持可选的混合搜索与语义搜索；本地 SQLite 向量索引可随时重建，不替代 CSV 题库索引。
 - 支持按知识板块、题量与目标难度分布进行抽样。
 - 支持自然语言组卷需求润色，辅助形成命题意图。
 
@@ -60,15 +61,15 @@
 
 ## 🚀 快速启动
 
-1. 确保本机已安装 **Python 3.8+**。建议先创建虚拟环境：
+1. Windows 一键启动支持 **64 位 CPython 3.10 - 3.12**，推荐 Python 3.12。安装 Python 时建议勾选 **Python Launcher** 和 **Add python.exe to PATH**；若本机只有 Python 3.13 或更高版本，可并行安装 Python 3.12，无需卸载新版。
+
+   `启动程序.bat` 会优先通过 Python Launcher 选择 3.12、3.11 或 3.10；Launcher 不可用时会尝试 `PATH` 中的 `python`。首次运行会自动创建 `.venv` 并安装依赖。
+
+2. 如需手动创建虚拟环境并安装依赖，可执行：
 
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
-   ```
-2. 安装 Python 依赖：
-
-   ```bash
    pip install -r requirements.txt
    ```
 3. 复制 `.env.example` 为 `.env`，并填入 AI 模型配置：
@@ -77,7 +78,10 @@
    AI_API_KEY=your_api_key_here
    AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
    AI_MODEL_NAME=qwen-vl-plus
+   # 可选：启用混合/语义搜索
+   AI_EMBEDDING_MODEL_NAME=text-embedding-v4
    ```
+   配置 embedding 模型后，在“工具箱 → 语义搜索索引”中更新索引；留空时系统继续使用原有精确筛选。
 4. 如需使用 TikZ 几何图预览，请安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），并确认 `xelatex` 已加入系统环境变量。项目会通过 `PyMuPDF` 将编译结果转为 PNG 预览。
 5. 首次使用或批量导入题目后，建议重建题库索引：
 
@@ -124,6 +128,7 @@ streamlit run question_bank_app.py
 ## 🧹 仓库维护说明
 
 - `utils/题库索引表.csv` 是可重建的高速索引，题库内容变化后可运行 `python utils/init_csv_index.py` 刷新。
+- `utils/semantic_index.sqlite3` 是可选且可重建的语义索引，不应提交到 Git；题目保存、删除或重命名后，对应旧向量会自动失效。
 - `log.csv` 是批量导入脚本的运行日志输出；`old_app.py`、`question_bank_app000.py` 和 `SolaireEPDA-master/` 属于历史产物或外部参考内容。当前 `.gitignore` 已将同类文件排除，后续如需清理 Git 跟踪记录，建议单独开 PR 处理。
 - TikZ 预览依赖本机 `xelatex`，若未安装 LaTeX，题库浏览与普通组卷仍可使用，但几何图实时预览会受限。
 
