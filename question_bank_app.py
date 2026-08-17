@@ -43,6 +43,15 @@ from utils.latex_ops import *
 from utils.csv_ops import add_to_csv_index, update_csv_index_for_edit
 
 # ================= 工具函数 =================
+def _save_batch_question_if_new(file_path, content, year, paper_type, paper_name, question_number, subject):
+    """Save a batch result only when its target path is not already occupied."""
+    if os.path.exists(file_path):
+        return False
+    atomic_write_text(file_path, content, backup=False)
+    add_to_csv_index(file_path, content, year, paper_type, paper_name, question_number, subject)
+    return True
+
+
 def _editable_paper_type_options(paper_type_scope=None):
     """Keep WK confined to the dedicated cloze-question workspace."""
     if paper_type_scope == "WK":
@@ -4255,8 +4264,17 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     meta_dict = {"ID": q_id, "难度星级": existing_meta.get("难度星级", ""), "标签": existing_meta.get("标签", ""), "备注": existing_meta.get("备注", ""), "组卷引用次数": existing_meta.get("组卷引用次数", "0")}
                                     file_content = inject_meta_data(file_content, meta_dict)
                                     try:
-                                        atomic_write_text(file_path, file_content, backup=os.path.exists(file_path))
-                                        add_to_csv_index(file_path, file_content, str(u_year), u_type, u_paper, q_num, q_subj)
+                                        saved = _save_batch_question_if_new(
+                                            file_path, file_content, str(u_year), u_type, u_paper, q_num, q_subj
+                                        )
+                                        if not saved:
+                                            log_msg.append({
+                                                "status": "skip",
+                                                "file": final_filename,
+                                                "msg": "检测到同名旧题目，已保留旧题并跳过新的识别结果",
+                                            })
+                                            progress_bar.progress(current_idx / total_files)
+                                            continue
                                         count += 1
                                         ai_str = ""
                                         if meta_dict['难度星级'] or meta_dict['标签']:
@@ -4278,12 +4296,15 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                         c_jump.button("跳转至全局浏览查看 ↗", use_container_width=True, type="primary", key="jump_to_browse_same_paper", on_click=_jump_to_browse_same_paper)
                         st.toast(f"同卷处理完成！共保存 {count} 个文件", icon="✅")
                         with st.expander("查看处理日志", expanded=True):
-                            for log in log_msg:
+                            for log_index, log in enumerate(log_msg):
                                 if log["status"] == "success":
                                     c1, c2 = st.columns([4, 1])
                                     ai_str = log.get('ai_info', '')
                                     c1.success(f"✅ {log['file']}{ai_str}")
-                                    if c2.button("📂 打开", key=f"open_log_u_{log['file']}"):
+                                    log_key = hashlib.md5(
+                                        str(log.get("path") or log.get("file") or log_index).encode("utf-8", errors="ignore")
+                                    ).hexdigest()[:10]
+                                    if c2.button("📂 打开", key=f"open_log_u_{log_index}_{log_key}"):
                                         try:
                                             os.startfile(log['path'])
                                         except Exception as e:
@@ -4341,8 +4362,17 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     meta_dict = {"ID": q_id, "难度星级": existing_meta.get("难度星级", ""), "标签": existing_meta.get("标签", ""), "备注": existing_meta.get("备注", ""), "组卷引用次数": existing_meta.get("组卷引用次数", "0")}
                                     file_content = inject_meta_data(file_content, meta_dict)
                                     try:
-                                        atomic_write_text(file_path, file_content, backup=os.path.exists(file_path))
-                                        add_to_csv_index(file_path, file_content, segments[0], segments[1], segments[2], segments[3], segments[4])
+                                        saved = _save_batch_question_if_new(
+                                            file_path, file_content, segments[0], segments[1], segments[2], segments[3], segments[4]
+                                        )
+                                        if not saved:
+                                            log_msg.append({
+                                                "status": "skip",
+                                                "file": filename,
+                                                "msg": "检测到同名旧题目，已保留旧题并跳过新的识别结果",
+                                            })
+                                            progress_bar.progress(current_idx / total_files)
+                                            continue
                                         count += 1
                                         ai_str = ""
                                         if meta_dict['难度星级'] or meta_dict['标签']:
@@ -4365,12 +4395,15 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                         clear_statistics_cache()
                         st.toast(f"批量处理完成！共保存 {count} 个文件", icon="✅")
                         with st.expander("查看处理日志", expanded=True):
-                            for log in log_msg:
+                            for log_index, log in enumerate(log_msg):
                                 if log["status"] == "success":
                                     c1, c2 = st.columns([4, 1])
                                     ai_str = log.get('ai_info', '')
                                     c1.success(f"✅ {log['file']}{ai_str}")
-                                    if c2.button("📂 打开", key=f"open_log_{log['file']}"):
+                                    log_key = hashlib.md5(
+                                        str(log.get("path") or log.get("file") or log_index).encode("utf-8", errors="ignore")
+                                    ).hexdigest()[:10]
+                                    if c2.button("📂 打开", key=f"open_log_{log_index}_{log_key}"):
                                         try:
                                             os.startfile(log['path'])
                                         except Exception as e:
