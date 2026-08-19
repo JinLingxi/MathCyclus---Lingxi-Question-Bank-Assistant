@@ -4851,7 +4851,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 st.session_state[tag_edit_key] = True
                                 st.rerun()
                     with btn_c3:
-                        render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_recent_saved")
+                        render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_recent_saved", compact=True)
                     render_ai_solution_image_ocr_section(fpath, key_prefix="ai_solution_recent_saved")
                     if is_tag_editing:
                         base = os.path.basename(fpath).replace(".tex", "")
@@ -9702,7 +9702,7 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
                                 st.session_state[tag_edit_key] = True
                                 st.rerun()
                     with b3:
-                        render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1", use_container_width=True)
+                        render_ai_solution_generate_button(fpath, content, key_prefix="ai_solution_v1", use_container_width=True, compact=True)
                     render_ai_solution_image_ocr_section(fpath, key_prefix="ai_solution_v1")
 
                     if is_tag_editing:
