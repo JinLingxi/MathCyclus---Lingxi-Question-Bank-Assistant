@@ -1,5 +1,7 @@
 # API 密钥和环境变量 (绝对不能上传)
 .env
+.env.*
+!.env.example
 
 # Agent Mail 授权过程中的本地临时日志
 .agently-auth/
@@ -19,16 +21,21 @@ __pycache__/
 Thumbs.db
 log.csv
 
-# 自己加的东西
+# 本机运行日志、提示词备份和可重建索引
 更新信息.txt
-ocr_prompt.txt
+ocr的备份.txt
+debug.log
+log.csv
 utils/题库索引表.csv
 utils/semantic_index.sqlite3
 utils/local_stats.sqlite3
 utils/local_stats.sqlite3-*
-AutoTikz.md
-debug.log
-ocr的备份.txt
+utils/operation_log.sqlite3
+utils/operation_log.sqlite3-*
+
+# 本机工作区和临时同步目录
+.sync-work-*/
+.codex/
 
 # 外部大型参考项目 (避免索引崩溃与上传超时)
 SolaireEPDA-master/
@@ -55,8 +62,10 @@ old_app.py
 
 MathCyclus_demo.html
 cloze_exports/
+Test Paper Group/导出文件/
+AutoTikz.md
 
-# 题库试题源文件不上传到 GitHub
+# 题库试题源文件默认不上传 GitHub，避免版权与仓库体积风险
 *-G-*.tex
 *-M-*.tex
 *-W-*.tex
@@ -69,5 +78,6 @@ cloze_exports/
 # 管理备份问题：本地自动备份，不上传到 GitHub
 .backups/
 
+# 独立的前端实验工作区，不属于当前 Streamlit 应用
 tiku/
 

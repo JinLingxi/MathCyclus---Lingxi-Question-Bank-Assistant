@@ -607,8 +607,9 @@ def generate_activity_curve_html(hourly_activity_by_day):
 
     days_data_json = json.dumps(days_data)
     timeline_json = json.dumps(timeline)
-    default_start = max(0, len(timeline) - 24)
-    default_end = max(23, len(timeline) - 1)
+    visible_window = 24
+    default_start = max(0, len(timeline) - visible_window)
+    default_end = min(len(timeline) - 1, default_start + visible_window - 1)
 
     html = f"""
     <style>
@@ -749,6 +750,7 @@ def generate_activity_curve_html(hourly_activity_by_day):
     <script>
         var daysData = {days_data_json};
         var timelineData = {timeline_json};
+        var fixedWindowSize = {visible_window};
         var defaultStart = {default_start};
         var defaultEnd = {default_end};
         var chartDom = document.getElementById('activity-chart');
@@ -806,6 +808,22 @@ def generate_activity_curve_html(hourly_activity_by_day):
             ];
         }}
 
+        function clampZoomStart(value) {{
+            var maxStart = Math.max(0, timelineData.length - fixedWindowSize);
+            var numericValue = Number(value);
+            if (!Number.isFinite(numericValue)) numericValue = maxStart;
+            return Math.max(0, Math.min(maxStart, Math.round(numericValue)));
+        }}
+
+        function dispatchFixedWindow(startValue) {{
+            var safeStart = clampZoomStart(startValue);
+            myChart.dispatchAction({{
+                type: 'dataZoom',
+                startValue: safeStart,
+                endValue: Math.min(safeStart + fixedWindowSize - 1, timelineData.length - 1)
+            }});
+        }}
+
         function getVisibleSpan() {{
             var opt = myChart.getOption();
             if (!opt || !opt.dataZoom || !opt.dataZoom[0]) {{
@@ -827,12 +845,7 @@ def generate_activity_curve_html(hourly_activity_by_day):
             currentDayIndex = dayIndex;
             refreshDayButtons(dayIndex);
             var startValue = dayIndex * 24;
-            var endValue = Math.min(startValue + 23, timelineData.length - 1);
-            myChart.dispatchAction({{
-                type: 'dataZoom',
-                startValue: startValue,
-                endValue: endValue
-            }});
+            dispatchFixedWindow(startValue);
         }}
 
         function renderChart() {{
@@ -924,9 +937,12 @@ def generate_activity_curve_html(hourly_activity_by_day):
                         xAxisIndex: 0,
                         filterMode: 'none',
                         zoomOnMouseWheel: false,
-                        moveOnMouseWheel: true,
+                        moveOnMouseWheel: false,
                         moveOnMouseMove: true,
                         preventDefaultMouseMove: true,
+                        zoomLock: true,
+                        minValueSpan: fixedWindowSize - 1,
+                        maxValueSpan: fixedWindowSize - 1,
                         startValue: defaultStart,
                         endValue: defaultEnd
                     }},
@@ -934,6 +950,9 @@ def generate_activity_curve_html(hourly_activity_by_day):
                         type: 'slider',
                         xAxisIndex: 0,
                         filterMode: 'none',
+                        zoomLock: true,
+                        minValueSpan: fixedWindowSize - 1,
+                        maxValueSpan: fixedWindowSize - 1,
                         height: 18,
                         bottom: 8,
                         startValue: defaultStart,
@@ -1035,6 +1054,16 @@ def generate_activity_curve_html(hourly_activity_by_day):
             var dz = myChart.getOption().dataZoom[0];
             if (!dz) return;
             var range = getZoomRange(dz);
+            var rangeSpan = range[1] - range[0] + 1;
+            if (rangeSpan !== fixedWindowSize) {{
+                var safeStart = clampZoomStart(range[0]);
+                myChart.dispatchAction({{
+                    type: 'dataZoom',
+                    startValue: safeStart,
+                    endValue: Math.min(safeStart + fixedWindowSize - 1, timelineData.length - 1)
+                }});
+                range = [safeStart, Math.min(safeStart + fixedWindowSize - 1, timelineData.length - 1)];
+            }}
             var dayIndex = getVisibleDayIndexFromRange(range[0], range[1]);
             if (dayIndex !== currentDayIndex) {{
                 currentDayIndex = dayIndex;
@@ -1062,6 +1091,12 @@ def generate_echarts_bar_html(data_dict, title):
     sorted_items = sorted(data_dict.items(), key=lambda x: x[1], reverse=True)
     labels = [x[0] for x in sorted_items]
     values = [x[1] for x in sorted_items]
+    bar_colors = [
+        "#dcd2f6", "#d3c6f2", "#c9b9ed", "#beace8",
+        "#b39fe2", "#a792dd", "#9c85d7", "#9078d1",
+        "#8470cc", "#7768c7", "#6a61c2", "#5b5cbd",
+        "#4e5cb7", "#435db1", "#385eab", "#2f5fa5",
+    ]
     
     html = f"""
     <style>
@@ -1096,6 +1131,7 @@ def generate_echarts_bar_html(data_dict, title):
     <div class="echarts-panel"><div id="bar-chart"></div></div>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script>
+        var barColors = {json.dumps(bar_colors)};
         var chartDom = document.getElementById('bar-chart');
         var myChart = echarts.init(chartDom);
         var option = {{
@@ -1120,10 +1156,9 @@ def generate_echarts_bar_html(data_dict, title):
                 barWidth: '40%',
                 itemStyle: {{
                     borderRadius: [6, 6, 0, 0],
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        {{ offset: 0, color: '#8b5cf6' }},
-                        {{ offset: 1, color: '#4c1d95' }}
-                    ])
+                    color: function(params) {{
+                        return barColors[params.dataIndex % barColors.length];
+                    }}
                 }}
             }}]
         }};

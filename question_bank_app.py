@@ -21,6 +21,14 @@ import streamlit.components.v1 as components
 import io
 from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
 from services.file_service import atomic_write_text, backup_existing_file, file_change_token
+from services.operation_log import read_recent_operations, record_operation
+from services.question_service import (
+    QuestionDuplicateError,
+    create_question_file,
+    find_duplicate_matches,
+    question_fingerprint,
+    scan_duplicate_pairs,
+)
 from services.semantic_search_service import (
     SemanticSearchError,
     build_index as build_semantic_index,
@@ -40,15 +48,37 @@ from utils.core_config import *
 from utils.file_ops import *
 from utils.tikz_ops import *
 from utils.latex_ops import *
-from utils.csv_ops import add_to_csv_index, update_csv_index_for_edit
+from utils.csv_ops import add_to_csv_index, read_csv_index, update_csv_index_for_edit
 
 # ================= 工具函数 =================
-def _save_batch_question_if_new(file_path, content, year, paper_type, paper_name, question_number, subject):
-    """Save a batch result only when its target path is not already occupied."""
+def _save_batch_question_if_new(
+    file_path,
+    content,
+    year,
+    paper_type,
+    paper_name,
+    question_number,
+    subject,
+    duplicate_matches_out=None,
+):
+    """Save a batch result only when its path and statement are new."""
     if os.path.exists(file_path):
         return False
-    atomic_write_text(file_path, content, backup=False)
-    add_to_csv_index(file_path, content, year, paper_type, paper_name, question_number, subject)
+
+    try:
+        create_question_file(
+            file_path,
+            content,
+            year,
+            paper_type,
+            paper_name,
+            question_number,
+            subject,
+        )
+    except QuestionDuplicateError as exc:
+        if duplicate_matches_out is not None:
+            duplicate_matches_out.extend(exc.matches)
+        return False
     return True
 
 
@@ -320,6 +350,33 @@ def inject_custom_css():
             align-self: stretch !important;
             box-sizing: border-box !important;
         }
+        /* Fill the detail pane with the editor/preview split instead of its intrinsic content width. */
+        div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
+        div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) {
+            display: grid !important;
+            grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            gap: 1rem !important;
+            align-items: start !important;
+        }
+        div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"],
+        div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"],
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"] {
+            width: auto !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            flex: initial !important;
+            box-sizing: border-box !important;
+        }
+        div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"],
+        div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"],
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"] {
+            width: 100% !important;
+            max-width: none !important;
+        }
         /* 调整 st.dialog 的背景遮罩透明度为 40% 黑色 */
         div[data-testid="stDialog"] > div:first-child {
             background-color: rgba(0, 0, 0, 0.4) !important;
@@ -334,68 +391,87 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 def inject_sidebar_layout_switch(layout: str):
-    """Keep the working layout switch in the sidebar header, not page flow."""
+    """Keep sidebar controls stable while Streamlit rebuilds its native buttons."""
     components.html(
         f"""
         <script>
         (() => {{
             const parentWindow = window.parent;
             const doc = parentWindow.document;
-            const buttonId = "mc-sidebar-layout-switch";
+            const modeButtonId = "mc-sidebar-layout-switch";
+            const collapseButtonId = "mc-sidebar-collapse-switch";
+            const observerKey = "__mcSidebarControlsObserver";
             const nativeButtonLabel = "切换为顶部导航";
             const layout = {layout!r};
+            const expandedControlSelector = '[data-testid="stSidebarCollapseButton"]';
+            const collapsedControlSelector = '[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"]';
+            const nativeCollapseSelector = expandedControlSelector + ", " + collapsedControlSelector;
 
             ["mc-sidebar-navigation-controls", "mc-navigation-layout-switch"].forEach((id) => {{
                 const legacy = doc.getElementById(id);
                 if (legacy) legacy.remove();
             }});
 
-            const existing = doc.getElementById(buttonId);
+            if (parentWindow[observerKey]) {{
+                parentWindow[observerKey].disconnect();
+                delete parentWindow[observerKey];
+            }}
+
+            const removeCustomControls = () => {{
+                [modeButtonId, collapseButtonId].forEach((id) => {{
+                    const control = doc.getElementById(id);
+                    if (control) control.remove();
+                }});
+            }};
+
             if (layout !== "sidebar") {{
-                if (existing) existing.remove();
-                if (parentWindow.__mcLayoutSwitchObserver) {{
-                    parentWindow.__mcLayoutSwitchObserver.disconnect();
-                    delete parentWindow.__mcLayoutSwitchObserver;
-                }}
+                removeCustomControls();
                 return;
             }}
 
-            function nativeButton() {{
+            function nativeLayoutButton() {{
                 return Array.from(doc.querySelectorAll("button")).find((candidate) =>
-                    candidate.id !== buttonId
+                    candidate.id !== modeButtonId
+                    && candidate.id !== collapseButtonId
                     && candidate.textContent.trim() === nativeButtonLabel
                 ) || null;
             }}
 
-            function hideNativeButton() {{
-                const native = nativeButton();
-                if (!native) return false;
-                const container = native.closest('[data-testid="stElementContainer"]');
-                (container || native).style.display = "none";
-                return true;
+            function nativeCollapseButton() {{
+                const control = doc.querySelector(nativeCollapseSelector);
+                if (!control) return null;
+                return control.matches("button") ? control : control.querySelector("button");
             }}
 
-            if (parentWindow.__mcLayoutSwitchObserver) {{
-                parentWindow.__mcLayoutSwitchObserver.disconnect();
-            }}
-            if (!hideNativeButton()) {{
-                const observer = new parentWindow.MutationObserver(() => {{
-                    if (hideNativeButton()) {{
-                        observer.disconnect();
-                        delete parentWindow.__mcLayoutSwitchObserver;
-                    }}
+            function hideNativeButtons() {{
+                const nativeLayout = nativeLayoutButton();
+                if (nativeLayout) {{
+                    const container = nativeLayout.closest('[data-testid="stElementContainer"]');
+                    (container || nativeLayout).style.setProperty("display", "none", "important");
+                }}
+
+                doc.querySelectorAll(nativeCollapseSelector).forEach((control) => {{
+                    control.style.setProperty("display", "none", "important");
                 }});
-                observer.observe(doc.body, {{ childList: true, subtree: true }});
-                parentWindow.__mcLayoutSwitchObserver = observer;
             }}
 
-            const button = existing || doc.createElement("button");
-            button.id = buttonId;
-            button.type = "button";
-            button.textContent = "⇄";
-            button.title = "切换为顶部导航";
-            button.setAttribute("aria-label", "切换为顶部导航");
-            Object.assign(button.style, {{
+            function readSidebarCollapsedState() {{
+                if (doc.querySelector(collapsedControlSelector)) return true;
+                if (doc.querySelector(expandedControlSelector)) return false;
+                return null;
+            }}
+
+            const modeButton = doc.getElementById(modeButtonId) || doc.createElement("button");
+            const collapseButton = doc.getElementById(collapseButtonId) || doc.createElement("button");
+            const modeButtonIsNew = !modeButton.id;
+            const collapseButtonIsNew = !collapseButton.id;
+
+            modeButton.id = modeButtonId;
+            modeButton.type = "button";
+                modeButton.textContent = "⇄";
+            modeButton.title = "切换为顶部导航";
+            modeButton.setAttribute("aria-label", "切换为顶部导航");
+            Object.assign(modeButton.style, {{
                 position: "fixed",
                 top: "2px",
                 left: "40px",
@@ -416,17 +492,97 @@ def inject_sidebar_layout_switch(layout: str):
                 fontSize: "16px",
                 fontWeight: "700",
                 lineHeight: "1",
-                cursor: "pointer"
+                cursor: "pointer",
+                transition: "opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1), background 140ms ease"
             }});
-            button.onmouseenter = () => {{ button.style.background = "rgba(109, 40, 217, 0.10)"; }};
-            button.onmouseleave = () => {{ button.style.background = "transparent"; }};
-            button.onclick = () => {{
-                const native = nativeButton();
-                button.remove();
-                if (native) native.click();
+            modeButton.onmouseenter = () => {{ modeButton.style.background = "rgba(109, 40, 217, 0.10)"; }};
+            modeButton.onmouseleave = () => {{ modeButton.style.background = "transparent"; }};
+            modeButton.onclick = () => {{
+                const native = nativeLayoutButton();
+                if (!native || modeButton.dataset.switching === "true") return;
+                modeButton.dataset.switching = "true";
+                modeButton.style.opacity = "0";
+                modeButton.style.pointerEvents = "none";
+                native.click();
             }};
 
-            if (!existing) doc.body.appendChild(button);
+            collapseButton.id = collapseButtonId;
+            collapseButton.type = "button";
+            collapseButton.title = "收缩侧边栏";
+            collapseButton.setAttribute("aria-label", "收缩侧边栏");
+            Object.assign(collapseButton.style, {{
+                position: "fixed",
+                top: "2px",
+                left: "70px",
+                zIndex: "2147483647",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "31px",
+                height: "30px",
+                margin: "0",
+                padding: "0",
+                border: "1px solid rgba(109, 40, 217, 0.14)",
+                borderLeft: "0",
+                borderRadius: "0 5px 5px 0",
+                background: "transparent",
+                boxShadow: "none",
+                color: "#5b21b6",
+                fontFamily: "Arial, sans-serif",
+                fontSize: "16px",
+                fontWeight: "700",
+                lineHeight: "1",
+                cursor: "pointer",
+                transition: "background 140ms ease, color 140ms ease, transform 140ms ease"
+            }});
+            collapseButton.onmouseenter = () => {{ collapseButton.style.background = "rgba(109, 40, 217, 0.10)"; }};
+            collapseButton.onmouseleave = () => {{ collapseButton.style.background = "transparent"; }};
+
+            let sidebarCollapsed = readSidebarCollapsedState();
+            if (sidebarCollapsed === null) sidebarCollapsed = false;
+
+            function applySidebarState(isCollapsed) {{
+                sidebarCollapsed = isCollapsed;
+                collapseButton.textContent = isCollapsed ? ">>" : "<<";
+                collapseButton.title = isCollapsed ? "展开侧边栏" : "收缩侧边栏";
+                collapseButton.setAttribute("aria-label", collapseButton.title);
+                modeButton.dataset.sidebarCollapsed = isCollapsed ? "true" : "false";
+                modeButton.setAttribute("aria-hidden", isCollapsed ? "true" : "false");
+                modeButton.tabIndex = isCollapsed ? -1 : 0;
+                if (!isCollapsed) {{
+                    delete modeButton.dataset.switching;
+                    modeButton.style.opacity = "";
+                    modeButton.style.pointerEvents = "";
+                }}
+            }}
+
+            collapseButton.onclick = () => {{
+                if (collapseButton.dataset.switching === "true") return;
+                const native = nativeCollapseButton();
+                if (!native) return;
+                collapseButton.dataset.switching = "true";
+                applySidebarState(!sidebarCollapsed);
+                native.click();
+                parentWindow.setTimeout(() => {{
+                    delete collapseButton.dataset.switching;
+                }}, 420);
+            }};
+
+            if (modeButtonIsNew) doc.body.appendChild(modeButton);
+            if (collapseButtonIsNew) doc.body.appendChild(collapseButton);
+
+            const syncControls = () => {{
+                hideNativeButtons();
+                const actualState = readSidebarCollapsedState();
+                if (actualState !== null) applySidebarState(actualState);
+            }};
+
+            applySidebarState(sidebarCollapsed);
+            syncControls();
+
+            const observer = new parentWindow.MutationObserver(syncControls);
+            observer.observe(doc.body, {{ childList: true, subtree: true }});
+            parentWindow[observerKey] = observer;
         }})();
         </script>
         """,
@@ -544,6 +700,53 @@ def api_settings_dialog():
     ocr_prompt_value, prompt_file_exists = _read_ocr_prompt_for_settings(config)
     env_state = "已读取根目录 .env" if os.path.exists(env_path) else "未找到 .env，保存时会自动创建"
     prompt_state = "已读取根目录 ocr_prompt.txt" if prompt_file_exists else "未找到 ocr_prompt.txt，保存时会自动创建"
+
+    st.markdown(
+        """
+        <style>
+        /* API 设置保持与淡紫主题一致，覆盖 BaseWeb 的原生错误红框。 */
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-testid="stTextInput"] input,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-testid="stTextArea"] textarea,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"],
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"],
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"] > div,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"] > div {
+            border: 1px solid var(--mc-border) !important;
+            border-color: var(--mc-border) !important;
+            outline: none !important;
+            box-shadow: inset 0 1px 1px rgba(44, 39, 51, 0.03) !important;
+        }
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-testid="stTextInput"] input:focus,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-testid="stTextArea"] textarea:focus,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"]:focus-within,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"]:focus-within,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"] > div:focus-within,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"] > div:focus-within {
+            border: 1px solid var(--mc-action-border) !important;
+            border-color: var(--mc-action-border) !important;
+            box-shadow: 0 0 0 3px var(--mc-focus), inset 0 1px 1px rgba(44, 39, 51, 0.03) !important;
+            background: #ffffff !important;
+        }
+        [role="dialog"]:has(#mc-api-settings-anchor) input:invalid,
+        [role="dialog"]:has(#mc-api-settings-anchor) textarea:invalid,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"]:has(input:invalid),
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"]:has(textarea:invalid),
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"]:has(input[aria-invalid="true"]) > div,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"]:has(textarea[aria-invalid="true"]) > div,
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="input"]:has(input[aria-invalid="true"]),
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-baseweb="textarea"]:has(textarea[aria-invalid="true"]),
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-testid="stTextInput"] input[aria-invalid="true"],
+        [role="dialog"]:has(#mc-api-settings-anchor) div[data-testid="stTextArea"] textarea[aria-invalid="true"] {
+            border: 1px solid var(--mc-action-border) !important;
+            border-color: var(--mc-action-border) !important;
+            outline: none !important;
+            box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.12), inset 0 1px 1px rgba(44, 39, 51, 0.03) !important;
+        }
+        </style>
+        <span id="mc-api-settings-anchor"></span>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.caption(f"{env_state}：{env_path}")
     st.caption(f"{prompt_state}：{ocr_prompt_file}")
@@ -706,19 +909,289 @@ def apply_meta_rename_and_update(old_path: str, new_year: str, new_type: str, ne
         old_content = f.read()
 
     new_content = replace_problem_header(old_content, str(new_year), new_type, new_name, new_num, new_subject_str)
-    atomic_write_text(new_path, new_content, backup=os.path.exists(new_path))
+    same_path = os.path.normcase(os.path.abspath(new_path)) == os.path.normcase(os.path.abspath(old_path))
+    if not same_path and os.path.exists(new_path):
+        raise FileExistsError(f"目标题目文件已存在：{new_path}")
 
-    if os.path.abspath(new_path) != os.path.abspath(old_path):
-        backup_existing_file(old_path)
-        os.remove(old_path)
+    backup_path = ""
+    if same_path:
+        atomic_write_text(new_path, new_content, backup=True)
+    else:
+        atomic_write_text(new_path, new_content, backup=False)
+        try:
+            backup_path = backup_existing_file(old_path)
+            os.remove(old_path)
+        except Exception:
+            if os.path.exists(new_path):
+                os.remove(new_path)
+            raise
 
-    update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, new_num, new_subject_str)
+    try:
+        update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, new_num, new_subject_str)
+    except Exception:
+        if not same_path:
+            try:
+                if os.path.exists(new_path):
+                    os.remove(new_path)
+                if backup_path and os.path.exists(backup_path):
+                    ensure_dir(os.path.dirname(old_path))
+                    shutil.copy2(backup_path, old_path)
+            except OSError:
+                pass
+        raise
+
+    record_operation(
+        "rename_question" if not same_path else "update_question_meta",
+        path=os.path.abspath(new_path),
+        related_path=os.path.abspath(old_path) if not same_path else "",
+        details="metadata and filename updated",
+    )
     _invalidate_semantic_for_file(old_path)
     _invalidate_semantic_for_file(new_path)
     clear_statistics_cache()
     _clear_advanced_search_result_cache()
     return new_path, new_content
 
+
+def inject_unified_visual_system_css():
+    """Apply the shared MathCyclus visual language after page-specific styles."""
+    st.markdown(
+        """
+        <style>
+        :root {
+            --mc-bg: #f5f2fb;
+            --mc-surface: #fffdfd;
+            --mc-surface-soft: #eee9f8;
+            --mc-sidebar: #ebe5f5;
+            --mc-border: #d9d1e6;
+            --mc-border-strong: #b8a9ca;
+            --mc-text: #2c2733;
+            --mc-muted: #71687d;
+            --mc-accent: #6d28d9;
+            --mc-accent-dark: #5b21b6;
+            --mc-accent-soft: #ede9fe;
+            --mc-action-bg: #d6c4ee;
+            --mc-action-bg-hover: #c5abe5;
+            --mc-action-border: #b49ad2;
+            --mc-action-text: #332442;
+            --mc-action-shadow: 0 5px 14px rgba(91, 33, 182, 0.12);
+            --mc-focus: rgba(109, 40, 217, 0.2);
+            --mc-radius: 7px;
+            --mc-shadow: 0 8px 24px rgba(80, 60, 110, 0.08);
+        }
+
+        html { scroll-behavior: smooth; }
+        body,
+        .stApp,
+        .stApp button,
+        .stApp input,
+        .stApp textarea,
+        .stApp select {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
+        }
+        body { background: var(--mc-bg) !important; color: var(--mc-text) !important; }
+        .stApp,
+        div[data-testid="stAppViewContainer"],
+        div[data-testid="stAppViewContainer"] > section {
+            background: var(--mc-bg) !important;
+            color: var(--mc-text) !important;
+        }
+        .block-container {
+            max-width: 1480px !important;
+            padding: 1.55rem 2.2rem 3.2rem !important;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--mc-text) !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
+            font-weight: 600 !important;
+            letter-spacing: -0.015em !important;
+            text-wrap: balance;
+        }
+        h1 { font-size: clamp(1.95rem, 3vw, 2.75rem) !important; line-height: 1.15 !important; }
+        h2 { font-size: clamp(1.4rem, 2vw, 1.85rem) !important; line-height: 1.25 !important; }
+        h3, h4 { letter-spacing: 0 !important; }
+        p, li, label, span, input, textarea, button { letter-spacing: 0 !important; }
+        p, li { color: var(--mc-text); }
+        a { color: var(--mc-accent-dark); text-underline-offset: 3px; }
+        hr { border-color: var(--mc-border) !important; }
+        ::selection { background: var(--mc-accent-soft) !important; color: var(--mc-text) !important; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: var(--mc-bg); }
+        ::-webkit-scrollbar-thumb { background: #c2b5d1; border: 3px solid var(--mc-bg); border-radius: 8px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a998bd; }
+
+        div[data-testid="stExpander"],
+        div[data-testid="stForm"],
+        div[data-testid="stPopover"] > div,
+        div[data-testid="stAlert"],
+        div[data-testid="stMetric"] {
+            border: 1px solid var(--mc-border) !important;
+            border-radius: var(--mc-radius) !important;
+            background: var(--mc-surface) !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stExpander"] summary:hover { background: var(--mc-surface-soft) !important; }
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stTextArea"] textarea,
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div {
+            border: 1px solid var(--mc-border) !important;
+            border-radius: var(--mc-radius) !important;
+            background: var(--mc-surface) !important;
+            color: var(--mc-text) !important;
+            box-shadow: none !important;
+            transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease !important;
+        }
+        div[data-testid="stTextInput"] input:focus,
+        div[data-testid="stNumberInput"] input:focus,
+        div[data-testid="stTextArea"] textarea:focus,
+        div[data-baseweb="select"] > div:focus-within,
+        div[data-baseweb="input"] > div:focus-within {
+            border-color: var(--mc-accent) !important;
+            box-shadow: 0 0 0 3px var(--mc-focus) !important;
+            background: #ffffff !important;
+        }
+        div[data-testid="stTextInput"] input::placeholder,
+        div[data-testid="stTextArea"] textarea::placeholder { color: #877b95 !important; opacity: 1 !important; }
+
+        div[data-testid="stButton"] > button,
+        div[data-testid="stDownloadButton"] > button,
+        div[data-testid="stFormSubmitButton"] > button,
+        div[data-testid="stPopover"] > button {
+            min-height: 2.36rem !important;
+            border: 1px solid var(--mc-border-strong) !important;
+            border-radius: var(--mc-radius) !important;
+            background: var(--mc-surface) !important;
+            color: var(--mc-text) !important;
+            box-shadow: none !important;
+            font-weight: 600 !important;
+            transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, color 150ms ease !important;
+        }
+        div[data-testid="stButton"] > button:hover,
+        div[data-testid="stDownloadButton"] > button:hover,
+        div[data-testid="stFormSubmitButton"] > button:hover,
+        div[data-testid="stPopover"] > button:hover {
+            border-color: var(--mc-accent) !important;
+            background: var(--mc-accent-soft) !important;
+            color: var(--mc-accent-dark) !important;
+            box-shadow: none !important;
+            transform: translateY(-1px);
+        }
+        div[data-testid="stButton"] > button:active,
+        div[data-testid="stDownloadButton"] > button:active,
+        div[data-testid="stFormSubmitButton"] > button:active,
+        div[data-testid="stPopover"] > button:active { transform: translateY(0) scale(0.985); }
+        div[data-testid="stButton"] > button:focus-visible,
+        div[data-testid="stDownloadButton"] > button:focus-visible,
+        div[data-testid="stFormSubmitButton"] > button:focus-visible,
+        div[data-testid="stPopover"] > button:focus-visible,
+        input:focus-visible, textarea:focus-visible { outline: 3px solid var(--mc-focus) !important; outline-offset: 1px !important; }
+        button[kind="primary"],
+        div[data-testid="stButton"] > button[kind="primary"],
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+            border-color: var(--mc-action-border) !important;
+            background: var(--mc-action-bg) !important;
+            color: var(--mc-action-text) !important;
+            box-shadow: var(--mc-action-shadow) !important;
+        }
+        button[kind="primary"] p,
+        button[kind="primary"] span,
+        div[data-testid="stButton"] > button[kind="primary"] p,
+        div[data-testid="stButton"] > button[kind="primary"] span,
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"] p,
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"] span { color: var(--mc-action-text) !important; }
+        button[kind="primary"]:hover,
+        div[data-testid="stButton"] > button[kind="primary"]:hover,
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover {
+            border-color: var(--mc-action-border) !important;
+            background: var(--mc-action-bg-hover) !important;
+            color: var(--mc-action-text) !important;
+            box-shadow: 0 7px 18px rgba(91, 33, 182, 0.16) !important;
+        }
+        button[kind="primary"]:hover p,
+        button[kind="primary"]:hover span,
+        div[data-testid="stButton"] > button[kind="primary"]:hover p,
+        div[data-testid="stButton"] > button[kind="primary"]:hover span,
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover p,
+        div[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover span { color: var(--mc-action-text) !important; }
+        div[data-testid="stTabs"] button { color: var(--mc-muted) !important; border-radius: 0 !important; }
+        div[data-testid="stTabs"] button[aria-selected="true"] { color: var(--mc-accent-dark) !important; font-weight: 700 !important; }
+        div[data-testid="stTabs"] [data-baseweb="tab-highlight"] { background: var(--mc-accent) !important; }
+        div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+            border: 1px solid var(--mc-border) !important;
+            border-radius: var(--mc-radius) !important;
+            background: var(--mc-surface) !important;
+            box-shadow: none !important;
+            overflow: hidden !important;
+        }
+        div[data-testid="stToast"] { border: 1px solid var(--mc-border) !important; border-radius: var(--mc-radius) !important; box-shadow: var(--mc-shadow) !important; }
+
+        section[data-testid="stSidebar"] {
+            background: var(--mc-sidebar) !important;
+            border-right: 1px solid var(--mc-border) !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        [data-testid="stSidebarUserContent"] { padding: 0.6rem 0.5rem 1.2rem !important; }
+        [data-testid="stSidebar"] div[role="radiogroup"] { gap: 8px !important; }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label {
+            max-width: 96px !important;
+            min-height: 58px !important;
+            padding: 8px 6px !important;
+            border: 1px solid transparent !important;
+            border-radius: 6px !important;
+            color: #665d78 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease !important;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+            background: rgba(109, 40, 217, 0.08) !important;
+            border-color: rgba(109, 40, 217, 0.18) !important;
+            color: var(--mc-accent-dark) !important;
+            transform: translateY(-1px);
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+            background: var(--mc-action-bg) !important;
+            border-color: var(--mc-action-border) !important;
+            color: var(--mc-action-text) !important;
+            box-shadow: var(--mc-action-shadow) !important;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p,
+        [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) span { color: var(--mc-action-text) !important; }
+        [data-testid="stSidebar"] div[role="radiogroup"] p {
+            color: inherit !important;
+            font-size: 13px !important;
+            font-weight: 650 !important;
+            line-height: 1.35 !important;
+        }
+        .sol-logo, .sol-logo-link, .sol-logo-link:visited { color: var(--mc-accent-dark) !important; }
+        .sol-logo span, .sol-logo-link span { color: var(--mc-accent) !important; }
+        #mc-sidebar-layout-switch, #mc-sidebar-collapse-switch {
+            color: var(--mc-accent-dark) !important;
+            border-color: rgba(109, 40, 217, 0.22) !important;
+        }
+        #mc-sidebar-layout-switch:hover, #mc-sidebar-collapse-switch:hover { background: var(--mc-accent-soft) !important; }
+
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) {
+            background: var(--mc-surface) !important;
+            border-bottom-color: var(--mc-border) !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label { color: #665d78 !important; }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label:hover { background: var(--mc-accent-soft) !important; color: var(--mc-accent-dark) !important; }
+        div[data-testid="stHorizontalBlock"]:has(#mc-top-nav-anchor) div[role="radiogroup"] > label:has(input:checked) { color: var(--mc-accent-dark) !important; border-bottom-color: var(--mc-accent) !important; }
+        div[class*="st-key-top-nav-layout-toggle"] button, div[class*="st-key-top-nav-api-settings"] button { color: var(--mc-accent-dark) !important; }
+        div[class*="st-key-top-nav-layout-toggle"] button:hover, div[class*="st-key-top-nav-api-settings"] button:hover { background: var(--mc-accent-soft) !important; color: var(--mc-accent-dark) !important; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 @st.dialog("🔍 查看大图", width="large")
 def zoom_image(img):
     # 将图片转换为 Base64
@@ -812,13 +1285,7 @@ def zoom_image(img):
 
 @st.dialog("MathCyclus 题库介绍", width="large")
 def show_mathcyclus_intro():
-    intro_path = os.path.join(BASE_DIR, "MathCyclus题库介绍.html")
-    if not os.path.exists(intro_path):
-        st.error("未找到 MathCyclus题库介绍.html")
-        return
-    with open(intro_path, "r", encoding="utf-8") as f:
-        demo_html = f.read()
-    components.html(demo_html, height=760, scrolling=True)
+    page_system_intro()
 
 def _adv_search_queries_from_session():
     t1 = st.session_state.get("adv_t1", "全文内容")
@@ -883,6 +1350,34 @@ def _clear_advanced_search_result_cache():
     st.session_state.pop("adv_last_query", None)
     st.session_state.pop("adv_last_results", None)
 
+def _duplicate_save_confirmation(file_path: str, content: str, scope: str = "edit") -> bool:
+    """Require a second click before an edit creates a duplicate statement."""
+    matches = find_duplicate_matches(
+        content,
+        exclude_path=file_path,
+        similarity_threshold=0.88,
+        max_results=5,
+    )
+    key_hash = hashlib.md5(f"{scope}:{file_path}".encode("utf-8", errors="ignore")).hexdigest()[:12]
+    state_key = f"duplicate_save_confirmation_{key_hash}"
+    fingerprint = question_fingerprint(content)
+    if not matches:
+        st.session_state.pop(state_key, None)
+        return True
+
+    pending = st.session_state.get(state_key) or {}
+    if pending.get("fingerprint") != fingerprint:
+        st.session_state[state_key] = {"fingerprint": fingerprint, "matches": matches}
+        first_match = matches[0]
+        st.toast(
+            f"检测到可能重复题目：{first_match.get('name') or first_match.get('relative_path')}；再次点击保存以确认",
+            icon="⚠️",
+        )
+        return False
+
+    st.session_state.pop(state_key, None)
+    return True
+
 def save_modified_tex_file(file_path, new_content):
     """
     保存修改后的 tex 文件：
@@ -896,6 +1391,11 @@ def save_modified_tex_file(file_path, new_content):
     
     # 直接写入包含原生 TikZ 的内容
     atomic_write_text(file_path, final_content, backup=True)
+    record_operation(
+        "update_question_content",
+        path=os.path.abspath(file_path),
+        details="LaTeX content updated",
+    )
     _invalidate_semantic_for_file(file_path)
         
     return final_content
@@ -1063,6 +1563,16 @@ def delete_question_file_and_sync(file_path: str):
         "restored": False,
     })
 
+    question_id = ""
+    if original_csv_rows:
+        question_id = str(next(iter(original_csv_rows[0].values()), "") or "")
+    record_operation(
+        "delete_question",
+        path=abs_path,
+        question_id=question_id,
+        details=f"removed_index_rows={removed_rows}",
+    )
+
     return backup_path or tikz_backup_path, removed_rows
 
 def restore_deleted_question_and_sync(record: dict):
@@ -1110,6 +1620,12 @@ def restore_deleted_question_and_sync(record: dict):
             shutil.copytree(tikz_backup_path, tikz_target)
 
     record["restored"] = True
+    record_operation(
+        "restore_question",
+        path=os.path.abspath(original_path),
+        related_path=os.path.abspath(backup_path),
+        details="question and related assets restored",
+    )
     _clear_advanced_search_result_cache()
     clear_statistics_cache()
     _update_chapter_indexes_from_ui()
@@ -1221,6 +1737,13 @@ def permanently_delete_backup_record(record: dict):
             shutil.rmtree(target)
         elif os.path.isfile(target):
             os.remove(target)
+
+    record_operation(
+        "permanently_delete_backup",
+        path=backup_path,
+        related_path=tikz_backup_path,
+        details="backup removed permanently",
+    )
 
 def clear_all_question_backups():
     records = scan_question_backup_records()
@@ -2577,6 +3100,8 @@ def _update_csv_index_for_content_change(fpath: str, new_content: str):
 
 def _save_tex_from_widget(fpath: str, widget_key: str, edit_mode_key: str = "", toast_msg: str = "文件已保存！"):
     raw = st.session_state.get(widget_key, "")
+    if not _duplicate_save_confirmation(fpath, raw, scope=widget_key):
+        return False
     final_content = save_modified_tex_file(fpath, raw)
     _update_csv_index_for_content_change(fpath, final_content)
     _clear_advanced_search_result_cache()
@@ -4264,14 +4789,26 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     meta_dict = {"ID": q_id, "难度星级": existing_meta.get("难度星级", ""), "标签": existing_meta.get("标签", ""), "备注": existing_meta.get("备注", ""), "组卷引用次数": existing_meta.get("组卷引用次数", "0")}
                                     file_content = inject_meta_data(file_content, meta_dict)
                                     try:
+                                        duplicate_matches = []
                                         saved = _save_batch_question_if_new(
-                                            file_path, file_content, str(u_year), u_type, u_paper, q_num, q_subj
+                                            file_path,
+                                            file_content,
+                                            str(u_year),
+                                            u_type,
+                                            u_paper,
+                                            q_num,
+                                            q_subj,
+                                            duplicate_matches_out=duplicate_matches,
                                         )
                                         if not saved:
                                             log_msg.append({
                                                 "status": "skip",
                                                 "file": final_filename,
-                                                "msg": "检测到同名旧题目，已保留旧题并跳过新的识别结果",
+                                                "msg": (
+                                                    f"检测到完全相同题干，已跳过（已有：{duplicate_matches[0].get('name', '')}）"
+                                                    if duplicate_matches
+                                                    else "检测到同名旧题目，已保留旧题并跳过新的识别结果"
+                                                ),
                                             })
                                             progress_bar.progress(current_idx / total_files)
                                             continue
@@ -4362,14 +4899,26 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                                     meta_dict = {"ID": q_id, "难度星级": existing_meta.get("难度星级", ""), "标签": existing_meta.get("标签", ""), "备注": existing_meta.get("备注", ""), "组卷引用次数": existing_meta.get("组卷引用次数", "0")}
                                     file_content = inject_meta_data(file_content, meta_dict)
                                     try:
+                                        duplicate_matches = []
                                         saved = _save_batch_question_if_new(
-                                            file_path, file_content, segments[0], segments[1], segments[2], segments[3], segments[4]
+                                            file_path,
+                                            file_content,
+                                            segments[0],
+                                            segments[1],
+                                            segments[2],
+                                            segments[3],
+                                            segments[4],
+                                            duplicate_matches_out=duplicate_matches,
                                         )
                                         if not saved:
                                             log_msg.append({
                                                 "status": "skip",
                                                 "file": filename,
-                                                "msg": "检测到同名旧题目，已保留旧题并跳过新的识别结果",
+                                                "msg": (
+                                                    f"检测到完全相同题干，已跳过（已有：{duplicate_matches[0].get('name', '')}）"
+                                                    if duplicate_matches
+                                                    else "检测到同名旧题目，已保留旧题并跳过新的识别结果"
+                                                ),
                                             })
                                             progress_bar.progress(current_idx / total_files)
                                             continue
@@ -4482,6 +5031,26 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                     s_save_dir = os.path.join(CHAPTERS_DIR, primary_subj, s_year)
                     ensure_dir(s_save_dir)
                     s_file_path = os.path.join(s_save_dir, s_filename)
+                    if os.path.exists(s_file_path):
+                        st.toast("目标题目文件已存在，请修改题号或试卷信息后再保存", icon="⚠️")
+                        return
+                    duplicate_matches = find_duplicate_matches(
+                        full_text,
+                        exclude_path=s_file_path,
+                        similarity_threshold=0.88,
+                        max_results=5,
+                    )
+                    duplicate_fingerprint = question_fingerprint(full_text)
+                    pending_duplicate = st.session_state.get("entry_duplicate_warning") or {}
+                    if duplicate_matches and pending_duplicate.get("fingerprint") != duplicate_fingerprint:
+                        st.session_state["entry_duplicate_warning"] = {
+                            "fingerprint": duplicate_fingerprint,
+                            "matches": duplicate_matches,
+                        }
+                        st.toast("发现可能重复的题目，请确认后再次点击保存", icon="⚠️")
+                        return
+                    allow_duplicate = bool(duplicate_matches)
+                    st.session_state.pop("entry_duplicate_warning", None)
                     full_text = extract_and_replace_tikz(full_text, s_filename, s_save_dir)
                     from utils.csv_ops import get_next_id
                     new_id = get_next_id()
@@ -4495,9 +5064,16 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                     from utils.latex_ops import inject_meta_data
                     full_text = inject_meta_data(full_text, meta_dict)
                     try:
-                        with open(s_file_path, "w", encoding="utf-8") as f:
-                            f.write(full_text)
-                        add_to_csv_index(s_file_path, full_text, s_year, s_type, s_paper, s_num, s_subj)
+                        new_id = create_question_file(
+                            s_file_path,
+                            full_text,
+                            s_year,
+                            s_type,
+                            s_paper,
+                            s_num,
+                            s_subj,
+                            allow_duplicate=allow_duplicate,
+                        )
                         solve_key = "cloze_auto_solve" if cloze_mode else "entry_auto_solve"
                         should_auto_solve = st.session_state.get(solve_key, False)
                         if cloze_mode:
@@ -4529,7 +5105,16 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                         st.session_state["entry_number"] = ""
                     except Exception as e:
                         st.toast(f"保存失败: {e}", icon="❌")
-                st.button("💾 保存题目", type="primary", on_click=on_save_entry, use_container_width=True)
+                pending_duplicate = st.session_state.get("entry_duplicate_warning") or {}
+                if pending_duplicate.get("matches"):
+                    st.warning("检测到相同或高度相似题目。再次点击保存将保留当前题目。")
+                    for match in pending_duplicate["matches"][:3]:
+                        st.caption(
+                            f"{'完全重复' if match.get('kind') == 'exact' else '相似'} "
+                            f"{match.get('score', 0) * 100:.1f}%：{match.get('name') or match.get('relative_path')}"
+                        )
+                save_label = "⚠️ 确认仍然保存" if pending_duplicate.get("matches") else "💾 保存题目"
+                st.button(save_label, type="primary", on_click=on_save_entry, use_container_width=True)
             filename = generate_filename(year, p_type_code, paper_name, number, subject or "未分类")
             st.info(f"目标文件名: `{filename}`")
             if cloze_mode:
@@ -4560,11 +5145,128 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
         else:
             st.empty()
                              
+# ================= 组卷服务题目卡片 =================
+def render_exam_question_card(q_label, content, fpath, action_key):
+    """Render a focused, read-only question card for the exam-selection workflow."""
+    from utils.latex_ops import parse_meta_data
+
+    meta, _ = parse_meta_data(content)
+    difficulty = (meta.get("难度星级", "") or "").strip() or "未设置"
+    tags = (meta.get("标签", "") or "").strip() or "无标签"
+    is_selected = fpath in st.session_state.get("exam_selected_qs", [])
+
+    with st.container(border=True):
+        st.markdown('<span class="mc-exam-card-anchor"></span>', unsafe_allow_html=True)
+        title_col, action_col = st.columns([3.4, 1], gap="small", vertical_alignment="center")
+        with title_col:
+            state_label = "已加入组卷" if is_selected else "待选择"
+            state_class = "selected" if is_selected else "available"
+            st.markdown(
+                f'<div class="mc-exam-card-title">{html.escape(q_label)}</div>'
+                f'<span class="mc-exam-card-state {state_class}">{state_label}</span>',
+                unsafe_allow_html=True,
+            )
+        with action_col:
+            action_label = "移出组卷" if is_selected else "加入组卷"
+            action_type = "primary" if is_selected else "secondary"
+            if st.button(action_label, key=action_key, type=action_type, use_container_width=True):
+                selected_paths = st.session_state.setdefault("exam_selected_qs", [])
+                if is_selected:
+                    selected_paths.remove(fpath)
+                else:
+                    selected_paths.append(fpath)
+                if st.session_state.get("ai_exam_active"):
+                    st.session_state["ai_exam_modified"] = True
+                st.rerun()
+
+        st.markdown(
+            f'<div class="mc-exam-card-meta">'
+            f'<span><strong>难度</strong> {html.escape(difficulty)}</span>'
+            f'<span><strong>标签</strong> {html.escape(tags)}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="mc-exam-card-preview-label">问题预览</div>', unsafe_allow_html=True)
+        try:
+            st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"渲染错误: {e}")
+
+
 # ================= 页面：浏览/编辑 =================
 def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None, page_title=None):
     """Browse questions; default scope excludes WK, while the cloze library passes 'WK'."""
     is_cloze_library = paper_type_scope == "WK"
     page_title = page_title or ("🧩 挖空题库" if is_cloze_library else "🔍 全局浏览与编辑")
+    if is_exam_mode:
+        st.markdown("""
+        <style>
+        [data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-card-anchor) {
+            border-color: rgba(0, 0, 0, 0.10) !important;
+            border-radius: 10px !important;
+            background: rgba(255, 255, 255, 0.72) !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) {
+            gap: 0.65rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-title {
+            color: #1d1d1f;
+            font-size: 1.08rem;
+            font-weight: 700;
+            line-height: 1.35;
+            margin: 0 0 0.2rem;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-state {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.16rem 0.48rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            line-height: 1.25;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-state.available {
+            color: #5f6368;
+            background: #f1f3f4;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-state.selected {
+            color: #075e54;
+            background: #dff6ef;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem 1.25rem;
+            padding: 0.55rem 0.7rem;
+            border-top: 1px solid rgba(0, 0, 0, 0.07);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+            color: #6e6e73;
+            font-size: 0.82rem;
+            line-height: 1.4;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-meta strong {
+            color: #3f3f46;
+            font-weight: 650;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-preview-label {
+            color: #5b21b6;
+            font-size: 0.88rem;
+            font-weight: 700;
+            margin-top: 0.1rem;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) div[data-testid="stButton"] > button {
+            min-height: 2.3rem !important;
+            white-space: nowrap !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) div[data-testid="stMarkdownContainer"] p {
+            line-height: 1.65 !important;
+        }
+        @media (max-width: 760px) {
+            div[data-testid="stVerticalBlock"]:has(.mc-exam-card-anchor) .mc-exam-card-meta {
+                gap: 0.35rem 0.8rem;
+            }
+        }
+        </style>
+        """, unsafe_allow_html=True)
     if is_delete_mode:
         st.markdown("""
         <style>
@@ -5041,27 +5743,11 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     st.divider()
                                     continue
 
-                                render_question_header(q_label, content, fpath)
-                                
                                 if is_exam_mode:
-                                    # 组卷模式：仅展示渲染结果及操作按钮
-                                    st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
-                                    is_selected = fpath in st.session_state.get("exam_selected_qs", [])
-                                    if is_selected:
-                                        st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
-                                        if st.button("❌ 本题取消组卷", key=f"exam_rm_{fpath}", type="primary"):
-                                            st.session_state["exam_selected_qs"].remove(fpath)
-                                            if st.session_state.get("ai_exam_active"):
-                                                st.session_state["ai_exam_modified"] = True
-                                            st.rerun()
-                                    else:
-                                        if st.button("➕ 本题加入组卷", key=f"exam_add_{fpath}", type="secondary"):
-                                            st.session_state["exam_selected_qs"].append(fpath)
-                                            if st.session_state.get("ai_exam_active"):
-                                                st.session_state["ai_exam_modified"] = True
-                                            st.rerun()
-                                    st.divider()
+                                    render_exam_question_card(q_label, content, fpath, f"exam_action_subject_all_{fpath}")
                                     continue
+
+                                render_question_header(q_label, content, fpath)
                                 
                                 c1, c2 = st.columns([0.85, 1.15])
                                 edit_mode_key = f"browse_edit_mode_{fpath}"
@@ -5179,27 +5865,11 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     st.divider()
                                     continue
 
-                                render_question_header(q_label, content, fpath)
-                                
                                 if is_exam_mode:
-                                    # 组卷模式：仅展示渲染结果及操作按钮
-                                    st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
-                                    is_selected = fpath in st.session_state.get("exam_selected_qs", [])
-                                    if is_selected:
-                                        st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
-                                        if st.button("❌ 本题取消组卷", key=f"exam_rm_{fpath}", type="primary"):
-                                            st.session_state["exam_selected_qs"].remove(fpath)
-                                            if st.session_state.get("ai_exam_active"):
-                                                st.session_state["ai_exam_modified"] = True
-                                            st.rerun()
-                                    else:
-                                        if st.button("➕ 本题加入组卷", key=f"exam_add_{fpath}", type="secondary"):
-                                            st.session_state["exam_selected_qs"].append(fpath)
-                                            if st.session_state.get("ai_exam_active"):
-                                                st.session_state["ai_exam_modified"] = True
-                                            st.rerun()
-                                    st.divider()
+                                    render_exam_question_card(q_label, content, fpath, f"exam_action_subject_year_{fpath}")
                                     continue
+
+                                render_question_header(q_label, content, fpath)
                                 
                                 # 左右布局: 编辑 vs 预览
                                 c1, c2 = st.columns([0.85, 1.15])
@@ -5221,6 +5891,8 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                             key=f"{text_area_key}_{int(os.path.getmtime(fpath)) if os.path.exists(fpath) else 0}"
                                         )
                                         if st.button("💾 保存修改", key=f"subj_save_btn_{fpath}", type="primary"):
+                                            if not _duplicate_save_confirmation(fpath, new_content, scope=f"subj:{fpath}"):
+                                                st.rerun()
                                             final_content = save_modified_tex_file(fpath, new_content)
                                             _update_csv_index_for_content_change(fpath, final_content)
                                             st.session_state[edit_mode_key] = False
@@ -5437,28 +6109,11 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 st.divider()
                                 continue
 
-                            render_question_header(q_label, content, q_path)
-                            
                             if is_exam_mode:
-                                # 组卷模式：不展示源码，仅展示渲染后的问题和组卷操作按钮
-                                st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
-                                
-                                is_selected = q_path in st.session_state.get("exam_selected_qs", [])
-                                if is_selected:
-                                    st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
-                                    if st.button("❌ 本题取消组卷", key=f"exam_rm_{q_path}", type="primary"):
-                                        st.session_state["exam_selected_qs"].remove(q_path)
-                                        if st.session_state.get("ai_exam_active"):
-                                            st.session_state["ai_exam_modified"] = True
-                                        st.rerun()
-                                else:
-                                    if st.button("➕ 本题加入组卷", key=f"exam_add_{q_path}", type="secondary"):
-                                        st.session_state["exam_selected_qs"].append(q_path)
-                                        if st.session_state.get("ai_exam_active"):
-                                            st.session_state["ai_exam_modified"] = True
-                                        st.rerun()
-                                st.divider()
+                                render_exam_question_card(q_label, content, q_path, f"exam_action_paper_{q_path}")
                                 continue
+
+                            render_question_header(q_label, content, q_path)
                                 
                             # 左右布局
                             c1, c2 = st.columns([0.85, 1.15])
@@ -5482,6 +6137,8 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     )
                                     # 保存按钮
                                     if st.button("💾 保存修改", key=f"save_btn_{q_path}", type="primary"):
+                                        if not _duplicate_save_confirmation(q_path, new_content, scope=f"paper:{q_path}"):
+                                            st.rerun()
                                         final_content = save_modified_tex_file(q_path, new_content)
                                         _update_csv_index_for_content_change(q_path, final_content)
                                         st.session_state[edit_mode_key] = False
@@ -5653,29 +6310,13 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         st.divider()
                         continue
 
-                    st.markdown(f"### {q_label} {extra_label}", unsafe_allow_html=True)
-                    
                     if is_exam_mode:
                         with open(fpath, "r", encoding="utf-8") as f:
                             content = f.read()
-                        render_question_header(q_label, content, fpath, extra_html_label=extra_label)
-                        st.markdown(latex_to_markdown(content), unsafe_allow_html=True)
-                        is_selected = fpath in st.session_state.get("exam_selected_qs", [])
-                        if is_selected:
-                            st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
-                            if st.button("❌ 本题取消组卷", key=f"exam_rm_time_{fpath}", type="primary"):
-                                st.session_state["exam_selected_qs"].remove(fpath)
-                                if st.session_state.get("ai_exam_active"):
-                                    st.session_state["ai_exam_modified"] = True
-                                st.rerun()
-                        else:
-                            if st.button("➕ 本题加入组卷", key=f"exam_add_time_{fpath}", type="secondary"):
-                                st.session_state["exam_selected_qs"].append(fpath)
-                                if st.session_state.get("ai_exam_active"):
-                                    st.session_state["ai_exam_modified"] = True
-                                st.rerun()
-                        st.divider()
+                        render_exam_question_card(q_label, content, fpath, f"exam_action_time_{fpath}")
                         continue
+
+                    st.markdown(f"### {q_label} {extra_label}", unsafe_allow_html=True)
                     
                     c1, c2 = st.columns([0.85, 1.15])
                     edit_mode_key = f"time_edit_mode_{fpath}"
@@ -5853,41 +6494,18 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
             with open(selected_file_path, "r", encoding="utf-8") as f:
                 current_content = f.read()
                 
-            # 渲染题目顶部属性栏和标题
+            # 组卷模式使用聚焦卡片，普通浏览继续使用完整编辑头部。
             if "browse_mode" in locals():
                 q_fname = os.path.basename(selected_file_path)
                 q_label = format_question_title(q_fname)
-                if is_delete_mode:
-                    render_static_question_header(q_label, current_content, selected_file_path)
-                else:
-                    render_question_header(q_label, current_content, selected_file_path)
                 
             if is_exam_mode:
-                st.subheader("👁️ 问题预览")
-                try:
-                    md_content = latex_to_markdown(current_content)
-                    st.markdown(md_content, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"预览渲染出错: {e}")
-                    
-                st.write("")
-                is_selected = selected_file_path in st.session_state.get("exam_selected_qs", [])
-                if is_selected:
-                    st.markdown('<span class="red-btn-hook"></span>', unsafe_allow_html=True)
-                    if st.button("❌ 本题取消组卷", key=f"exam_rm_sv_{selected_file_path}", type="primary"):
-                        st.session_state["exam_selected_qs"].remove(selected_file_path)
-                        if st.session_state.get("ai_exam_active"):
-                            st.session_state["ai_exam_modified"] = True
-                        st.rerun()
-                else:
-                    if st.button("➕ 本题加入组卷", key=f"exam_add_sv_{selected_file_path}", type="secondary"):
-                        st.session_state["exam_selected_qs"].append(selected_file_path)
-                        if st.session_state.get("ai_exam_active"):
-                            st.session_state["ai_exam_modified"] = True
-                        st.rerun()
+                render_exam_question_card(q_label, current_content, selected_file_path, f"exam_action_selected_{selected_file_path}")
             elif is_delete_mode:
+                render_static_question_header(q_label, current_content, selected_file_path)
                 render_delete_question_item(selected_file_path, q_label, current_content, key_prefix="delete_selected", show_header=False)
             else:
+                render_question_header(q_label, current_content, selected_file_path)
                 col_edit, col_preview = st.columns([1, 1])
                 
                 with col_edit:
@@ -5980,6 +6598,64 @@ def page_exam_paper_generation():
 
     if exam_service_mode == "📂 历史组卷浏览":
         # ================= 新增：历史组卷浏览 =================
+        st.markdown("""
+        <style>
+        #mc-history-browser-anchor {
+            display: none !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) {
+            gap: 0.45rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) div[data-testid="stHorizontalBlock"] {
+            gap: 0.65rem !important;
+            margin: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) h3,
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) h4,
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) h5 {
+            margin-top: 0.28rem !important;
+            margin-bottom: 0.18rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) hr {
+            margin: 0.35rem 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) div[data-testid="stRadio"] {
+            margin-bottom: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {
+            gap: 0.3rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) div[data-testid="stRadio"] label {
+            padding-top: 0.18rem !important;
+            padding-bottom: 0.18rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) div[data-testid="stSelectbox"] {
+            margin-bottom: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) .mc-history-divider {
+            height: 1px;
+            margin: 0.45rem 0;
+            background: rgba(0, 0, 0, 0.08);
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) .mc-history-question-number {
+            color: #5b21b6;
+            font-size: 0.86rem;
+            font-weight: 700;
+            line-height: 1.3;
+            margin: 0.35rem 0 0.12rem;
+        }
+        div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) pre {
+            margin-top: 0.2rem !important;
+            margin-bottom: 0.2rem !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            div[data-testid="stVerticalBlock"]:has(#mc-history-browser-anchor) * {
+                scroll-behavior: auto !important;
+            }
+        }
+        </style>
+        <span id="mc-history-browser-anchor"></span>
+        """, unsafe_allow_html=True)
         export_base_dir = os.path.join(BASE_DIR, "Test Paper Group", "导出文件")
         if not os.path.exists(export_base_dir):
             st.info("暂无组卷记录")
@@ -5988,7 +6664,7 @@ def page_exam_paper_generation():
             if not years:
                 st.info("暂无组卷记录")
             else:
-                c_y1, c_y2 = st.columns([1, 6])
+                c_y1, c_y2 = st.columns([1, 6], vertical_alignment="center")
                 with c_y1:
                     st.markdown("##### 📅 选择年份")
                 with c_y2:
@@ -6005,7 +6681,7 @@ def page_exam_paper_generation():
                         months.extend([d for d in os.listdir(y_dir) if os.path.isdir(os.path.join(y_dir, d))])
                     months = sorted(list(set(months)), reverse=True)
                 
-                c_m1, c_m2 = st.columns([1, 6])
+                c_m1, c_m2 = st.columns([1, 6], vertical_alignment="center")
                 with c_m1:
                     st.markdown("##### 📅 选择月份")
                 with c_m2:
@@ -6034,12 +6710,13 @@ def page_exam_paper_generation():
                 if not papers:
                     st.info("未找到符合条件的试卷")
                 else:
-                    st.markdown("---")
+                    st.markdown('<div class="mc-history-divider"></div>', unsafe_allow_html=True)
                     paper_names = [p["name"] for p in papers]
-                    selected_paper_name = st.selectbox("📄 试卷列表", paper_names)
+                    st.markdown("##### 📄 选择试卷")
+                    selected_paper_name = st.selectbox("选择试卷", paper_names, label_visibility="collapsed")
                     selected_paper = next(p for p in papers if p["name"] == selected_paper_name)
                     
-                    st.markdown("---")
+                    st.markdown('<div class="mc-history-divider"></div>', unsafe_allow_html=True)
                     present_mode = st.radio("呈现形式", ["以题目组合形式呈现", "以整卷形式呈现"], horizontal=True, label_visibility="collapsed")
                     
                     if present_mode == "以整卷形式呈现":
@@ -6107,10 +6784,10 @@ def page_exam_paper_generation():
                                 elif b["type"] == "subsection":
                                     st.markdown(f"##### 📝 {b['content']}")
                                 elif b["type"] == "question":
-                                    st.markdown(f"**第 {q_count} 题**")
+                                    st.markdown(f'<div class="mc-history-question-number">第 {q_count} 题</div>', unsafe_allow_html=True)
                                     st.markdown(latex_to_markdown(b["content"]), unsafe_allow_html=True)
                                     q_count += 1
-                                st.markdown("---")
+                                st.markdown('<div class="mc-history-divider"></div>', unsafe_allow_html=True)
         return
 
     # 1. 主题选择与组卷按钮
@@ -7251,6 +7928,101 @@ def render_typesetting_workspace():
                     
         st.divider()
 
+# ================= 题目查重与操作日志 =================
+def render_duplicate_check_page():
+    st.header("题目查重")
+    st.caption("按题干内容检查完全重复和高度相似题目。查重只提供核对建议，不会自动删除任何题目。")
+
+    c_threshold, c_limit = st.columns([1, 1], gap="small")
+    with c_threshold:
+        threshold = st.slider("相似度阈值", min_value=0.80, max_value=0.99, value=0.88, step=0.01)
+    with c_limit:
+        max_pairs = st.number_input("最多显示组合数", min_value=20, max_value=500, value=200, step=20)
+
+    if st.button("开始扫描题库", key="duplicate_scan_start", type="primary", use_container_width=True):
+        with st.spinner("正在扫描题目内容，请稍候..."):
+            results = scan_duplicate_pairs(
+                rows=_csv_index_cached(_csv_index_cache_token()),
+                similarity_threshold=threshold,
+                max_pairs=int(max_pairs),
+            )
+        st.session_state["duplicate_scan_results"] = results
+        st.session_state["duplicate_scan_threshold"] = threshold
+        record_operation(
+            "scan_duplicates",
+            details=f"threshold={threshold:.2f}, pairs={len(results)}",
+        )
+
+    results = st.session_state.get("duplicate_scan_results") or []
+    if not results:
+        st.info("暂未发现重复组合，或尚未开始扫描。")
+        return
+
+    exact_count = sum(1 for item in results if item.get("kind") == "exact")
+    similar_count = len(results) - exact_count
+    st.success(f"共发现 {len(results)} 组候选：完全重复 {exact_count} 组，高度相似 {similar_count} 组。")
+
+    for index, pair in enumerate(results, start=1):
+        left = pair.get("left") or {}
+        right = pair.get("right") or {}
+        kind_label = "完全重复" if pair.get("kind") == "exact" else "高度相似"
+        score_text = f"{float(pair.get('score', 0)) * 100:.1f}%"
+        title = f"{index}. {kind_label} · {score_text}"
+        with st.expander(title, expanded=index == 1):
+            c_left, c_right = st.columns(2, gap="large")
+            for container, item in ((c_left, left), (c_right, right)):
+                with container:
+                    st.markdown(f"**{html.escape(item.get('name') or '未命名题目')}**", unsafe_allow_html=True)
+                    st.caption(
+                        f"ID：{item.get('question_id') or '无'} · "
+                        f"板块：{item.get('subject') or '未分类'}"
+                    )
+                    st.code(item.get("relative_path") or item.get("path") or "路径不可用", language="text")
+                    path = item.get("path") or ""
+                    if path and os.path.isfile(path):
+                        try:
+                            with open(path, "r", encoding="utf-8") as question_file:
+                                render_question_preview(question_file.read())
+                        except Exception as exc:
+                            st.warning(f"题目预览失败：{exc}")
+                    else:
+                        st.warning("题目文件不存在，建议先重建题库索引。")
+
+    st.caption("处理建议：保留信息更完整、来源更可靠的题目；确认后再通过现有删除/编辑功能处理另一份。")
+
+
+def render_operation_log_panel():
+    with st.expander("最近操作日志", expanded=False):
+        operations = read_recent_operations(limit=100)
+        if not operations:
+            st.info("暂时没有题目操作日志。")
+            return
+
+        action_labels = {
+            "create_question": "创建题目",
+            "update_question_content": "修改题目内容",
+            "update_question_meta": "修改题目属性",
+            "rename_question": "重命名题目",
+            "delete_question": "删除题目",
+            "restore_question": "恢复题目",
+            "permanently_delete_backup": "永久删除备份",
+            "scan_duplicates": "题目查重",
+            "rebuild_csv_index": "重建题库索引",
+            "update_chapter_index": "更新章节索引",
+        }
+        display_rows = []
+        for operation in operations:
+            display_rows.append({
+                "时间": operation.get("created_at", ""),
+                "操作": action_labels.get(operation.get("action"), operation.get("action", "")),
+                "状态": operation.get("status", ""),
+                "题目 ID": operation.get("question_id", ""),
+                "路径": operation.get("path", ""),
+                "说明": operation.get("details", ""),
+            })
+        st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+
 # ================= 页面：工具箱 =================
 def page_tools():
     st.header("🛠️ 工具箱")
@@ -7278,6 +8050,12 @@ def page_tools():
             st.rerun()
         page_browse(paper_type_scope="WK", page_title="🧩 挖空题库")
         return
+    if st.session_state.get("tools_subpage") == "duplicate_check":
+        if st.button("返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_duplicate_check_page()
+        return
     
     st.markdown("""
     <style>
@@ -7291,11 +8069,11 @@ def page_tools():
     
     /* 单个工具卡片样式 */
     .tool-card {
-        background-color: #ffffff;
-        border: 1px solid #e1e4e8;
+        background-color: var(--mc-surface);
+        border: 1px solid var(--mc-border);
         border-radius: 10px;
         padding: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+        box-shadow: var(--mc-shadow);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
         display: flex;
         flex-direction: column;
@@ -7305,14 +8083,14 @@ def page_tools():
     .tool-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 8px 15px rgba(0,0,0,0.08);
-        border-color: #4c1d95; /* 悬浮时边框变紫 */
+        border-color: var(--mc-accent); /* 悬浮时边框变紫 */
     }
     
     /* 工具卡片标题 */
     .tool-title {
         font-size: 18px;
         font-weight: 700;
-        color: #24292e;
+        color: var(--mc-text);
         margin-bottom: 10px;
         display: flex;
         align-items: center;
@@ -7322,7 +8100,7 @@ def page_tools():
     /* 工具卡片描述文本 */
     .tool-desc {
         font-size: 14px;
-        color: #586069;
+        color: var(--mc-muted);
         line-height: 1.5;
         margin-bottom: 20px;
         flex-grow: 1; /* 让描述部分占据剩余空间，把按钮推到最底 */
@@ -7337,13 +8115,13 @@ def page_tools():
     
     /* 如果描述带有高亮底色 (例如第一个工具) */
     .tool-desc-highlight {
-        background-color: #f1f8ff;
-        border-left: 4px solid #0366d6;
+        background-color: var(--mc-surface-soft);
+        border: 1px solid var(--mc-border);
         padding: 10px;
         border-radius: 4px;
         margin-bottom: 20px;
         font-size: 13px;
-        color: #24292e;
+        color: var(--mc-text);
         flex-grow: 1;
     }
     </style>
@@ -7380,6 +8158,7 @@ def page_tools():
                     )
                     clear_statistics_cache()
                     st.success("题库索引重建成功！")
+                    record_operation("rebuild_csv_index", details="manual rebuild from chapters")
                     st.toast("题库索引同步完成！", icon="✅")
                     time.sleep(1)
                     st.rerun()
@@ -7407,6 +8186,7 @@ def page_tools():
                     import utils.batch_gen as batch_gen
                     batch_gen.update_chapter_contents()
                     st.success("章节索引更新完成！")
+                    record_operation("update_chapter_index", details="manual chapter index update")
                 except Exception as e:
                     st.error(f"执行失败: {e}")
 
@@ -7564,6 +8344,37 @@ def page_tools():
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    r4_c1, r4_c2, r4_c3 = st.columns([1, 1, 1])
+    with r4_c1:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🔎 10. 题目查重</div>
+            <div class="tool-desc">
+                按题干内容扫描题库，识别完全重复和高度相似的题目，提供题目 ID、来源路径和并排预览，方便人工确认后处理。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_duplicate_check']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入题目查重", key="btn_tools_duplicate_check", use_container_width=True):
+            st.session_state["tools_subpage"] = "duplicate_check"
+            st.session_state.pop("duplicate_scan_results", None)
+            st.rerun()
+
+    with r4_c2:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🧾 11. 操作记录</div>
+            <div class="tool-desc">
+                查看题目创建、编辑、重命名、删除、恢复和查重记录，便于追踪最近的数据变更。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    render_operation_log_panel()
+
 
 def batch_fix_choice_formats():
     import re
@@ -8159,6 +8970,11 @@ def update_question_meta(fpath, key, value):
     fm[key] = value
     new_fc = inject_meta_data(fc, fm)
     atomic_write_text(fpath, new_fc, backup=True)
+    record_operation(
+        "update_question_meta",
+        path=os.path.abspath(fpath),
+        details=f"field={key}",
+    )
     _invalidate_semantic_for_file(fpath)
     try:
         from utils.csv_ops import update_csv_index_for_edit
@@ -8396,9 +9212,9 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
     div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button,
     .mc-meta-action-popover button,
     .mc-meta-action-button {
-        color: #ffffff !important;
-        background: linear-gradient(135deg, #9f7aea 0%, #7c3aed 52%, #5b21b6 100%) !important;
-        border: 1px solid rgba(255, 255, 255, 0.42) !important;
+        color: var(--mc-action-text) !important;
+        background: var(--mc-action-bg) !important;
+        border: 1px solid var(--mc-action-border) !important;
         padding: 0 !important;
         min-height: 36px !important;
         height: 36px !important;
@@ -8415,8 +9231,8 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         position: relative !important;
         overflow: hidden !important;
         gap: 0 !important;
-        text-shadow: 0 1px 1px rgba(49, 18, 101, 0.32) !important;
-        box-shadow: 0 8px 18px rgba(109, 40, 217, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.36), inset 0 -1px 0 rgba(49, 18, 101, 0.22) !important;
+        text-shadow: none !important;
+        box-shadow: var(--mc-action-shadow) !important;
         transform: translateY(0);
         transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease !important;
     }
@@ -8451,27 +9267,28 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
         margin: 0 !important;
         line-height: 1 !important;
         font-size: 22px !important;
-        color: #ffffff !important;
+        color: var(--mc-action-text) !important;
     }
     div[data-testid="column"]:has(.meta-action-cell) div[data-testid="stPopover"] > button:hover,
     .mc-meta-action-popover button:hover,
     .mc-meta-action-button:hover {
-        background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 46%, #6d28d9 100%) !important;
-        border-color: rgba(76, 29, 149, 0.42) !important;
-        box-shadow: 0 10px 22px rgba(109, 40, 217, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.38), inset 0 -1px 0 rgba(49, 18, 101, 0.18) !important;
+        background: var(--mc-action-bg-hover) !important;
+        border-color: var(--mc-action-border) !important;
+        box-shadow: 0 8px 18px rgba(91, 33, 182, 0.16) !important;
         transform: translateY(-1px);
     }
     .mc-meta-action-button[aria-expanded="true"],
     .mc-meta-action-button:active {
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 54%, #4c1d95 100%) !important;
-        box-shadow: 0 5px 12px rgba(76, 29, 149, 0.30), inset 0 2px 4px rgba(49, 18, 101, 0.24) !important;
+        background: #b99ddd !important;
+        border-color: #a789cc !important;
+        box-shadow: 0 4px 10px rgba(91, 33, 182, 0.14) !important;
         transform: translateY(0);
     }
     .mc-meta-plus {
         display: block;
         position: relative;
         z-index: 1;
-        color: #ffffff;
+        color: var(--mc-action-text);
         font-size: 22px;
         font-weight: 800;
         line-height: 1;
@@ -8538,9 +9355,9 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
                     button.innerHTML = '<span class="mc-meta-plus">＋</span>';
                 }
                 Object.assign(button.style, {
-                    color: "#ffffff",
-                    background: "linear-gradient(135deg, #9f7aea 0%, #7c3aed 52%, #5b21b6 100%)",
-                    border: "1px solid rgba(255, 255, 255, 0.42)",
+                    color: "#332442",
+                    background: "#d6c4ee",
+                    border: "1px solid #b49ad2",
                     width: "36px",
                     minWidth: "36px",
                     maxWidth: "36px",
@@ -8554,8 +9371,8 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
                     position: "relative",
                     overflow: "hidden",
                     gap: "0",
-                    textShadow: "0 1px 1px rgba(49, 18, 101, 0.32)",
-                    boxShadow: "0 8px 18px rgba(109, 40, 217, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.36), inset 0 -1px 0 rgba(49, 18, 101, 0.22)",
+                    textShadow: "none",
+                    boxShadow: "0 5px 14px rgba(91, 33, 182, 0.12)",
                     transition: "transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease"
                 });
                 button.querySelectorAll('svg, [data-testid="stIconMaterial"]').forEach((icon) => {
@@ -8563,7 +9380,7 @@ def render_question_header(q_label, content, fpath, extra_html_label=""):
                 });
                 button.querySelectorAll("p, span").forEach((textNode) => {
                     if ((textNode.textContent || "").includes("+") || (textNode.textContent || "").includes("＋")) {
-                        textNode.style.setProperty("color", "#ffffff", "important");
+                        textNode.style.setProperty("color", "#332442", "important");
                         textNode.style.setProperty("font-size", "22px", "important");
                         textNode.style.setProperty("font-weight", "800", "important");
                         textNode.style.setProperty("line-height", "1", "important");
@@ -9223,6 +10040,8 @@ def page_system_intro():
 - `utils/charts.py`：数据统计页面的图表渲染
 - `services/file_service.py`：原子写入、覆盖备份等文件安全能力
 - `services/ai_service.py`：AI 接口地址规范化、请求封装与 JSON 提取
+- `services/question_service.py`：题目创建、查重指纹和重复题扫描
+- `services/operation_log.py`：批量操作记录与维护审计
 - `Test Paper Group/主题模板/`：组卷导出的 LaTeX 模板来源
 
 整体设计思路是：主应用负责“把流程跑通”，工具层负责“把单个动作做稳”，题目数据始终落回 `.tex` 文件。
@@ -9265,7 +10084,7 @@ def page_system_intro():
 **🛠️ 工具箱**
 
 - 面向“全库/批量维护”的工具集合
-- 适合做批量规范化、批量修复、批量结构调整等任务
+- 适合做批量规范化、批量修复、批量结构调整、题目查重和操作记录查看
 
 **🖨️ 组卷服务**
 
@@ -9316,6 +10135,31 @@ def render_advanced_search_inline():
     }
     
     /* 去除列之间的默认间距，防止按钮被挤下来 */
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) {
+        display: grid !important;
+        grid-template-columns: minmax(0, 2fr) minmax(96px, 112px) minmax(320px, 1fr) !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        align-items: stretch !important;
+        gap: 1rem !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) > div[data-testid="column"] {
+        min-width: 0 !important;
+        width: auto !important;
+        max-width: none !important;
+        flex: initial !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) > div[data-testid="stVerticalBlock"],
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        box-sizing: border-box !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) {
+        overflow: hidden !important;
+    }
     div[data-testid="column"]:has(#adv-search-btn-anchor) {
         display: flex !important;
         align-items: center !important;
@@ -9336,6 +10180,67 @@ def render_advanced_search_inline():
         margin: 0 !important;
         padding: 0 !important;
     }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        align-items: center !important;
+        gap: 0.75rem !important;
+        margin: 0 0 0.75rem !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+        min-width: 0 !important;
+        width: auto !important;
+        max-width: none !important;
+        flex: initial !important;
+        padding: 0 !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="column"] > div[data-testid="stVerticalBlock"],
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] div[data-testid="stElementContainer"] {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stSelectbox"],
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] {
+        width: 100% !important;
+        max-width: none !important;
+        min-height: 42px !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stSelectbox"] > div,
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] > div {
+        width: 100% !important;
+        max-width: none !important;
+        box-sizing: border-box !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] input,
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] {
+        width: 100% !important;
+        max-width: none !important;
+        box-sizing: border-box !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] > div,
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] input {
+        min-height: 42px !important;
+        height: 42px !important;
+        border-radius: 10px !important;
+        border-color: #d9e0e8 !important;
+        background: rgba(255, 255, 255, 0.96) !important;
+        box-shadow: 0 1px 2px rgba(31, 35, 40, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] > div:focus-within,
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] input:focus {
+        border-color: rgba(0, 122, 255, 0.72) !important;
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.13), 0 1px 2px rgba(31, 35, 40, 0.04) !important;
+    }
+    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] input::placeholder {
+        color: #8b96a5 !important;
+        opacity: 1 !important;
+    }
     div[data-testid="column"]:has(#adv-search-info-anchor) {
         display: flex !important;
         align-items: flex-start !important;
@@ -9346,48 +10251,65 @@ def render_advanced_search_inline():
     }
     div[data-testid="column"]:has(#adv-search-info-anchor) > div[data-testid="stVerticalBlock"] {
         height: 100% !important;
+        width: 100% !important;
         display: flex !important;
+        align-items: stretch !important;
         justify-content: center !important;
         margin: 0 !important;
         padding: 0 !important;
     }
     div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
+        width: 100% !important;
         min-height: 64px !important;
         height: 64px !important;
         max-height: 64px !important;
-        margin: 0 !important;
-        padding: 0.35rem 0.65rem !important;
-        border: 0 !important;
+        margin: 0.1rem 0 0 !important;
+        padding: 0.65rem 0.85rem !important;
+        border: 1px solid #d6e6f8 !important;
+        border-radius: 10px !important;
         box-shadow: none !important;
-        background: transparent !important;
+        background: #eaf3ff !important;
         display: flex !important;
         align-items: center !important;
         box-sizing: border-box !important;
         line-height: 1.25 !important;
         overflow: hidden !important;
     }
+    div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
+        color: #175493 !important;
+        font-size: 13px !important;
+        line-height: 1.45 !important;
+    }
     div[data-testid="column"]:has(#adv-search-btn-anchor) button {
         height: 176px !important;
         min-height: 176px !important;
         max-height: 176px !important;
-        width: 54px !important;
-        min-width: 54px !important;
-        max-width: 54px !important;
-        padding: 0 !important;
+        width: 96px !important;
+        min-width: 96px !important;
+        max-width: 96px !important;
+        padding: 0.75rem !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        border-radius: 7px !important;
+        gap: 0.45rem !important;
+        border-radius: 10px !important;
         margin: 0px !important;
-        background-color: #ffffff !important; /* 白色底色 */
-        border: 1px solid #d0d7de !important; /* 浅灰色边框 */
-        color: #24292e !important; /* 深灰色文字 */
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+        background: linear-gradient(180deg, #1388ff 0%, #007aff 100%) !important;
+        border: 1px solid #007aff !important;
+        color: #ffffff !important;
+        box-shadow: 0 8px 18px rgba(0, 122, 255, 0.2) !important;
+        transition: transform 0.14s ease, background 0.14s ease, box-shadow 0.14s ease !important;
     }
     div[data-testid="column"]:has(#adv-search-btn-anchor) button:hover {
-        background-color: #f3f4f6 !important;
-        border-color: #4c1d95 !important;
+        background: linear-gradient(180deg, #0b7df0 0%, #0066d6 100%) !important;
+        border-color: #0066d6 !important;
+        box-shadow: 0 10px 22px rgba(0, 102, 214, 0.28) !important;
+        transform: translateY(-1px) !important;
+    }
+    div[data-testid="column"]:has(#adv-search-btn-anchor) button:active {
+        transform: translateY(0) scale(0.98) !important;
+        box-shadow: 0 5px 12px rgba(0, 102, 214, 0.2) !important;
     }
     div[data-testid="column"]:has(#adv-search-btn-anchor) button p {
         writing-mode: horizontal-tb !important; /* 恢复水平书写模式 */
@@ -9396,17 +10318,58 @@ def render_advanced_search_inline():
         line-height: 1.35 !important;
         margin: 0 !important;
         font-size: 13px !important;
-        font-weight: bold !important;
+        font-weight: 700 !important;
         white-space: pre-wrap !important; /* 强制保留换行符 */
         word-break: keep-all !important;
         text-align: center !important;
         display: block !important;
+        color: #ffffff !important;
     }
     
     /* 彻底消除左侧输入框列的顶部间距 */
     div[data-testid="column"]:has(#adv-search-inputs-anchor) {
         margin-top: 0 !important;
         padding-top: 0 !important;
+    }
+    @media (max-width: 900px) {
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) {
+            grid-template-columns: minmax(0, 1fr) !important;
+            gap: 0.75rem !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) > div[data-testid="column"]:has(#adv-search-inputs-anchor),
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) > div[data-testid="column"]:has(#adv-search-btn-anchor),
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) > div[data-testid="column"]:has(#adv-search-info-anchor) {
+            width: 100% !important;
+            max-width: 100% !important;
+            flex: 1 1 auto !important;
+        }
+        div[data-testid="column"]:has(#adv-search-btn-anchor) {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+        div[data-testid="column"]:has(#adv-search-btn-anchor) button {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            height: 48px !important;
+            min-height: 48px !important;
+            max-height: 48px !important;
+            flex-direction: row !important;
+        }
+        div[data-testid="column"]:has(#adv-search-info-anchor) {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+        }
+        div[data-testid="column"]:has(#adv-search-info-anchor) > div[data-testid="stVerticalBlock"] {
+            height: auto !important;
+        }
+        div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
+            height: auto !important;
+            min-height: 56px !important;
+            max-height: none !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -9435,7 +10398,7 @@ def render_advanced_search_inline():
 
     search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
     
-    col_inputs, col_btn, col_info = st.columns([2.5, 0.26, 2.3])
+    col_inputs, col_btn, col_info = st.columns([2.5, 0.44, 2.18])
     
     with col_inputs:
         st.markdown('<div id="adv-search-inputs-anchor"></div>', unsafe_allow_html=True)
@@ -9468,7 +10431,7 @@ def render_advanced_search_inline():
     
     with col_btn:
         st.markdown('<div id="adv-search-btn-anchor"></div>', unsafe_allow_html=True)
-        st.button("🔎\n开始查找", use_container_width=False, type="secondary", on_click=on_adv_search)
+        st.button("🔎\n开始查找", use_container_width=False, type="primary", on_click=on_adv_search)
 
     with col_info:
         st.markdown('<span id="adv-search-info-anchor"></span>', unsafe_allow_html=True)
@@ -9757,25 +10720,54 @@ def main():
     inject_custom_css()
 
     api_nav_option = "🔑\nAPI设置"
-    exam_nav_option = "🖨️\n组卷服务\n(完善中)"
+    stats_nav_option = "📊\n数据统计"
+    entry_nav_option = "📝\n录入新题"
     browse_nav_option = "🔍\n全局浏览\n与编辑"
+    exam_nav_option = "🖨️\n组卷服务\n(完善中)"
+    tools_nav_option = "🛠️\n工具箱"
+    advanced_nav_option = "🔎\n三级查找"
+    intro_nav_option = "📘\n项目介绍"
+    manual_nav_option = "📖\n规范说明"
     legacy_browse_nav_option = "🔍\n全局浏览与编辑"
     nav_options = [
         api_nav_option,
-        "📊\n数据统计",
-        "📝\n录入新题",
+        stats_nav_option,
+        entry_nav_option,
         browse_nav_option,
         exam_nav_option,
-        "🛠️\n工具箱",
-        "🔎\n三级查找",
-        "📘\n项目介绍",
-        "📖\n规范说明",
+        tools_nav_option,
+        advanced_nav_option,
+        intro_nav_option,
+        manual_nav_option,
     ]
-    default_nav_option = "📊\n数据统计"
+    default_nav_option = stats_nav_option
+
+    legacy_nav_aliases = {
+        "API设置": api_nav_option,
+        "数据统计": stats_nav_option,
+        "录入新题": entry_nav_option,
+        "全局浏览\n与编辑": browse_nav_option,
+        "组卷服务": exam_nav_option,
+        "工具箱": tools_nav_option,
+        "三级查找": advanced_nav_option,
+        "项目介绍": intro_nav_option,
+        "规范说明": manual_nav_option,
+        "🔑\nAPI设置": api_nav_option,
+        "📊\n数据统计": stats_nav_option,
+        "📝\n录入新题": entry_nav_option,
+        "🔍\n全局浏览\n与编辑": browse_nav_option,
+        "🖨️\n组卷服务\n(完善中)": exam_nav_option,
+        "🛠️\n工具箱": tools_nav_option,
+        "🔎\n三级查找": advanced_nav_option,
+        "📘\n项目介绍": intro_nav_option,
+        "📖\n规范说明": manual_nav_option,
+        legacy_browse_nav_option: browse_nav_option,
+    }
 
     for state_key in ("main_nav_selection", "main_sidebar_radio"):
-        if st.session_state.get(state_key) == legacy_browse_nav_option:
-            st.session_state[state_key] = browse_nav_option
+        saved_value = st.session_state.get(state_key)
+        if saved_value in legacy_nav_aliases:
+            st.session_state[state_key] = legacy_nav_aliases[saved_value]
     if "main_nav_selection" not in st.session_state:
         st.session_state["main_nav_selection"] = default_nav_option
     if "main_sidebar_radio" not in st.session_state:
@@ -9801,9 +10793,9 @@ def main():
         if selection == browse_nav_option:
             st.session_state["adv_search_active"] = False
             st.session_state["browse_mode"] = "按知识板块浏览"
-        elif selection != "🔎\n三级查找":
+        elif selection != advanced_nav_option:
             st.session_state["adv_search_active"] = False
-        if selection != "🛠️\n工具箱":
+        if selection != tools_nav_option:
             st.session_state["tools_subpage"] = None
 
     # Existing workflows can set the sidebar widget key directly before rerun.
@@ -9820,14 +10812,14 @@ def main():
         _select_main_navigation(st.session_state.get("main_sidebar_radio"))
 
     top_nav_items = [
-        ("📊 数据统计", "📊\n数据统计"),
-        ("📝 录入新题", "📝\n录入新题"),
-        ("🔍 全局浏览\n与编辑", browse_nav_option),
-        ("🖨️ 组卷服务", exam_nav_option),
-        ("🛠️ 工具箱", "🛠️\n工具箱"),
-        ("🔎 三级查找", "🔎\n三级查找"),
-        ("📘 项目介绍", "📘\n项目介绍"),
-        ("📖 规范说明", "📖\n规范说明"),
+        (stats_nav_option, stats_nav_option),
+        (entry_nav_option, entry_nav_option),
+        (browse_nav_option, browse_nav_option),
+        (exam_nav_option, exam_nav_option),
+        (tools_nav_option, tools_nav_option),
+        (advanced_nav_option, advanced_nav_option),
+        (intro_nav_option, intro_nav_option),
+        (manual_nav_option, manual_nav_option),
     ]
     top_nav_value_by_label = dict(top_nav_items)
     top_nav_label_by_value = {value: label for label, value in top_nav_items}
@@ -9871,11 +10863,34 @@ def main():
             justify-content: flex-start !important;
         }
         
-        /* 顶部操作直接使用 Streamlit 原生按钮，避免点击代理带来的状态不同步。 */
+        /* 原生切换由持久代理触发，避免 Streamlit 重建控件时产生闪烁。 */
         [data-testid="stSidebarResizer"] {
             display: none !important;
         }
-        [data-testid="stSidebarCollapseButton"] {
+        /* Keep the persistent proxy in control while Streamlit rebuilds its native toggle. */
+        body:has(#mc-sidebar-collapse-switch) [data-testid="stSidebarCollapseButton"],
+        body:has(#mc-sidebar-collapse-switch) [data-testid="collapsedControl"],
+        body:has(#mc-sidebar-collapse-switch) [data-testid="stSidebarCollapsedControl"] {
+            display: none !important;
+        }
+        #mc-sidebar-layout-switch[data-sidebar-collapsed="true"] {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translateX(-8px) !important;
+        }
+        #mc-sidebar-layout-switch[data-switching="true"] {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #mc-sidebar-layout-switch,
+            #mc-sidebar-collapse-switch {
+                transition: none !important;
+            }
+        }
+        [data-testid="stSidebarCollapseButton"],
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapsedControl"] {
             position: fixed !important;
             top: 2px !important;
             left: 70px !important;
@@ -9890,7 +10905,9 @@ def main():
             pointer-events: auto !important;
             transform: none !important;
         }
-        [data-testid="stSidebarCollapseButton"] button {
+        [data-testid="stSidebarCollapseButton"] button,
+        [data-testid="collapsedControl"] button,
+        [data-testid="stSidebarCollapsedControl"] button {
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -9909,15 +10926,19 @@ def main():
             box-shadow: none !important;
             color: #5b21b6 !important;
         }
-        [data-testid="stSidebarCollapseButton"] button:hover {
+        [data-testid="stSidebarCollapseButton"] button:hover,
+        [data-testid="collapsedControl"] button:hover,
+        [data-testid="stSidebarCollapsedControl"] button:hover {
             background: rgba(109, 40, 217, 0.10) !important;
         }
-        [data-testid="stSidebarCollapseButton"] button svg {
+        [data-testid="stSidebarCollapseButton"] button svg,
+        [data-testid="collapsedControl"] button svg,
+        [data-testid="stSidebarCollapsedControl"] button svg {
             display: none !important;
         }
         [data-testid="stSidebarCollapseButton"] button::before {
             content: "<<";
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
             font-size: 16px;
             font-weight: 700;
             line-height: 1;
@@ -9929,9 +10950,9 @@ def main():
         [data-testid="collapsedControl"] button::before,
         [data-testid="stSidebarCollapsedControl"] button::before {
             content: ">>";
-            color: #6e6e73;
-            font-family: Arial, sans-serif;
-            font-size: 18px;
+            color: #5b21b6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            font-size: 16px;
             font-weight: 700;
             line-height: 1;
         }
@@ -9946,7 +10967,7 @@ def main():
             text-align: center;
             margin-top: 0px;
             margin-bottom: 35px;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
             letter-spacing: -0.5px;
             line-height: 1.2;
             word-wrap: break-word;
@@ -10076,6 +11097,7 @@ def main():
     """, unsafe_allow_html=True)
 
     if navigation_layout == "top":
+        inject_sidebar_layout_switch(navigation_layout)
         st.markdown("""
         <style>
         [data-testid="stSidebar"],
@@ -10183,7 +11205,7 @@ def main():
         div[class*="st-key-top-nav-layout-toggle"] button {
             width: 2.65rem !important;
             padding: 0 !important;
-            font-family: Arial, sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif !important;
             font-size: 1.03rem !important;
         }
         div[class*="st-key-top-nav-layout-toggle"] button:hover,
@@ -10234,11 +11256,11 @@ def main():
                 on_change=_on_top_nav_change,
             )
         with top_layout_column:
-            if st.button("⇄", key="top_nav_layout_toggle", help="切换为左侧导航", use_container_width=True):
+            if st.button("侧栏", key="top_nav_layout_toggle", help="切换为左侧导航", use_container_width=True):
                 st.session_state["navigation_layout"] = "sidebar"
                 st.rerun()
         with top_api_column:
-            if st.button("🔑 API设置", key="top_nav_api_settings", use_container_width=True):
+            if st.button("API设置", key="top_nav_api_settings", use_container_width=True):
                 _select_main_navigation(api_nav_option)
     else:
         # --- 左侧：全局导航 ---
@@ -10301,22 +11323,25 @@ def main():
     selected_nav = st.session_state.get("main_nav_selection", default_nav_option)
 
     # --- 主内容区路由 ---
-    if selected_nav == "📊\n数据统计":
+    if selected_nav == stats_nav_option:
         render_statistics_dashboard()
-    elif selected_nav == "📝\n录入新题":
+    elif selected_nav == entry_nav_option:
         page_entry()
     elif selected_nav == browse_nav_option:
         page_browse()
     elif selected_nav == exam_nav_option:
         page_exam_paper_generation()
-    elif selected_nav == "🛠️\n工具箱":
+    elif selected_nav == tools_nav_option:
         page_tools()
-    elif selected_nav == "🔎\n三级查找":
+    elif selected_nav == advanced_nav_option:
         page_advanced_search()
-    elif selected_nav == "📘\n项目介绍":
+    elif selected_nav == intro_nav_option:
         page_system_intro()
-    elif selected_nav == "📖\n规范说明":
+    elif selected_nav == manual_nav_option:
         page_manual()
+
+    # Load last so the shared system wins over legacy page-local style blocks.
+    inject_unified_visual_system_css()
 
 if __name__ == "__main__":
     main()
