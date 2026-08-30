@@ -111,34 +111,39 @@
 
     function renderStars() {
       const container = document.getElementById("stars-container");
-      container.innerHTML = '';
-      
-      for (let i = 1; i <= maxStars; i++) {
-        const wrapper = document.createElement("div");
+      if (container.children.length !== maxStars) {
+        container.innerHTML = '';
+        for (let i = 1; i <= maxStars; i++) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "star-wrapper";
+
+          const leftHalf = document.createElement("div");
+          leftHalf.className = "left-half";
+          leftHalf.onmouseover = () => updateHover(i - 0.5);
+          leftHalf.onmouseout = () => updateHover(null);
+          leftHalf.onclick = () => setValue(i - 0.5);
+
+          const rightHalf = document.createElement("div");
+          rightHalf.className = "right-half";
+          rightHalf.onmouseover = () => updateHover(i);
+          rightHalf.onmouseout = () => updateHover(null);
+          rightHalf.onclick = () => setValue(i);
+
+          wrapper.appendChild(leftHalf);
+          wrapper.appendChild(rightHalf);
+          container.appendChild(wrapper);
+        }
+      }
+
+      Array.from(container.children).forEach((wrapper, index) => {
+        const i = index + 1;
         wrapper.className = "star-wrapper";
-        
         if (currentValue >= i) {
           wrapper.classList.add("active");
         } else if (currentValue === i - 0.5) {
           wrapper.classList.add("half-active");
         }
-        
-        const leftHalf = document.createElement("div");
-        leftHalf.className = "left-half";
-        leftHalf.onmouseover = () => updateHover(i - 0.5);
-        leftHalf.onmouseout = () => updateHover(null);
-        leftHalf.onclick = () => setValue(i - 0.5);
-        
-        const rightHalf = document.createElement("div");
-        rightHalf.className = "right-half";
-        rightHalf.onmouseover = () => updateHover(i);
-        rightHalf.onmouseout = () => updateHover(null);
-        rightHalf.onclick = () => setValue(i);
-        
-        wrapper.appendChild(leftHalf);
-        wrapper.appendChild(rightHalf);
-        container.appendChild(wrapper);
-      }
+      });
     }
     
     function updateHover(hoverValue) {

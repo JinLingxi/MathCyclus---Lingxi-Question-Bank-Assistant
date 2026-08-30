@@ -97,10 +97,13 @@ def _editable_paper_type_options(paper_type_scope=None):
     return [paper_type for paper_type in PAPER_TYPES if paper_type != "WK"]
 
 
-def render_question_preview(content: str, show_title: bool = False):
+def render_question_preview(content: str, show_title: bool = False, prepared_markdown: str = None):
     """Render a question preview with typography isolated from surrounding UI."""
     st.markdown('<span class="mc-question-preview-anchor"></span>', unsafe_allow_html=True)
-    st.markdown(_cached_latex_to_markdown(content, show_title), unsafe_allow_html=True)
+    preview_markdown = prepared_markdown
+    if preview_markdown is None:
+        preview_markdown = _cached_latex_to_markdown(content, show_title)
+    st.markdown(preview_markdown, unsafe_allow_html=True)
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
@@ -116,6 +119,23 @@ def _read_question_text_cached(fpath: str, change_token):
 
 def read_question_text(fpath: str):
     return _read_question_text_cached(fpath, file_change_token(fpath))
+
+
+@st.cache_data(show_spinner=False, max_entries=512)
+def _load_question_editor_assets_cached(fpath: str, change_token):
+    with open(fpath, "r", encoding="utf-8") as question_file:
+        content = question_file.read()
+    meta, _ = parse_meta_data(content)
+    return {
+        "content": content,
+        "meta": meta,
+        "editor_height": get_editor_height(content),
+        "preview_markdown": latex_to_markdown(content, show_title=False),
+    }
+
+
+def load_question_editor_assets(fpath: str):
+    return _load_question_editor_assets_cached(fpath, file_change_token(fpath))
 
 
 @st.cache_data(show_spinner=False, max_entries=512)
@@ -5426,8 +5446,16 @@ def inject_question_actions_grid_compat_helper():
     )
 
 
-def render_browse_question_editor_card(q_label, content, fpath, key_prefix, paper_type_scope=None, extra_html_label="", rename_paths_key=None):
-    render_question_header(q_label, content, fpath, extra_html_label=extra_html_label, compact=True)
+def render_browse_question_editor_card(q_label, content, fpath, key_prefix, paper_type_scope=None, extra_html_label="", rename_paths_key=None, prepared_assets=None):
+    prepared_assets = prepared_assets or {}
+    render_question_header(
+        q_label,
+        content,
+        fpath,
+        extra_html_label=extra_html_label,
+        compact=True,
+        prepared_meta=prepared_assets.get("meta"),
+    )
 
     tag_edit_key = f"{key_prefix}_tag_edit_mode_{_question_key('tag', fpath)}"
     text_area_key = f"{key_prefix}_edit_{_question_key('text', fpath)}"
@@ -5436,7 +5464,10 @@ def render_browse_question_editor_card(q_label, content, fpath, key_prefix, pape
     if text_area_key not in st.session_state:
         st.session_state[text_area_key] = content
     current_content = st.session_state.get(text_area_key, content)
-    est_height = _cached_editor_height(current_content)
+    if current_content == content and prepared_assets.get("editor_height") is not None:
+        est_height = prepared_assets["editor_height"]
+    else:
+        est_height = _cached_editor_height(current_content)
 
     c_src, c_preview = st.columns([0.85, 1.15], gap="large")
     with c_src:
@@ -5531,7 +5562,10 @@ def render_browse_question_editor_card(q_label, content, fpath, key_prefix, pape
 
     with c_preview:
         try:
-            render_question_preview(current_content, show_title=False)
+            prepared_markdown = None
+            if current_content == content:
+                prepared_markdown = prepared_assets.get("preview_markdown")
+            render_question_preview(current_content, show_title=False, prepared_markdown=prepared_markdown)
         except Exception as e:
             st.error(f"渲染错误: {e}")
 
@@ -5577,7 +5611,6 @@ def render_exam_floating_basket():
     st.markdown(
         """
         <style>
-        body:has(#mc-exam-page-anchor) .mc-exam-floating-basket-panel,
         .mc-exam-floating-basket-panel {
             position: fixed !important;
             right: 16px !important;
@@ -5597,11 +5630,11 @@ def render_exam_floating_basket():
             opacity: 1 !important;
             box-shadow: 0 18px 42px rgba(36, 28, 52, 0.20) !important;
         }
-        body:has(#mc-exam-page-anchor) .mc-exam-floating-basket-panel > div,
-        body:has(#mc-exam-page-anchor) .mc-exam-floating-basket-panel > div[data-testid="stVerticalBlock"],
-        body:has(#mc-exam-page-anchor) .mc-exam-floating-basket-panel div[data-testid="stVerticalBlock"],
-        body:has(#mc-exam-page-anchor) .mc-exam-floating-basket-panel div[data-testid="stHorizontalBlock"],
-        body:has(#mc-exam-page-anchor) .mc-exam-floating-basket-panel div[data-testid="column"] {
+        .mc-exam-floating-basket-panel > div,
+        .mc-exam-floating-basket-panel > div[data-testid="stVerticalBlock"],
+        .mc-exam-floating-basket-panel div[data-testid="stVerticalBlock"],
+        .mc-exam-floating-basket-panel div[data-testid="stHorizontalBlock"],
+        .mc-exam-floating-basket-panel div[data-testid="column"] {
             background-color: rgb(250, 248, 255) !important;
             opacity: 1 !important;
         }
@@ -6230,8 +6263,8 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
         
         for fpath in paths:
             try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    content = f.read()
+                prepared_assets = load_question_editor_assets(fpath)
+                content = prepared_assets["content"]
             except Exception as e:
                 st.error(f"读取失败: {e}")
                 continue
@@ -6245,6 +6278,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                 "recent_saved",
                 paper_type_scope=paper_type_scope,
                 rename_paths_key="recent_saved_paths",
+                prepared_assets=prepared_assets,
             )
             st.divider()
         return
@@ -6425,7 +6459,12 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 fpath = os.path.join(CHAPTERS_DIR, subject, y, fname)
                                 if not os.path.exists(fpath):
                                     continue
-                                content = read_question_text(fpath)
+                                prepared_assets = None
+                                if not is_delete_mode and not is_exam_mode:
+                                    prepared_assets = load_question_editor_assets(fpath)
+                                    content = prepared_assets["content"]
+                                else:
+                                    content = read_question_text(fpath)
                                 q_label = format_question_title(fname)
                                 if is_delete_mode:
                                     render_delete_question_item(fpath, q_label, content, key_prefix="delete_subject_all_years")
@@ -6434,7 +6473,14 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 if is_exam_mode:
                                     render_exam_question_card(q_label, content, fpath, f"exam_action_subject_all_{fpath}")
                                     continue
-                                render_browse_question_editor_card(q_label, content, fpath, "subj_all", paper_type_scope=paper_type_scope)
+                                render_browse_question_editor_card(
+                                    q_label,
+                                    content,
+                                    fpath,
+                                    "subj_all",
+                                    paper_type_scope=paper_type_scope,
+                                    prepared_assets=prepared_assets,
+                                )
                                 st.divider()
                         elif selected_option:
                             # 解析出真实的年份和文件名
@@ -6454,7 +6500,12 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 if not os.path.exists(fpath): continue
                                 
                                 # 读取内容
-                                content = read_question_text(fpath)
+                                prepared_assets = None
+                                if not is_delete_mode and not is_exam_mode:
+                                    prepared_assets = load_question_editor_assets(fpath)
+                                    content = prepared_assets["content"]
+                                else:
+                                    content = read_question_text(fpath)
                                 
                                 # 提取显示标签
                                 q_label = format_question_title(fname)
@@ -6468,7 +6519,14 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                     render_exam_question_card(q_label, content, fpath, f"exam_action_subject_year_{fpath}")
                                     continue
 
-                                render_browse_question_editor_card(q_label, content, fpath, "subj_year", paper_type_scope=paper_type_scope)
+                                render_browse_question_editor_card(
+                                    q_label,
+                                    content,
+                                    fpath,
+                                    "subj_year",
+                                    paper_type_scope=paper_type_scope,
+                                    prepared_assets=prepared_assets,
+                                )
                                 st.divider()
 
                         elif selected_option and selected_option != SHOW_ALL_OPT:
@@ -6588,7 +6646,12 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                             if not os.path.exists(q_path): continue
                             
                             # 读取内容
-                            content = read_question_text(q_path)
+                            prepared_assets = None
+                            if not is_delete_mode and not is_exam_mode:
+                                prepared_assets = load_question_editor_assets(q_path)
+                                content = prepared_assets["content"]
+                            else:
+                                content = read_question_text(q_path)
                                 
                             # 题目编号
                             q_label = format_question_title(q['file'])
@@ -6602,7 +6665,14 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                                 render_exam_question_card(q_label, content, q_path, f"exam_action_paper_{q_path}")
                                 continue
 
-                            render_browse_question_editor_card(q_label, content, q_path, "paper_all", paper_type_scope=paper_type_scope)
+                            render_browse_question_editor_card(
+                                q_label,
+                                content,
+                                q_path,
+                                "paper_all",
+                                paper_type_scope=paper_type_scope,
+                                prepared_assets=prepared_assets,
+                            )
                             st.divider()
     
     elif browse_mode == "按录入顺序浏览":
@@ -6695,7 +6765,8 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         render_exam_question_card(q_label, content, fpath, f"exam_action_time_{fpath}")
                         continue
 
-                    content = read_question_text(fpath)
+                    prepared_assets = load_question_editor_assets(fpath)
+                    content = prepared_assets["content"]
                     render_browse_question_editor_card(
                         q_label,
                         content,
@@ -6703,6 +6774,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                         f"time_{lazy_key}",
                         paper_type_scope=paper_type_scope,
                         extra_html_label=extra_label,
+                        prepared_assets=prepared_assets,
                     )
                     st.divider()
 
@@ -6717,7 +6789,12 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
             target_container = st.container()
 
         with target_container:
-            current_content = read_question_text(selected_file_path)
+            prepared_assets = None
+            if not is_exam_mode and not is_delete_mode:
+                prepared_assets = load_question_editor_assets(selected_file_path)
+                current_content = prepared_assets["content"]
+            else:
+                current_content = read_question_text(selected_file_path)
                 
             # 组卷模式使用聚焦卡片，普通浏览继续使用完整编辑头部。
             if "browse_mode" in locals():
@@ -6737,6 +6814,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                     selected_file_path,
                     f"selected_{selected_key}",
                     paper_type_scope=paper_type_scope,
+                    prepared_assets=prepared_assets,
                 )
                         
             if not is_exam_mode and not is_delete_mode:
@@ -6808,7 +6886,6 @@ def page_exam_paper_generation():
     
     st.markdown('<div class="big-radio-container"></div>', unsafe_allow_html=True)
     exam_service_mode = st.radio("选择组卷服务模块", ["🖨️ 试卷排版工作台", "📂 历史组卷浏览"], horizontal=True, label_visibility="collapsed")
-    st.markdown("---")
 
     if exam_service_mode == "📂 历史组卷浏览":
         # ================= 新增：历史组卷浏览 =================
@@ -7066,27 +7143,13 @@ def page_exam_paper_generation():
     if "_count_widget" not in st.session_state:
         st.session_state["_count_widget"] = current_count
 
-    c_theme, c_num, c_ai = st.columns([3, 2, 3])
+    c_theme, c_num, c_ai = st.columns([3, 1, 3])
     with c_theme:
         theme = st.selectbox("选择组卷主题", options=theme_options, key="exam_theme_select", label_visibility="collapsed")
     with c_num:
-        col_num_val, col_num_add, col_num_sub = st.columns([1.5, 1, 1], gap="small")
-        with col_num_val:
-            # use value instead of relying purely on key, and handle on_change
-            def _update_count():
-                st.session_state["exam_q_count_input"] = st.session_state["_count_widget"]
-            st.number_input("本次组卷数量", min_value=1, key="_count_widget", on_change=_update_count, label_visibility="collapsed")
-        with col_num_add:
-            def _add_q_count():
-                st.session_state["exam_q_count_input"] += 1
-                st.session_state["_count_widget"] = st.session_state["exam_q_count_input"]
-            st.button("➕", key="exam_btn_add", use_container_width=True, on_click=_add_q_count)
-        with col_num_sub:
-            def _sub_q_count():
-                if st.session_state.get("exam_q_count_input", 1) > 1:
-                    st.session_state["exam_q_count_input"] -= 1
-                    st.session_state["_count_widget"] = st.session_state["exam_q_count_input"]
-            st.button("➖", key="exam_btn_sub", use_container_width=True, on_click=_sub_q_count)
+        def _update_count():
+            st.session_state["exam_q_count_input"] = st.session_state["_count_widget"]
+        st.number_input("本次组卷数量", min_value=1, key="_count_widget", on_change=_update_count, label_visibility="collapsed")
     with c_ai:
         # 按钮状态逻辑：白底(未激活) -> 绿底(激活且未被修改) -> 蓝底(激活且被修改)
         ai_btn_type = "primary" if st.session_state["ai_exam_active"] else "secondary"
@@ -7306,21 +7369,6 @@ def page_exam_paper_generation():
     # 注入 CSS：美化 number_input 的边框使其明显，并隐藏原生上下箭头，以及根据状态设置 primary 按钮颜色
     css_injection = """
     <style>
-    /* 隐藏 Streamlit number_input 原生内部的 - 和 + 按钮 */
-    button[data-testid="stNumberInputStepDown"],
-    button[data-testid="stNumberInputStepUp"] {
-        display: none !important;
-    }
-    
-    /* 隐藏原生浏览器输入框内的上下箭头 */
-    input[type="number"]::-webkit-inner-spin-button,
-    input[type="number"]::-webkit-outer-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-    }
-    input[type="number"] {
-        -moz-appearance: textfield;
-    }
     """
     
     if st.session_state["ai_exam_active"]:
@@ -9266,10 +9314,10 @@ def render_cloze_source_trace(content: str, fpath: str, meta: dict):
         st.warning(f"打开来源原题失败：{e}")
 
 
-def render_question_header(q_label, content, fpath, extra_html_label="", compact=False):
+def render_question_header(q_label, content, fpath, extra_html_label="", compact=False, prepared_meta=None):
     st.markdown(f"### {q_label} {extra_html_label}", unsafe_allow_html=True)
     
-    meta = _cached_question_meta(content)
+    meta = prepared_meta if prepared_meta is not None else _cached_question_meta(content)
     diff = meta.get("难度星级", "").strip()
     tags = meta.get("标签", "").strip()
     remark = meta.get("备注", "").strip()
@@ -10789,7 +10837,7 @@ def main():
     stats_nav_option = "📊\n数据统计"
     entry_nav_option = "📝\n录入新题"
     browse_nav_option = "🔍\n全局浏览\n与编辑"
-    exam_nav_option = "🖨️\n组卷服务\n(完善中)"
+    exam_nav_option = "🖨️\n组卷服务"
     tools_nav_option = "🛠️\n工具箱"
     advanced_nav_option = "🔎\n三级查找"
     intro_nav_option = "📘\n项目介绍"
@@ -10823,6 +10871,7 @@ def main():
         "📝\n录入新题": entry_nav_option,
         "🔍\n全局浏览\n与编辑": browse_nav_option,
         "🖨️\n组卷服务\n(完善中)": exam_nav_option,
+        "🖨️\n组卷服务": exam_nav_option,
         "🛠️\n工具箱": tools_nav_option,
         "🔎\n三级查找": advanced_nav_option,
         "📘\n项目介绍": intro_nav_option,
