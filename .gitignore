@@ -81,3 +81,12 @@ AutoTikz.md
 # 独立的前端实验工作区，不属于当前 Streamlit 应用
 tiku/
 
+# Local UI verification artifacts
+.edge-test-profile/
+.ui-check.png
+.dom-check.html
+.streamlit-test.log
+
+# One-off local maintenance scripts
+fix_codex_config.py
+

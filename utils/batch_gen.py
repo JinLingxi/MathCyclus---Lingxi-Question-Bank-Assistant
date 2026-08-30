@@ -88,7 +88,7 @@ def parse_filename(filename):
     return (year, paper_base, wl_rank, q_num)
 
 def update_chapter_contents():
-    """
+    r"""
     更新章节索引文件 (content_*.tex)
     
     功能:

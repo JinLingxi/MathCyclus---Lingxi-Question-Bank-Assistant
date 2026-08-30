@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+body { margin: 0; background: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; color: #2c2733; }
+#list { display: grid; gap: 8px; padding: 2px; max-height: 500px; overflow-y: auto; min-width: 0; }
+.item { display: grid; grid-template-columns: 24px minmax(0, 1fr) 24px; align-items: center; gap: 8px; min-height: 38px; padding: 7px 7px 7px 9px; border: 1px solid #d9d1e6; border-radius: 9px; background: #fffdfd; cursor: grab; user-select: none; box-sizing: border-box; transition: border-color .15s ease, background .15s ease, opacity .15s ease; }
+.item:hover { border-color: #9b7ac3; background: #f7f1ff; }
+.item.dragging { opacity: .45; border-style: dashed; }
+.handle { color: #8b6bab; font-size: 20px; line-height: 1; }
+.label { overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; }
+.remove { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px; color: #b42318; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; }
+.remove:hover { background: #fff0ee; color: #8f1d14; }
+.empty { color: #877b95; font-size: 12px; padding: 10px 2px; }
+</style>
+</head>
+<body>
+<div id="list"></div>
+<script>
+function send(type, data) { window.parent.postMessage(Object.assign({isStreamlitMessage:true, type:type}, data), "*"); }
+const Streamlit = { ready: () => send("streamlit:componentReady", {apiVersion:1}), height: h => send("streamlit:setFrameHeight", {height:h}), value: v => send("streamlit:setComponentValue", {value:v}) };
+let items = [], draggingId = null, changed = false, lastOverId = null;
+function emit(selected, removed) {
+  Streamlit.value({
+    order: items.map(item => item.id),
+    selected: selected || null,
+    removed: removed || null,
+    nonce: Date.now() + Math.random()
+  });
+}
+function resizeFrame() {
+  const root = document.getElementById("list");
+  Streamlit.height(Math.min(520, Math.max(72, root.scrollHeight + 8)));
+}
+function render() {
+  const root = document.getElementById("list"); root.innerHTML = "";
+  if (!items.length) { root.innerHTML = '<div class="empty">暂未选择题目</div>'; resizeFrame(); return; }
+  items.forEach(item => {
+    const row = document.createElement("div"); row.className = "item"; row.draggable = true; row.dataset.id = item.id;
+    row.innerHTML = '<div class="handle">⋮⋮</div><div class="label"></div><button class="remove" type="button" aria-label="Remove question">×</button>'; row.querySelector(".label").textContent = item.label;
+    row.addEventListener("click", () => { if (!changed) emit(item.id, null); });
+    row.querySelector(".remove").addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); emit(null, item.id); });
+    row.addEventListener("dragstart", e => { draggingId = item.id; changed = false; lastOverId = null; row.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.id); });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); if (changed) emit(null, null); draggingId = null; setTimeout(() => { changed = false; }, 0); });
+    row.addEventListener("dragover", e => {
+      e.preventDefault();
+      if (!draggingId || draggingId === item.id || lastOverId === item.id) return;
+      const from = items.findIndex(x => x.id === draggingId); const to = items.findIndex(x => x.id === item.id);
+      if (from < 0 || to < 0) return;
+      const moved = items.splice(from, 1)[0]; items.splice(to, 0, moved); changed = true; lastOverId = item.id;
+      const dragged = root.querySelector('[data-id="' + CSS.escape(draggingId) + '"]');
+      if (dragged) { if (from < to) row.after(dragged); else row.before(dragged); }
+    });
+    root.appendChild(row);
+  });
+  requestAnimationFrame(resizeFrame);
+}
+window.addEventListener("message", e => { if (e.data.type !== "streamlit:render") return; const incoming = e.data.args.items || []; items = incoming.slice(); render(); });
+const observer = new ResizeObserver(resizeFrame);
+observer.observe(document.getElementById("list"));
+Streamlit.ready(); Streamlit.height(72);
+</script>
+</body>
+</html>
