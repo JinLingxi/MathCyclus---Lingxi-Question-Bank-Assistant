@@ -194,14 +194,30 @@ def inject_custom_css():
             --mc-shadow: 0 10px 30px rgba(0, 0, 0, 0.07);
             --mc-control-radius: 8px;
         }
-        .block-container {
-            padding-top: 1.35rem !important;
+        .block-container,
+        div[data-testid="stAppViewBlockContainer"] {
+            padding-top: 0 !important;
             padding-bottom: 2rem !important;
+        }
+        section.main > div.block-container,
+        main .block-container,
+        div[data-testid="stMainBlockContainer"] {
+            padding-top: 0 !important;
         }
         h1, h2, h3, h4, h5, h6 {
             color: var(--mc-text) !important;
             letter-spacing: 0 !important;
             font-weight: 650 !important;
+        }
+        .block-container h1:first-child,
+        .block-container h2:first-child,
+        .block-container h3:first-child {
+            margin-top: 0 !important;
+        }
+        div[data-testid="stMarkdownContainer"] h1,
+        div[data-testid="stMarkdownContainer"] h2 {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
         }
         p, li, label, span {
             letter-spacing: 0 !important;
@@ -384,13 +400,25 @@ def inject_custom_css():
         }
         div[data-testid="stHorizontalBlock"]:has(#left-panel-anchor),
         div[data-testid="stHorizontalBlock"]:has(#paper-left-anchor),
-        div[data-testid="stHorizontalBlock"]:has(#time-left-anchor) {
+        div[data-testid="stHorizontalBlock"]:has(#time-left-anchor),
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-left-anchor) {
             display: flex !important;
             flex-flow: row nowrap !important;
             align-items: flex-start !important;
             width: 100% !important;
             gap: 1rem !important;
             overflow: visible !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-left-anchor):has(#adv-search-right-anchor) {
+            display: grid !important;
+            grid-template-columns: minmax(300px, 20%) minmax(0, 80%) !important;
+            align-items: start !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(#adv-search-left-anchor):has(#adv-search-right-anchor) > div[data-testid="column"] {
+            width: auto !important;
+            max-width: none !important;
+            min-width: 0 !important;
+            flex: initial !important;
         }
         div[data-testid="column"]:has(#left-panel-anchor),
         div[data-testid="column"]:has(#time-left-anchor) {
@@ -402,6 +430,11 @@ def inject_custom_css():
             flex: 0 0 21% !important;
             width: 21% !important;
             max-width: 21% !important;
+        }
+        div[data-testid="column"]:has(#adv-search-left-anchor) {
+            flex: 0 0 20% !important;
+            width: 20% !important;
+            max-width: 20% !important;
         }
         div[data-testid="column"]:has(#right-panel-anchor) {
             flex: 1 1 0% !important;
@@ -418,12 +451,19 @@ def inject_custom_css():
             width: 77% !important;
             max-width: 77% !important;
         }
+        div[data-testid="column"]:has(#adv-search-right-anchor) {
+            flex: 0 0 78% !important;
+            width: 78% !important;
+            max-width: 78% !important;
+        }
         div[data-testid="column"]:has(#left-panel-anchor),
         div[data-testid="column"]:has(#paper-left-anchor),
         div[data-testid="column"]:has(#time-left-anchor),
+        div[data-testid="column"]:has(#adv-search-left-anchor),
         div[data-testid="column"]:has(#right-panel-anchor),
         div[data-testid="column"]:has(#paper-right-anchor),
-        div[data-testid="column"]:has(#time-right-anchor) {
+        div[data-testid="column"]:has(#time-right-anchor),
+        div[data-testid="column"]:has(#adv-search-right-anchor) {
             min-width: 0 !important;
             flex-shrink: 0 !important;
             height: auto !important;
@@ -431,13 +471,40 @@ def inject_custom_css():
         }
         div[data-testid="column"]:has(#left-panel-anchor),
         div[data-testid="column"]:has(#paper-left-anchor),
-        div[data-testid="column"]:has(#time-left-anchor) {
+        div[data-testid="column"]:has(#time-left-anchor),
+        div[data-testid="column"]:has(#adv-search-left-anchor) {
             overflow: visible !important;
             padding-right: 1rem !important;
         }
+        div[data-testid="column"]:has(#left-panel-anchor),
+        div[data-testid="column"]:has(#paper-left-anchor),
+        div[data-testid="column"]:has(#time-left-anchor),
+        div[data-testid="column"]:has(#adv-search-left-anchor) {
+            position: sticky !important;
+            top: 56px !important;
+            align-self: flex-start !important;
+            max-height: calc(100vh - 72px) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            scrollbar-gutter: stable !important;
+        }
+        div[data-testid="column"]:has(#left-panel-anchor)::-webkit-scrollbar,
+        div[data-testid="column"]:has(#paper-left-anchor)::-webkit-scrollbar,
+        div[data-testid="column"]:has(#time-left-anchor)::-webkit-scrollbar,
+        div[data-testid="column"]:has(#adv-search-left-anchor)::-webkit-scrollbar {
+            width: 8px;
+        }
+        div[data-testid="column"]:has(#left-panel-anchor)::-webkit-scrollbar-thumb,
+        div[data-testid="column"]:has(#paper-left-anchor)::-webkit-scrollbar-thumb,
+        div[data-testid="column"]:has(#time-left-anchor)::-webkit-scrollbar-thumb,
+        div[data-testid="column"]:has(#adv-search-left-anchor)::-webkit-scrollbar-thumb {
+            background: rgba(119, 102, 142, 0.28);
+            border-radius: 999px;
+        }
         div[data-testid="column"]:has(#right-panel-anchor),
         div[data-testid="column"]:has(#paper-right-anchor),
-        div[data-testid="column"]:has(#time-right-anchor) {
+        div[data-testid="column"]:has(#time-right-anchor),
+        div[data-testid="column"]:has(#adv-search-right-anchor) {
             overflow: visible !important;
             border-left: 1px solid #e1e4e8 !important;
             padding-left: 1.5rem !important;
@@ -445,9 +512,11 @@ def inject_custom_css():
         div[data-testid="column"]:has(#right-panel-anchor) > div[data-testid="stVerticalBlock"],
         div[data-testid="column"]:has(#paper-right-anchor) > div[data-testid="stVerticalBlock"],
         div[data-testid="column"]:has(#time-right-anchor) > div[data-testid="stVerticalBlock"],
+        div[data-testid="column"]:has(#adv-search-right-anchor) > div[data-testid="stVerticalBlock"],
         div[data-testid="column"]:has(#right-panel-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
         div[data-testid="column"]:has(#paper-right-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
-        div[data-testid="column"]:has(#time-right-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
+        div[data-testid="column"]:has(#time-right-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"],
+        div[data-testid="column"]:has(#adv-search-right-anchor) > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {
             width: 100% !important;
             min-width: 0 !important;
             max-width: none !important;
@@ -457,7 +526,8 @@ def inject_custom_css():
         /* Fill the detail pane with the editor/preview split instead of its intrinsic content width. */
         div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
         div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
-        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) {
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
+        div[data-testid="column"]:has(#adv-search-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) {
             display: grid !important;
             grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) !important;
             width: 100% !important;
@@ -468,7 +538,8 @@ def inject_custom_css():
         }
         div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"],
         div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"],
-        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"] {
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"],
+        div[data-testid="column"]:has(#adv-search-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) > div[data-testid="column"] {
             width: auto !important;
             min-width: 0 !important;
             max-width: none !important;
@@ -477,21 +548,33 @@ def inject_custom_css():
         }
         div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) .stMarkdownContainer,
         div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) .stMarkdownContainer,
-        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) .stMarkdownContainer {
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) .stMarkdownContainer,
+        div[data-testid="column"]:has(#adv-search-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) .stMarkdownContainer {
             width: 100% !important;
             max-width: none !important;
             overflow-wrap: anywhere;
         }
         @media (max-width: 980px) {
+            div[data-testid="column"]:has(#left-panel-anchor),
+            div[data-testid="column"]:has(#paper-left-anchor),
+            div[data-testid="column"]:has(#time-left-anchor),
+            div[data-testid="column"]:has(#adv-search-left-anchor) {
+                position: static !important;
+                max-height: none !important;
+                overflow: visible !important;
+                padding-right: 0 !important;
+            }
             div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
             div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
-            div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) {
+            div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
+            div[data-testid="column"]:has(#adv-search-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) {
                 grid-template-columns: minmax(0, 1fr) !important;
             }
         }
         div[data-testid="column"]:has(#right-panel-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"],
         div[data-testid="column"]:has(#paper-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"],
-        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"] {
+        div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"],
+        div[data-testid="column"]:has(#adv-search-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) div[data-testid="stTextArea"] {
             width: 100% !important;
             max-width: none !important;
         }
@@ -5446,7 +5529,7 @@ def inject_question_actions_grid_compat_helper():
     )
 
 
-def render_browse_question_editor_card(q_label, content, fpath, key_prefix, paper_type_scope=None, extra_html_label="", rename_paths_key=None, prepared_assets=None):
+def render_browse_question_editor_card(q_label, content, fpath, key_prefix, paper_type_scope=None, extra_html_label="", rename_paths_key=None, prepared_assets=None, interactive_difficulty=True):
     prepared_assets = prepared_assets or {}
     render_question_header(
         q_label,
@@ -5455,6 +5538,7 @@ def render_browse_question_editor_card(q_label, content, fpath, key_prefix, pape
         extra_html_label=extra_html_label,
         compact=True,
         prepared_meta=prepared_assets.get("meta"),
+        interactive_difficulty=interactive_difficulty,
     )
 
     tag_edit_key = f"{key_prefix}_tag_edit_mode_{_question_key('tag', fpath)}"
@@ -5611,6 +5695,7 @@ def render_exam_floating_basket():
     st.markdown(
         """
         <style>
+        body:has(#mc-exam-page-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-floating-basket-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-floating-basket-anchor)),
         .mc-exam-floating-basket-panel {
             position: fixed !important;
             right: 16px !important;
@@ -5625,29 +5710,37 @@ def render_exam_floating_basket():
             padding: 0.95rem !important;
             border: 1px solid rgba(119, 102, 142, 0.28) !important;
             border-radius: 12px !important;
-            background: rgb(250, 248, 255) !important;
-            background-color: rgb(250, 248, 255) !important;
+            background: #faf8ff !important;
+            background-color: #faf8ff !important;
+            background-clip: padding-box !important;
+            isolation: isolate !important;
             opacity: 1 !important;
             box-shadow: 0 18px 42px rgba(36, 28, 52, 0.20) !important;
+        }
+        body:has(#mc-exam-page-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-floating-basket-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-floating-basket-anchor))::before,
+        .mc-exam-floating-basket-panel::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            border-radius: 12px;
+            background: #faf8ff;
+            pointer-events: none;
+        }
+        body:has(#mc-exam-page-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-floating-basket-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-floating-basket-anchor)) > *,
+        .mc-exam-floating-basket-panel > * {
+            position: relative;
+            z-index: 1;
         }
         .mc-exam-floating-basket-panel > div,
         .mc-exam-floating-basket-panel > div[data-testid="stVerticalBlock"],
         .mc-exam-floating-basket-panel div[data-testid="stVerticalBlock"],
         .mc-exam-floating-basket-panel div[data-testid="stHorizontalBlock"],
-        .mc-exam-floating-basket-panel div[data-testid="column"] {
-            background-color: rgb(250, 248, 255) !important;
+        .mc-exam-floating-basket-panel div[data-testid="column"],
+        .mc-exam-floating-basket-panel div[data-testid="element-container"] {
+            background: transparent !important;
+            background-color: transparent !important;
             opacity: 1 !important;
-        }
-        .mc-exam-floating-basket-panel::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 52px;
-            bottom: 10px;
-            width: 8px;
-            border-radius: 999px;
-            background: rgba(109, 40, 217, 0.18);
-            cursor: ew-resize;
         }
         .mc-exam-floating-basket-panel::after {
             content: "";
@@ -5656,8 +5749,9 @@ def render_exam_floating_basket():
             bottom: 3px;
             width: 18px;
             height: 18px;
-            border-right: 3px solid rgba(109, 40, 217, 0.55);
-            border-bottom: 3px solid rgba(109, 40, 217, 0.55);
+            background:
+                linear-gradient(to right, transparent calc(100% - 2px), rgba(109, 40, 217, 0.50) calc(100% - 2px)),
+                linear-gradient(to bottom, transparent calc(100% - 2px), rgba(109, 40, 217, 0.50) calc(100% - 2px));
             border-radius: 0 0 8px 0;
             cursor: nwse-resize;
             z-index: 3;
@@ -5805,7 +5899,6 @@ def render_exam_floating_basket():
                 applyWidth(panel);
                 applyPosition(panel);
 
-                let resizing = false;
                 let cornerResizing = false;
                 let moving = false;
                 let moveOffsetX = 0;
@@ -5822,12 +5915,6 @@ def render_exam_floating_basket():
                         resizeStartY = event.clientY;
                         resizeStartWidth = rect.width;
                         resizeStartHeight = rect.height;
-                        panel.setPointerCapture(event.pointerId);
-                        event.preventDefault();
-                        return;
-                    }
-                    if (event.clientX - rect.left <= 14) {
-                        resizing = true;
                         panel.setPointerCapture(event.pointerId);
                         event.preventDefault();
                         return;
@@ -5851,13 +5938,6 @@ def render_exam_floating_basket():
                         window.parent.localStorage.setItem('mcExamBasketHeight', String(nextHeight));
                         return;
                     }
-                    if (resizing) {
-                        const rightEdge = panel.getBoundingClientRect().right;
-                        const nextWidth = clamp(rightEdge - event.clientX, 560, Math.max(620, window.parent.innerWidth - 104));
-                        panel.style.setProperty('width', `${nextWidth}px`, 'important');
-                        window.parent.localStorage.setItem('mcExamBasketWidth', String(nextWidth));
-                        return;
-                    }
                     if (!moving) return;
                     const rect = panel.getBoundingClientRect();
                     const nextX = clamp(event.clientX - moveOffsetX, 72, Math.max(72, window.parent.innerWidth - rect.width - 12));
@@ -5869,8 +5949,8 @@ def render_exam_floating_basket():
                     window.parent.localStorage.setItem('mcExamBasketY', String(nextY));
                     window.parent.localStorage.setItem('mcExamBasketPositionReady', '1');
                 });
-                panel.addEventListener('pointerup', () => { resizing = false; cornerResizing = false; moving = false; });
-                panel.addEventListener('pointercancel', () => { resizing = false; cornerResizing = false; moving = false; });
+                panel.addEventListener('pointerup', () => { cornerResizing = false; moving = false; });
+                panel.addEventListener('pointercancel', () => { cornerResizing = false; moving = false; });
             }
 
             bind();
@@ -6222,8 +6302,9 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
                 if st.button("管理\n备份问题", key="delete_mode_backup_manager_btn", type="secondary", use_container_width=True):
                     manage_backup_questions_dialog()
 
-        # The search panel contains nested columns and must stay at page root.
-        render_advanced_search_inline()
+        search_workspace_active = st.session_state.get("adv_search_active") and _adv_search_has_query()
+        if not search_workspace_active:
+            render_advanced_search_inline()
 
     elif not is_exam_mode:
         st.header(page_title)
@@ -6232,9 +6313,9 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
             st.session_state["browse_mode"] = "按知识板块浏览"
         browse_mode = st.radio("浏览模式", ["按知识板块浏览", "按试卷浏览", "按录入顺序浏览"], horizontal=True, label_visibility="collapsed", key="browse_mode")
 
-        # The search panel has its own nested columns, so it must render at
-        # the page root rather than inside the header column.
-        render_advanced_search_inline()
+        search_workspace_active = st.session_state.get("adv_search_active") and _adv_search_has_query()
+        if not search_workspace_active:
+            render_advanced_search_inline()
             
     else:
         if "browse_mode" not in st.session_state:
@@ -6286,7 +6367,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
     # === 如果激活了搜索，优先显示搜索结果 ===
     if not is_exam_mode and st.session_state.get("adv_search_active"):
         if _adv_search_has_query():
-            render_advanced_search_results(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope)
+            render_advanced_search_workspace(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope)
             return  # 搜索状态下，不显示下方的常规浏览内容
         st.session_state["adv_search_active"] = False
     
@@ -9314,7 +9395,16 @@ def render_cloze_source_trace(content: str, fpath: str, meta: dict):
         st.warning(f"打开来源原题失败：{e}")
 
 
-def render_question_header(q_label, content, fpath, extra_html_label="", compact=False, prepared_meta=None):
+def _static_difficulty_stars_html(diff_val, max_stars=6):
+    rounded_value = max(0, min(max_stars, int(round(float(diff_val or 0)))))
+    stars = "".join(
+        f"<span class='{'is-filled' if star_index <= rounded_value else 'is-empty'}'>★</span>"
+        for star_index in range(1, max_stars + 1)
+    )
+    return f"{stars}<span class='mc-static-diff-value'>{float(diff_val or 0):g}</span>"
+
+
+def render_question_header(q_label, content, fpath, extra_html_label="", compact=False, prepared_meta=None, interactive_difficulty=True):
     st.markdown(f"### {q_label} {extra_html_label}", unsafe_allow_html=True)
     
     meta = prepared_meta if prepared_meta is not None else _cached_question_meta(content)
@@ -9342,9 +9432,10 @@ def render_question_header(q_label, content, fpath, extra_html_label="", compact
         }
         div[data-testid="stHorizontalBlock"]:has(.mc-compact-meta-anchor) {
             display: grid !important;
-            grid-template-columns: minmax(218px, 1.35fr) minmax(86px, 0.65fr) minmax(86px, 0.65fr) !important;
+            grid-template-columns: minmax(218px, 230px) max-content max-content minmax(0, 1fr) !important;
             align-items: center !important;
-            gap: 0.4rem !important;
+            column-gap: 1rem !important;
+            row-gap: 0.35rem !important;
             margin: 0.1rem 0 0.45rem !important;
             width: 100% !important;
             min-width: 0 !important;
@@ -9401,22 +9492,59 @@ def render_question_header(q_label, content, fpath, extra_html_label="", compact
             background-color: #fff8dd;
             border: 1px solid #ead999;
         }
+        .mc-static-diff-row {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            min-height: 35px;
+            white-space: nowrap;
+        }
+        .mc-static-diff-stars {
+            display: inline-flex;
+            align-items: center;
+            gap: 1px;
+            color: #d8dee9;
+            font-size: 1.15rem;
+            line-height: 1;
+            letter-spacing: -0.02em;
+        }
+        .mc-static-diff-stars .is-filled {
+            color: #f2b94b;
+        }
+        .mc-static-diff-stars .is-empty {
+            color: #e5e7eb;
+        }
+        .mc-static-diff-value {
+            margin-left: 0.25rem;
+            color: #6e6e73;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
         </style>
         """, unsafe_allow_html=True)
-        compact_diff, compact_tag, compact_remark = st.columns([1.35, 0.65, 0.65], gap="small", vertical_alignment="center")
+        compact_diff, compact_tag, compact_remark, compact_spacer = st.columns([1.15, 0.5, 0.5, 4], gap="small", vertical_alignment="center")
         with compact_diff:
             st.markdown(f'<span class="mc-compact-meta-anchor" data-key="{compact_hash}"></span>', unsafe_allow_html=True)
-            new_diff = st_star_rating(label="难度星级：", value=diff_val, max_stars=6, key=f"compact_star_{compact_hash}_{st.session_state.get(version_key, 0)}")
-            if new_diff is not None and new_diff != diff_val:
-                update_question_meta(fpath, "难度星级", str(new_diff))
-                st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
-                st.rerun()
+            if interactive_difficulty:
+                new_diff = st_star_rating(label="难度星级：", value=diff_val, max_stars=6, key=f"compact_star_{compact_hash}_{st.session_state.get(version_key, 0)}")
+                if new_diff is not None and new_diff != diff_val:
+                    update_question_meta(fpath, "难度星级", str(new_diff))
+                    st.session_state[version_key] = st.session_state.get(version_key, 0) + 1
+                    st.rerun()
+            else:
+                st.markdown(
+                    f"<div class='mc-static-diff-row'><span class='meta-title'>难度星级：</span>"
+                    f"<span class='mc-static-diff-stars'>{_static_difficulty_stars_html(diff_val)}</span></div>",
+                    unsafe_allow_html=True,
+                )
         with compact_tag:
             tag_text = tags or "无标签"
             st.markdown(f"<div class='mc-compact-meta-row'><span class='meta-title'>标签：</span><span class='badge-tag'>{html.escape(tag_text)}</span></div>", unsafe_allow_html=True)
         with compact_remark:
             remark_text = remark or "无备注"
             st.markdown(f"<div class='mc-compact-meta-row'><span class='meta-title'>备注：</span><span class='badge-rem'>{html.escape(remark_text)}</span></div>", unsafe_allow_html=True)
+        with compact_spacer:
+            st.empty()
         return
     # --- 注入 CSS 实现紧凑同行布局与徽章样式 ---
     st.markdown("""
@@ -10420,12 +10548,20 @@ def page_system_intro():
 
 # ================= 页面：三级查找 =================
 # ================= 页面：三级查找嵌入组件 =================
-def render_advanced_search_inline():
+def render_advanced_search_inline(compact=False, search_result_count=None):
+    results_page_size_options = [5, 10, 15, 20]
+    default_results_page_size = 10
+    if st.session_state.get("adv_results_page_size") not in (None, *results_page_size_options):
+        del st.session_state["adv_results_page_size"]
     st.markdown("""
     <style>
     div[data-testid="stMarkdownContainer"]:has(#adv-search-inputs-anchor),
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-compact-inputs-anchor),
     div[data-testid="stMarkdownContainer"]:has(#adv-search-btn-anchor),
-    div[data-testid="stMarkdownContainer"]:has(#adv-search-info-anchor) {
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-info-anchor),
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-compact-btn-anchor),
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-compact-info-anchor),
+    div[data-testid="stMarkdownContainer"]:has(#adv-search-pager-anchor) {
         display: none !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -10541,6 +10677,101 @@ def render_advanced_search_inline():
         box-shadow: none !important;
         filter: none !important;
     }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-btn-anchor),
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-info-anchor) {
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-btn-anchor) button {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 48px !important;
+        min-height: 48px !important;
+        max-height: 48px !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
+        height: auto !important;
+        min-height: 64px !important;
+        max-height: none !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stButton"] > button {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        min-height: 44px !important;
+        height: 44px !important;
+        max-height: 44px !important;
+        padding: 0 1rem !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 10px !important;
+        white-space: nowrap !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stButton"] > button p {
+        white-space: nowrap !important;
+        word-break: keep-all !important;
+        line-height: 1.2 !important;
+        margin: 0 !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 0.35rem !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] label {
+        width: auto !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+        padding-right: 0.2rem !important;
+        white-space: nowrap !important;
+    }
+    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] label p {
+        white-space: nowrap !important;
+        font-size: 0.92rem !important;
+        line-height: 1.15 !important;
+    }
+    .mc-adv-result-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 1rem 0 0.75rem;
+    }
+    .mc-adv-result-summary h3 {
+        margin: 0;
+        font-size: 1.16rem;
+        line-height: 1.25;
+    }
+    .mc-adv-result-summary span {
+        color: #4c1d95;
+        font-weight: 750;
+        font-size: 0.98rem;
+        white-space: nowrap;
+    }
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+        gap: 0.75rem !important;
+        align-items: end !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) > div[data-testid="column"] {
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        flex: initial !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) div[data-testid="stSelectbox"],
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) div[data-testid="stNumberInput"],
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) div[data-baseweb="select"] {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
     @media (max-width: 900px) {
         div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) {
             grid-template-columns: minmax(0, 1fr) !important;
@@ -10570,6 +10801,13 @@ def render_advanced_search_inline():
             st.toast("请输入至少一个关键词后再开始查找。", icon="⚠️")
             return
         st.session_state["adv_search_active"] = True
+        st.session_state["adv_results_page"] = 1
+        st.session_state["adv_results_page_size"] = 10
+
+    if compact:
+        if st.button("❌ 退出检索", use_container_width=True):
+            st.session_state["adv_search_active"] = False
+            st.rerun()
 
     search_mode = st.radio(
         "检索模式",
@@ -10587,6 +10825,71 @@ def render_advanced_search_inline():
         )
 
     search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
+
+    if compact:
+        st.markdown('<div id="adv-search-compact-inputs-anchor"></div>', unsafe_allow_html=True)
+        t1 = st.selectbox("一级类型", search_opts, index=0, key="adv_t1")
+        if t1 == "题目类型":
+            q1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="adv_q1_sel", on_change=on_adv_search)
+        else:
+            q1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="adv_q1", on_change=on_adv_search)
+
+        t2 = st.selectbox("二级类型", search_opts, index=0, key="adv_t2")
+        if t2 == "题目类型":
+            q2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="adv_q2_sel", on_change=on_adv_search)
+        else:
+            q2 = st.text_input("二级关键词", placeholder="输入二级关键词...", key="adv_q2", on_change=on_adv_search)
+
+        t3 = st.selectbox("三级类型", search_opts, index=0, key="adv_t3")
+        if t3 == "题目类型":
+            q3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="adv_q3_sel", on_change=on_adv_search)
+        else:
+            q3 = st.text_input("三级关键词", placeholder="输入三级关键词...", key="adv_q3", on_change=on_adv_search)
+
+        st.markdown('<div id="adv-search-compact-btn-anchor"></div>', unsafe_allow_html=True)
+        st.button("🔎 再次搜索", use_container_width=True, type="primary", on_click=on_adv_search)
+
+        st.markdown('<span id="adv-search-compact-info-anchor"></span>', unsafe_allow_html=True)
+        semantic_query = st.session_state.get("adv_semantic_query", "") if search_mode != "精确筛选" else ""
+        if not (st.session_state.get("adv_search_active") and (q1 or q2 or q3 or semantic_query)):
+            st.info("输入查找条件后开始查找。")
+            return
+
+        search_info = []
+        if q1: search_info.append(f"{t1}: `{q1}`")
+        if q2: search_info.append(f"{t2}: `{q2}`")
+        if q3: search_info.append(f"{t3}: `{q3}`")
+        if semantic_query: search_info.append(f"语义: `{semantic_query}`")
+        search_info.append(f"模式: `{search_mode}`")
+        st.markdown(f"**检索条件**: {' | '.join(search_info)}")
+
+        if search_result_count is not None:
+            st.markdown(
+                f"""
+                <div class="mc-adv-result-summary">
+                    <h3>🎯 查找结果</h3>
+                    <span>找到 {search_result_count} 个匹配题目</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if search_result_count:
+                pager_size_col, pager_page_col = st.columns([1, 1], gap="small")
+                with pager_size_col:
+                    st.markdown('<span id="adv-search-pager-anchor"></span>', unsafe_allow_html=True)
+                    page_size = st.selectbox("每页显示", options=results_page_size_options, index=1, key="adv_results_page_size")
+                total_pages = max(1, (search_result_count + page_size - 1) // page_size)
+                current_results_page = int(st.session_state.get("adv_results_page", 1) or 1)
+                current_results_page = max(1, min(total_pages, current_results_page))
+                st.session_state["adv_results_page"] = current_results_page
+                with pager_page_col:
+                    page = st.number_input("页码", min_value=1, max_value=total_pages, value=current_results_page, step=1, key="adv_results_page")
+                start = (page - 1) * page_size
+                end = min(search_result_count, start + page_size)
+                st.caption(f"当前显示：第 {start + 1}–{end} 条 / 共 {search_result_count} 条")
+            else:
+                st.warning("未找到匹配的题目。")
+        return
 
     col_inputs, col_btn, col_info = st.columns([2.5, 0.44, 2.18])
 
@@ -10647,8 +10950,17 @@ def render_advanced_search_inline():
             st.session_state["adv_search_active"] = False
             st.rerun()
 
-def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
-    st.markdown("### 🎯 查找结果")
+def render_advanced_search_workspace(is_delete_mode=False, paper_type_scope=None):
+    results = _get_advanced_search_results(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope)
+    c_search, c_results = st.columns([0.55, 2.75], gap="large")
+    with c_search:
+        st.markdown('<div id="adv-search-left-anchor"></div>', unsafe_allow_html=True)
+        render_advanced_search_inline(compact=True, search_result_count=len(results))
+    with c_results:
+        st.markdown('<div id="adv-search-right-anchor"></div>', unsafe_allow_html=True)
+        render_advanced_search_results(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope, results=results, controls_in_sidebar=True)
+
+def _get_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
     search_mode = st.session_state.get("adv_search_mode", "精确筛选")
     semantic_query = (st.session_state.get("adv_semantic_query", "") or "").strip() if search_mode != "精确筛选" else ""
 
@@ -10770,26 +11082,57 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
         st.session_state["adv_last_query"] = query_key
         st.session_state["adv_last_results"] = results
 
-    if results:
-        st.success(f"找到 {len(results)} 个匹配题目")
+    return results
 
-        page_size = st.selectbox("每页显示", options=[10, 20, 30, 50], index=2, key="adv_results_page_size")
+
+def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None, results=None, controls_in_sidebar=False):
+    results_page_size_options = [5, 10, 15, 20]
+    default_results_page_size = 10
+    if not controls_in_sidebar and st.session_state.get("adv_results_page_size") not in (None, *results_page_size_options):
+        del st.session_state["adv_results_page_size"]
+    results = _get_advanced_search_results(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope) if results is None else results
+    if not controls_in_sidebar:
+        st.markdown(
+            f"""
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:0 0 0.75rem;">
+                <h3 style="margin:0;">🎯 查找结果</h3>
+                <span style="font-weight:700;color:#4c1d95;">找到 {len(results)} 个匹配题目</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if results:
+        if controls_in_sidebar:
+            page_size = int(st.session_state.get("adv_results_page_size", default_results_page_size) or default_results_page_size)
+            if page_size not in results_page_size_options:
+                page_size = default_results_page_size
+        else:
+            page_size = st.selectbox("每页显示", options=results_page_size_options, index=1, key="adv_results_page_size")
         total_pages = (len(results) + page_size - 1) // page_size
         current_results_page = int(st.session_state.get("adv_results_page", 1) or 1)
         current_results_page = max(1, min(max(1, total_pages), current_results_page))
-        st.session_state["adv_results_page"] = current_results_page
-        page = st.number_input("页码", min_value=1, max_value=max(1, total_pages), value=current_results_page, step=1, key="adv_results_page")
+        if controls_in_sidebar:
+            page = current_results_page
+        else:
+            st.session_state["adv_results_page"] = current_results_page
+            page = st.number_input("页码", min_value=1, max_value=max(1, total_pages), value=current_results_page, step=1, key="adv_results_page")
 
         start = (page - 1) * page_size
         end = min(len(results), start + page_size)
-        st.caption(f"当前显示：第 {start + 1}–{end} 条 / 共 {len(results)} 条")
+        if not controls_in_sidebar:
+            st.caption(f"每页 {page_size} 题 · 当前第 {page} 页 · 显示第 {start + 1}–{end} 条 / 共 {len(results)} 条")
 
         for i, res in enumerate(results[start:end], start=start):
             fpath = res["path"]
             fname = res["file"]
 
-            with open(fpath, "r", encoding="utf-8") as f:
-                content = f.read()
+            prepared_assets = None
+            if is_delete_mode:
+                content = read_question_text(fpath)
+            else:
+                prepared_assets = load_question_editor_assets(fpath)
+                content = prepared_assets["content"]
 
             q_label = format_question_title(fname)
             if res.get("semantic_score") is not None:
@@ -10808,6 +11151,8 @@ def render_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
                 fpath,
                 "adv_search",
                 paper_type_scope=paper_type_scope,
+                prepared_assets=prepared_assets,
+                interactive_difficulty=True,
             )
             st.divider()
     else:
@@ -10822,6 +11167,11 @@ def page_advanced_search():
         st.markdown("**二级提示**\n\n可留空，也可继续细化")
     with t3:
         st.markdown("**三级提示**\n\n可留空，也可进一步过滤")
+
+    if st.session_state.get("adv_search_active") and _adv_search_has_query():
+        render_advanced_search_workspace()
+        return
+
     render_advanced_search_inline()
     st.markdown('<hr style="border-top: 1px solid #e1e4e8; margin-top: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
     if st.session_state.get("adv_search_active") and _adv_search_has_query():

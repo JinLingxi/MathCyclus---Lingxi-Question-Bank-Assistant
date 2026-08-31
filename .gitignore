@@ -6,6 +6,9 @@
 # Agent Mail 授权过程中的本地临时日志
 .agently-auth/
 
+# Streamlit 本地密钥
+.streamlit/secrets.toml
+
 # TikZ 绘图的临时图片和 PDF 缓存 (会占用大量空间，不需要上传)
 .tikz_cache/
 *.pdf
@@ -15,6 +18,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # 操作系统生成的无用文件
 .DS_Store
@@ -46,6 +54,11 @@ SolaireEPDA-master/
 *.aux
 *.out
 *.toc
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.xdv
 
 # 历史备份文件（非正式代码）
 question_bank_app000.py
@@ -62,6 +75,7 @@ old_app.py
 
 MathCyclus_demo.html
 cloze_exports/
+Test Paper Group/
 Test Paper Group/导出文件/
 AutoTikz.md
 
