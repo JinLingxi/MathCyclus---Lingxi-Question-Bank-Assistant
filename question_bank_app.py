@@ -354,21 +354,7 @@ def inject_custom_css():
             padding: 0 !important;
             margin-top: 0.62rem !important;
         }
-        div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-question-actions-grid-anchor) > div[data-testid="stVerticalBlock"] {
-            display: grid !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            gap: 0.75rem !important;
-            align-items: stretch !important;
-        }
-        .mc-question-actions-grid-block {
-            display: grid !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-            gap: 0.75rem !important;
-            align-items: stretch !important;
-        }
-        div[data-testid="stMarkdownContainer"]:has(> .mc-question-actions-grid-anchor) {
-            display: none !important;
-        }
+        div[data-testid="stMarkdownContainer"]:has(> .mc-question-actions-grid-anchor),
         div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-question-actions-grid-anchor) div[data-testid="stElementContainer"]:has(.mc-question-actions-grid-anchor) {
             display: none !important;
         }
@@ -529,7 +515,7 @@ def inject_custom_css():
         div[data-testid="column"]:has(#time-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor),
         div[data-testid="column"]:has(#adv-search-right-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-question-preview-anchor) {
             display: grid !important;
-            grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) !important;
+            grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr) !important;
             width: 100% !important;
             min-width: 0 !important;
             max-width: none !important;
@@ -5467,66 +5453,41 @@ def render_exam_question_card(q_label, content, fpath, action_key):
             st.error(f"渲染错误: {e}")
 
 
-def _render_native_question_actions(key_prefix, fhash, is_tag_editing):
+def _question_action_state_key(key_prefix, fhash):
+    return f"{key_prefix}_pending_question_action_{fhash}"
+
+
+def _set_pending_question_action(key_prefix, fhash, action):
+    st.session_state[_question_action_state_key(key_prefix, fhash)] = action
+
+
+def _pop_pending_question_action(key_prefix, fhash):
+    return st.session_state.pop(_question_action_state_key(key_prefix, fhash), None)
+
+
+def _render_native_question_actions(key_prefix, fhash, is_tag_editing, is_tex_editing):
     action = None
-    with st.container(border=True):
-        st.markdown('<span class="mc-question-actions-grid-anchor"></span>', unsafe_allow_html=True)
-        if st.button("\U0001f4be \u4fdd\u5b58\u4fee\u6539", key=f"{key_prefix}_save_tex_{fhash}", type="primary", use_container_width=True):
-            action = "save_tex"
-        edit_label = "\u2705 \u4fdd\u5b58\u6587\u4ef6\u4fe1\u606f" if is_tag_editing else "\U0001f3f7\ufe0f \u4fee\u6539\u6587\u4ef6\u4fe1\u606f"
-        edit_type = "primary" if is_tag_editing else "secondary"
-        if st.button(edit_label, key=f"{key_prefix}_edit_meta_{fhash}", type=edit_type, use_container_width=True):
+    st.markdown('<span class="mc-question-actions-grid-anchor"></span>', unsafe_allow_html=True)
+    tex_label = "\U0001f4be \u4fdd\u5b58\u4fee\u6539" if is_tex_editing else "\u270f\ufe0f \u5f00\u59cb\u4fee\u6539tex\u5185\u5bb9"
+    tex_action = "save_tex" if is_tex_editing else "start_tex_edit"
+    tex_type = "primary" if is_tex_editing else "secondary"
+    edit_label = "\u2705 \u4fdd\u5b58\u6587\u4ef6\u4fe1\u606f" if is_tag_editing else "\U0001f3f7\ufe0f \u4fee\u6539\u6587\u4ef6\u4fe1\u606f"
+    edit_type = "primary" if is_tag_editing else "secondary"
+    row1_col1, row1_col2, _ = st.columns([0.475, 0.475, 1.05], gap="small")
+    row2_col1, row2_col2, _ = st.columns([0.475, 0.475, 1.05], gap="small")
+    with row1_col1:
+        if st.button(tex_label, key=f"{key_prefix}_tex_edit_{fhash}", type=tex_type, use_container_width=True, on_click=_set_pending_question_action, args=(key_prefix, fhash, tex_action)):
+            action = tex_action
+    with row1_col2:
+        if st.button(edit_label, key=f"{key_prefix}_edit_meta_{fhash}", type=edit_type, use_container_width=True, on_click=_set_pending_question_action, args=(key_prefix, fhash, "edit_meta")):
             action = "edit_meta"
-        if st.button("\U0001f916 AI\u751f\u6210\u89e3\u7b54", key=f"{key_prefix}_ai_generate_{fhash}", use_container_width=True):
+    with row2_col1:
+        if st.button("\U0001f916 AI\u751f\u6210\u89e3\u7b54", key=f"{key_prefix}_ai_generate_{fhash}", use_container_width=True, on_click=_set_pending_question_action, args=(key_prefix, fhash, "ai_generate")):
             action = "ai_generate"
-        if st.button("\U0001f5bc\ufe0f \u89e3\u7b54\u56fe\u7247\u8bc6\u522b", key=f"{key_prefix}_image_ocr_{fhash}", use_container_width=True):
+    with row2_col2:
+        if st.button("\U0001f5bc\ufe0f \u89e3\u7b54\u56fe\u7247\u8bc6\u522b", key=f"{key_prefix}_image_ocr_{fhash}", use_container_width=True, on_click=_set_pending_question_action, args=(key_prefix, fhash, "image_ocr")):
             action = "image_ocr"
     return action
-
-
-def inject_question_actions_grid_compat_helper():
-    components.html(
-        """
-        <script>
-        (() => {
-            const win = window.parent;
-            const doc = win.document;
-            let scheduled = false;
-            function apply() {
-                scheduled = false;
-                doc.querySelectorAll('.mc-question-actions-grid-block').forEach((block) => {
-                    if (!block.querySelector('.mc-question-actions-grid-anchor')) {
-                        block.classList.remove('mc-question-actions-grid-block');
-                    }
-                });
-                doc.querySelectorAll('.mc-question-actions-grid-anchor:not([data-mc-grid-ready="1"])').forEach((marker) => {
-                    const markerContainer = marker.closest('div[data-testid="stElementContainer"]');
-                    if (markerContainer) {
-                        markerContainer.style.setProperty('display', 'none', 'important');
-                    }
-                    const block = marker.closest('div[data-testid="stVerticalBlock"]');
-                    if (block) block.classList.add('mc-question-actions-grid-block');
-                    marker.dataset.mcGridReady = '1';
-                });
-            }
-            function scheduleApply() {
-                if (scheduled) return;
-                scheduled = true;
-                win.requestAnimationFrame(apply);
-            }
-            apply();
-            win.setTimeout(scheduleApply, 40);
-            win.setTimeout(scheduleApply, 180);
-            if (win.__mcQuestionActionsCompatObserver) {
-                win.__mcQuestionActionsCompatObserver.disconnect();
-            }
-            win.__mcQuestionActionsCompatObserver = new win.MutationObserver(scheduleApply);
-            win.__mcQuestionActionsCompatObserver.observe(doc.body, {childList: true, subtree: true});
-        })();
-        </script>
-        """,
-        height=0,
-    )
 
 
 def render_browse_question_editor_card(q_label, content, fpath, key_prefix, paper_type_scope=None, extra_html_label="", rename_paths_key=None, prepared_assets=None, interactive_difficulty=True):
@@ -5542,22 +5503,31 @@ def render_browse_question_editor_card(q_label, content, fpath, key_prefix, pape
     )
 
     tag_edit_key = f"{key_prefix}_tag_edit_mode_{_question_key('tag', fpath)}"
+    tex_edit_key = f"{key_prefix}_tex_edit_mode_{_question_key('tex', fpath)}"
     text_area_key = f"{key_prefix}_edit_{_question_key('text', fpath)}"
     fhash = _question_key("meta", fpath)
+    action = _pop_pending_question_action(key_prefix, fhash)
     is_tag_editing = st.session_state.get(tag_edit_key, False)
-    if text_area_key not in st.session_state:
+    is_tex_editing = st.session_state.get(tex_edit_key, False)
+    if action == "start_tex_edit":
+        st.session_state[tex_edit_key] = True
         st.session_state[text_area_key] = content
-    current_content = st.session_state.get(text_area_key, content)
+        is_tex_editing = True
+    elif text_area_key not in st.session_state:
+        st.session_state[text_area_key] = content
+    current_content = st.session_state.get(text_area_key, content) if is_tex_editing else content
     if current_content == content and prepared_assets.get("editor_height") is not None:
         est_height = prepared_assets["editor_height"]
     else:
         est_height = _cached_editor_height(current_content)
 
-    c_src, c_preview = st.columns([0.85, 1.15], gap="large")
+    c_src, c_preview = st.columns([0.95, 1.05], gap="large")
     with c_src:
-        current_content = st.text_area("源码", height=est_height, key=text_area_key)
-
-        action = _render_native_question_actions(key_prefix, fhash, is_tag_editing)
+        if is_tex_editing:
+            current_content = st.text_area("源码", height=est_height, key=text_area_key)
+        else:
+            st.text_area("源码", value=content, height=est_height, disabled=True, key=f"{text_area_key}_readonly")
+            current_content = content
 
         if action == "save_tex":
             new_content = st.session_state.get(text_area_key, current_content)
@@ -5567,6 +5537,7 @@ def render_browse_question_editor_card(q_label, content, fpath, key_prefix, pape
             _update_csv_index_for_content_change(fpath, final_content)
             _clear_advanced_search_result_cache()
             st.session_state[text_area_key] = final_content
+            st.session_state[tex_edit_key] = False
             st.toast(f"{q_label} 已保存", icon="✅")
             time.sleep(0.5)
             st.rerun()
@@ -5652,6 +5623,8 @@ def render_browse_question_editor_card(q_label, content, fpath, key_prefix, pape
             render_question_preview(current_content, show_title=False, prepared_markdown=prepared_markdown)
         except Exception as e:
             st.error(f"渲染错误: {e}")
+
+    _render_native_question_actions(key_prefix, fhash, is_tag_editing, is_tex_editing)
 
     render_ai_solution_panel(fpath, q_label, key_prefix="ai_solution_v1")
 
@@ -11804,7 +11777,6 @@ def main():
     # Inject the shared visual system before route content to avoid first-painting legacy styles.
     # Keep the final injection below as a cascade safeguard for page-local styles.
     inject_unified_visual_system_css()
-    inject_question_actions_grid_compat_helper()
 
     # --- 主内容区路由 ---
     if selected_nav == stats_nav_option:
