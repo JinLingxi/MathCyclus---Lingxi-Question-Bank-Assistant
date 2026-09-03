@@ -154,3 +154,21 @@ python scripts/browse_question_db.py --db data/mathcyclus_preview_draft_commit_2
 - 试卷、教材、专题关系确认；
 - 完整 LaTeX/前端渲染预览；
 - 回滚策略。
+
+## 7. PDF 导入扩展方向
+
+PDF 导入不应直接替代当前 AI/OCR 单题录入，而应作为草稿生成器接入本流程。
+
+推荐路线：
+
+1. 原始 PDF 先进入本地私有导入批次目录；
+2. 通过 MinerU、pdf2md 或 PyMuPDF 解析为页面、文本块、公式块和图片块；
+3. 系统按题号、页码、栏目和坐标初步切分题目；
+4. AI 只处理单题块和局部截图，不直接吞完整 PDF；
+5. 解析结果写入 `question_import_draft`；
+6. PDF 中切出的题内图片写入 `question_import_draft_asset`；
+7. 用户审核后再提交到正式 `question` 和 `question_asset`。
+
+详细设计见：
+
+- `docs/planning/pdf_import_pipeline.md`
