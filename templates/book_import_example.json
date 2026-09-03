@@ -1,0 +1,62 @@
+{
+  "book": {
+    "title": "普通高中教科书 数学 必修 第一册",
+    "publisher": "人民教育出版社",
+    "edition": "A版",
+    "grade": "高一",
+    "volume": "必修第一册",
+    "curriculum_version": "2019课标",
+    "description": "教材库结构样例；只用于 dry-run。"
+  },
+  "sections": [
+    {
+      "section_key": "chapter-1",
+      "parent_key": "",
+      "title": "第一章 集合与常用逻辑用语",
+      "section_level": 1,
+      "page_start": 1,
+      "page_end": 42,
+      "sort_order": 1
+    },
+    {
+      "section_key": "chapter-1-1",
+      "parent_key": "chapter-1",
+      "title": "1.1 集合的概念",
+      "section_level": 2,
+      "page_start": 2,
+      "page_end": 10,
+      "sort_order": 11
+    },
+    {
+      "section_key": "chapter-1-2",
+      "parent_key": "chapter-1",
+      "title": "1.2 集合间的基本关系",
+      "section_level": 2,
+      "page_start": 11,
+      "page_end": 20,
+      "sort_order": 12
+    }
+  ],
+  "questions": [
+    {
+      "question_id": "Q000001",
+      "section_key": "chapter-1-1",
+      "page_number": 5,
+      "column_name": "练习",
+      "exercise_number": "1",
+      "sub_number": "",
+      "display_order": 1,
+      "source_note": "样例关系，不代表真实教材来源。"
+    },
+    {
+      "question_id": "Q000028",
+      "section_key": "chapter-1-2",
+      "page_number": 16,
+      "column_name": "习题",
+      "exercise_number": "3",
+      "sub_number": "1",
+      "display_order": 2,
+      "source_note": "样例关系，不代表真实教材来源。"
+    }
+  ]
+}

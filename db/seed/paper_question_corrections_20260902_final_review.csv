@@ -1,0 +1,10 @@
+correction_id,review_status,action,paper_question_id,question_id,target_year,target_paper_series,target_track,target_paper_name,target_source_name,target_question_number,target_sub_number,target_display_order,equivalent_question_ids,rationale,evidence
+PQC20260902_001,approved,move_relation,PQ000043,Q000043,2021,G,综合,上海春考卷,上海春考卷,12,,,,"题源错标：该三角函数题属于 2021 上海春考第 12 题；移动纸面关系，不改原 tex。","https://kaosj.com/papers/2021/06/2021-shanghai-spring-gaokao-math-original/"
+PQC20260902_002,approved,move_relation,PQ000496,Q000496,2021,G,综合,上海春考卷,上海春考卷,9,,,,"题源错标：该无穷等比数列题属于 2021 上海春考第 9 题；移动纸面关系，不改原 tex。","https://kaosj.com/papers/2021/06/2021-shanghai-spring-gaokao-math-original/"
+PQC20260902_003,approved,move_relation,PQ000157,Q000157,2024,G,综合,上海卷,上海卷,18,,,,"题号错标：该 log_a x 题属于 2024 上海卷第 18 题；移动纸面关系，不改原 tex。","https://chaoli.club/index.php/10342?see_lz=1"
+PQC20260902_004,approved,drop_relation,PQ000506,Q000506,,,,,,,,,Q000508,"同题低完整度纸面关系：Q000508 含答案，Q000506 只保留题干；删除 Q000506 的纸面关系，题目本体保留。","本地库核对：Q000506 与 Q000508 为同题，Q000508 更完整"
+PQC20260902_005,approved,move_relation,PQ000508,Q000508,2021,G,新高考,新高考II卷,新高考II卷,12,,,Q000506,"题源错标：omega(n) 多选题属于 2021 新高考 II 卷第 12 题；移动纸面关系，不改原 tex。","https://gaokaohub.com/paper/2021-xinkebiao-ii-math.html"
+PQC20260902_006,approved,drop_relation,PQ000132,Q000132,,,,,,,,,Q000362,"同题跨知识板块重复纸面关系：Q000362 含答案和解析，保留其试卷位置；Q000132 本体保留。","本地库核对：2016 四川理科第 9 题重复收录"
+PQC20260902_007,approved,drop_relation,PQ000028,Q000028,,,,,,,,,Q000768,"同题跨知识板块重复纸面关系：Q000768 含答案和解析，保留其试卷位置；Q000028 本体保留。","本地库核对：2016 江苏第 14 题重复收录"
+PQC20260902_008,approved,drop_relation,PQ000150,Q000150,,,,,,,,,Q000377,"同题跨知识板块重复纸面关系：Q000377 的选项在题干结构内更完整，保留其试卷位置；Q000150 本体保留。","本地库核对：2021 新高考 I 卷第 7 题重复收录"
+PQC20260902_009,approved,drop_relation,PQ000509,Q000509,,,,,,,,,Q000434,"同题跨知识板块重复纸面关系：Q000434 文字和单位格式更规范，保留其试卷位置；Q000509 本体保留。","本地库核对：2021 新高考 I 卷第 16 题重复收录"

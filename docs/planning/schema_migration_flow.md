@@ -1,0 +1,154 @@
+# SQLite Schema 迁移流程
+
+> 目标：后续项目更新时，用户的本地 `data/mathcyclus.sqlite3` 能安全跟随代码升级，同时不丢题库数据、不覆盖图片资源、不需要手工改库。
+
+## 1. 已建立的版本表
+
+`db/schema.sql` 已增加两张基础表：
+
+```text
+app_meta
+schema_migration
+```
+
+`app_meta` 用于保存当前数据库运行状态：
+
+| key | 说明 |
+| --- | --- |
+| `app_name` | 项目名 |
+| `schema_version` | 当前数据库 schema 版本 |
+| `schema_baseline` | 当前基线日期 |
+
+`schema_migration` 用于记录已应用的迁移：
+
+| 字段 | 说明 |
+| --- | --- |
+| `version` | 迁移版本号，例如 `1` |
+| `name` | 迁移名称 |
+| `checksum` | 迁移 SQL 文件 SHA256 |
+| `applied_at` | 应用时间 |
+
+## 2. 迁移文件命名
+
+迁移 SQL 放在：
+
+```text
+db/migrations/
+```
+
+命名格式：
+
+```text
+0001_schema_version_baseline.sql
+0002_add_xxx.sql
+0003_alter_xxx.sql
+```
+
+规则：
+
+- 前四位数字是版本号；
+- 版本号只能递增；
+- 已发布迁移文件不要改内容；
+- 如果要修正 schema，新增下一条迁移，不回改旧迁移；
+- 迁移 SQL 必须尽量可重复执行，优先使用 `IF NOT EXISTS`、`INSERT OR IGNORE`、`ON CONFLICT`。
+
+## 3. 命令行入口
+
+新增脚本：
+
+```text
+scripts/migrate_schema.py
+```
+
+查看状态：
+
+```text
+python scripts/migrate_schema.py --status-only
+```
+
+dry-run 检查：
+
+```text
+python scripts/migrate_schema.py
+```
+
+正式应用：
+
+```text
+python scripts/migrate_schema.py --apply
+```
+
+指定数据库：
+
+```text
+python scripts/migrate_schema.py --db data/mathcyclus.sqlite3 --apply
+```
+
+## 4. 安全边界
+
+迁移脚本默认安全：
+
+- 不加 `--apply` 时只读检查；
+- 应用前默认备份 SQLite；
+- 备份放在 `data/backups/`；
+- 不删除任何文件；
+- 不修改旧 `.tex` 题源；
+- 不移动 `assets/questions/` 图片资源；
+- 如果已应用迁移的 checksum 和当前文件不一致，拒绝继续。
+
+## 5. 与更新助手的关系
+
+`scripts/update_local_installation.py` 已接入 schema 迁移：
+
+- 更新前先备份本地数据；
+- 可选 `git pull --ff-only`；
+- 可选安装依赖；
+- 更新后运行 `scripts/init_local_workspace.py` 补齐本地目录；
+- 然后运行 `scripts/migrate_schema.py`；
+- 最后可选运行 `scripts/release_readiness.py --skip-slow`。
+
+普通用户更新推荐：
+
+```text
+python scripts/update_local_installation.py --pull --install-deps --run-checks
+python scripts/update_local_installation.py --apply --pull --install-deps --run-checks
+```
+
+## 6. 当前基线迁移
+
+当前只有一条基线迁移：
+
+```text
+db/migrations/0001_schema_version_baseline.sql
+```
+
+它做的事情：
+
+- 给旧库补 `app_meta`；
+- 给旧库补 `schema_migration`；
+- 标记 `schema_version = 1`；
+- 标记 `schema_baseline = 20260903`；
+- 不碰题目表、来源表、图片表和旧 TeX。
+
+## 7. 后续新增字段时的流程
+
+未来如果要给数据库加字段，例如题目图片引用别名、导出偏好或教材栏目扩展，应按下面流程：
+
+1. 修改 `db/schema.sql`，保证新安装用户得到最新完整 schema；
+2. 新增 `db/migrations/0002_xxx.sql`，保证老用户可以从旧库升级；
+3. 新增或更新服务层读写逻辑；
+4. 新增 smoke 测试覆盖旧库升级；
+5. 运行：
+
+```text
+python -m py_compile services/schema_migration_service.py scripts/migrate_schema.py
+python scripts/smoke_schema_migration_service.py
+python scripts/release_readiness.py --skip-slow
+```
+
+## 8. 当前边界
+
+- 尚未做图形化“数据库升级”按钮；
+- 尚未把 schema 迁移入口放入 Streamlit 工具箱；
+- 目前迁移入口先通过命令行和版本更新助手使用；
+- 等 1.0 前核心页面稳定后，再决定是否把 `migrate_schema.py` 接进图形化设置或工具箱。

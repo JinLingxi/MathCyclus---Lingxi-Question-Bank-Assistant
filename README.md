@@ -6,7 +6,7 @@
 
 ![MathCyclus Question Bank Assistant workflow](fig/mathcyclus_workflow.png)
 
-从按章节/年份组织的 LaTeX 题目源文件出发，系统构建 CSV 元数据索引，在 Streamlit 工作台中完成检索、编辑、预览与智能组卷，并通过 Qwen-VL-Plus 和 TikZ 渲染管线增强 OCR、打标签、解答生成和几何图预览能力，最终导出 LaTeX 试卷源文件与 PDF 讲义。
+从按章节/年份组织的 LaTeX 题目源文件出发，系统兼容旧 CSV 元数据索引，并逐步升级为 SQLite 结构化题库。在 Streamlit 工作台中完成检索、编辑、预览与智能组卷，并通过 Qwen-VL-Plus 和 TikZ 渲染管线增强 OCR、打标签、解答生成和几何图预览能力，最终导出 LaTeX 试卷源文件与 PDF 讲义。
 
 ## ✨ 核心功能
 
@@ -17,6 +17,7 @@
 - 按「板块 / 年份」自动归档题目文件。
 - 使用 `problem`、`answer`、`solutions` 环境分离题干、答案与解析。
 - 通过题目元数据记录 ID、标签、难度、来源与备注。
+- SQLite 结构化题库已支持题目本体、来源关系、图片资源、修订记录与 TeX 导出。
 
 ### 🤖 AI 辅助录入
 
@@ -31,7 +32,7 @@
 从题库中按条件筛选、抽样并生成试卷。
 
 - 支持题型、年份、板块、标签、难度与全文检索。
-- 支持可选的混合搜索与语义搜索；本地 SQLite 向量索引可随时重建，不替代 CSV 题库索引。
+- 支持可选的混合搜索与语义搜索；本地 SQLite 向量索引可随时重建。
 - 支持按知识板块、题量与目标难度分布进行抽样。
 - 支持自然语言组卷需求润色，辅助形成命题意图。
 
@@ -56,6 +57,7 @@
 - **前端界面与交互**：[Streamlit](https://streamlit.io/) (响应式框架，多列布局，回调机制)
 - **排版与编译引擎**：**$\LaTeX$** (核心依赖 `xelatex` 编译器)
 - **底层脚本与处理**：Python (`re` 文本处理, `fitz` PDF图像解析, 抽样算法)
+- **结构化存储**：SQLite (`data/mathcyclus.sqlite3` 本地私有库，schema 与迁移脚本随源码发布)
 - **大语言模型支持**：阿里云百炼 (Qwen-VL-Plus 模型)
 - **版本控制**：Git/GitHub (配置代理优化大文件传输同步)
 
@@ -72,7 +74,14 @@
    .venv\Scripts\activate
    pip install -r requirements.txt
    ```
-3. 复制 `.env.example` 为 `.env`，并填入 AI 模型配置：
+3. 初始化本地运行目录和空 SQLite 数据库：
+
+   ```bash
+   python scripts/init_local_workspace.py
+   ```
+
+   该脚本只创建本机运行目录和空库，不覆盖已有 `data/mathcyclus.sqlite3`。
+4. 复制 `.env.example` 为 `.env`，并填入 AI 模型配置：
 
    ```env
    AI_API_KEY=your_api_key_here
@@ -82,13 +91,13 @@
    AI_EMBEDDING_MODEL_NAME=text-embedding-v4
    ```
    配置 embedding 模型后，在“工具箱 → 语义搜索索引”中更新索引；留空时系统继续使用原有精确筛选。
-4. 如需使用 TikZ 几何图预览，请安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），并确认 `xelatex` 已加入系统环境变量。项目会通过 `PyMuPDF` 将编译结果转为 PNG 预览。
-5. 首次启动时如果本地没有 `utils/题库索引表.csv`，程序会根据当前电脑上的 `chapters/` 自动生成；首次使用或批量导入题目后，也可以手动重建题库索引：
+5. 如需使用 TikZ 几何图预览，请安装完整的 **$\LaTeX$ 编译环境**（例如 TeX Live），并确认 `xelatex` 已加入系统环境变量。项目会通过 `PyMuPDF` 将编译结果转为 PNG 预览。
+6. 首次启动时如果本地没有 `utils/题库索引表.csv`，程序会根据当前电脑上的 `chapters/` 自动生成；首次使用或批量导入题目后，也可以手动重建题库索引：
 
    ```bash
    python utils/init_csv_index.py
    ```
-6. 双击运行 `启动程序.bat`，或者在终端执行：
+7. 双击运行 `启动程序.bat`，或者在终端执行：
 
    ```bash
    python 启动程序.py
@@ -102,6 +111,30 @@
 streamlit run question_bank_app.py
 ```
 
+## 🔄 本地升级
+
+如果你是从 GitHub clone 的源码版，建议先预览更新计划：
+
+```bash
+python scripts/update_local_installation.py --pull --install-deps --run-checks
+```
+
+确认没有阻塞后再实际执行：
+
+```bash
+python scripts/update_local_installation.py --apply --pull --install-deps --run-checks
+```
+
+如果只想检查或应用 SQLite schema 迁移：
+
+```bash
+python scripts/migrate_schema.py --status-only
+python scripts/migrate_schema.py
+python scripts/migrate_schema.py --apply
+```
+
+更新脚本默认保护本地数据：执行前会备份 SQLite、图片资源和配置文件，不删除旧 `.tex`，不上传 `.env`、数据库、图片、报告或导出文件。
+
 ## 💡 创新亮点
 
 - **首创"教学审核"OCR**：AI 识别解答时自动审核逻辑，发现错误会标注原错并附加 AI 纠错，兼顾教学真实性与正确性。
@@ -113,6 +146,13 @@ streamlit run question_bank_app.py
 
 ```text
 ├── chapters/              # 存放按学科板块和年份分类的 LaTeX 题库源文件 (.tex)
+├── db/                    # SQLite schema、迁移脚本和人工复核种子
+├── services/              # 数据库、编辑、导出、统计、图片和迁移等服务层
+├── scripts/               # 本地初始化、迁移、审计、smoke 和发布检查脚本
+├── data/                  # 本地 SQLite 数据库和备份（默认不提交）
+├── assets/questions/      # 题目图片资源（默认不提交）
+├── reports/               # 本地审计和迁移报告（默认不提交）
+├── exports/               # 本地导出文件（默认不提交）
 ├── fig/                   # README 与文档配图
 ├── utils/                 # 系统核心工具库 (配置、文件读写、TikZ 渲染、CSV 索引管理)
 ├── Test Paper Group/      # LaTeX 试卷/讲义/练习模板
@@ -128,6 +168,11 @@ streamlit run question_bank_app.py
 ## 🧹 仓库维护说明
 
 - `utils/题库索引表.csv` 是每台电脑独立生成的高速索引，不提交到 Git；题库内容变化后可运行 `python utils/init_csv_index.py` 刷新。
+- `data/mathcyclus.sqlite3` 是每台电脑自己的正式 SQLite 题库，不提交到 Git；新用户通过 `python scripts/init_local_workspace.py` 创建空库。
+- `assets/questions/` 存放每道题关联的非 TikZ 图片资源，不提交到 Git；迁移时通过本地数据包一起转移。
+- `reports/` 和 `exports/` 是本地审计报告与导出结果，不提交到 Git。
+- `db/schema.sql` 与 `db/migrations/` 是公开源码的一部分，用于新安装和版本升级。
+- `scripts/migrate_schema.py` 默认只 dry-run；正式应用 schema 迁移必须显式加 `--apply`。
 - `utils/local_stats.sqlite3` 保存本机新增、修改和活跃度统计，不提交到 Git。首次建立索引只记录本地基线，不会把仓库历史题目算作当前用户的新增。
 - `utils/semantic_index.sqlite3` 是可选且可重建的语义索引，不应提交到 Git；题目保存、删除或重命名后，对应旧向量会自动失效。
 - 批量识别或同卷录入遇到已存在的同名题目时，默认保留旧文件并跳过新的识别结果；处理日志会明确标记为“跳过”。

@@ -40,6 +40,23 @@ utils/local_stats.sqlite3
 utils/local_stats.sqlite3-*
 utils/operation_log.sqlite3
 utils/operation_log.sqlite3-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.db
+*.db-*
+data/*
+!data/.gitkeep
+!data/indexes/
+data/indexes/*
+!data/indexes/.gitkeep
+!data/backups/
+data/backups/*
+!data/backups/.gitkeep
+reports/*
+!reports/.gitkeep
+import_reports/
 
 # 本机工作区和临时同步目录
 .sync-work-*/
@@ -78,6 +95,10 @@ cloze_exports/
 Test Paper Group/
 Test Paper Group/导出文件/
 AutoTikz.md
+exports/*
+!exports/.gitkeep
+assets/questions/*
+!assets/questions/.gitkeep
 
 # 题库试题源文件默认不上传 GitHub，避免版权与仓库体积风险
 *-G-*.tex
@@ -103,4 +124,3 @@ tiku/
 
 # One-off local maintenance scripts
 fix_codex_config.py
-

@@ -1,0 +1,43 @@
+{
+  "module": {
+    "name": "函数",
+    "description": "专题库结构样例；只用于 dry-run。",
+    "sort_order": 1
+  },
+  "topics": [
+    {
+      "topic_key": "function-monotonicity",
+      "name": "函数单调性",
+      "file_name": "函数单调性.tex",
+      "description": "单调性定义、图像判断、参数问题。",
+      "questions": [
+        {
+          "question_id": "Q000132",
+          "group_name": "基础判断",
+          "sort_order": 1,
+          "topic_note": "样例关系，不代表最终专题选择。"
+        },
+        {
+          "question_id": "Q000150",
+          "group_name": "参数综合",
+          "sort_order": 2,
+          "topic_note": "样例关系，不代表最终专题选择。"
+        }
+      ]
+    },
+    {
+      "topic_key": "derivative-application",
+      "name": "导数应用",
+      "file_name": "导数应用.tex",
+      "description": "利用导数研究函数性质。",
+      "questions": [
+        {
+          "question_id": "Q000344",
+          "group_name": "压轴题",
+          "sort_order": 1,
+          "topic_note": "样例关系，不代表最终专题选择。"
+        }
+      ]
+    }
+  ]
+}

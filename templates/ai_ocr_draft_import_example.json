@@ -1,0 +1,77 @@
+{
+  "source_path": "manual-example/2026-09-02-ai-ocr-draft",
+  "summary": "AI/OCR 草稿导入格式样例；用于验证草稿表和导入报告，不代表正式题库内容。",
+  "items": [
+    {
+      "source_item_id": "example-001",
+      "source_label": "样例第 1 题",
+      "proposed_action": "insert",
+      "review_status": "ready",
+      "question_type": "single_choice",
+      "stem_tex": "已知集合 $A=\\{1,2\\}$，则 $A$ 的子集个数为",
+      "choices": [
+        "$2$",
+        "$3$",
+        "$4$",
+        "$5$"
+      ],
+      "answer_tex": "C",
+      "solution_tex": "集合 $A$ 有 2 个元素，所以子集个数为 $2^2=4$。",
+      "difficulty": 1,
+      "tags": [
+        "集合",
+        "基础题"
+      ],
+      "note": "样例草稿，不入正式库。",
+      "official_flag": false,
+      "raw_source_text": "已知集合A={1,2}，则A的子集个数为 A.2 B.3 C.4 D.5",
+      "confidence": {
+        "stem": 0.98,
+        "answer": 0.95
+      },
+      "validation": {},
+      "extra": {
+        "source_kind": "manual_sample"
+      },
+      "assets": []
+    },
+    {
+      "source_item_id": "example-002",
+      "source_label": "样例第 2 题",
+      "proposed_action": "insert",
+      "review_status": "needs_review",
+      "question_type": "solution",
+      "stem_tex": "如图，求证：$AB \\perp CD$。",
+      "answer_tex": "",
+      "solution_tex": "",
+      "difficulty": 3,
+      "tags": [
+        "立体几何",
+        "图片题"
+      ],
+      "note": "缺少解答且含图片占位，必须人工确认。",
+      "official_flag": false,
+      "raw_source_text": "OCR 识别文本：如图，求证 AB 垂直 CD。",
+      "confidence": {
+        "stem": 0.76,
+        "diagram": 0.42
+      },
+      "validation": {
+        "latex_preview": "not_checked"
+      },
+      "extra": {
+        "source_kind": "ocr_image"
+      },
+      "assets": [
+        {
+          "role": "problem",
+          "source_path": "incoming/example-002.png",
+          "planned_file_path": "assets/questions/PENDING/example-002.png",
+          "caption": "题干配图",
+          "sort_order": 1,
+          "note": "样例路径，不要求文件存在。"
+        }
+      ]
+    }
+  ]
+}
