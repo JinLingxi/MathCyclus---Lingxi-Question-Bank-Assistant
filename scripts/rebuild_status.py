@@ -36,7 +36,7 @@ DATA_WARNING_REVIEW_DRY_RUN = PROJECT_ROOT / "scripts" / "apply_data_warning_rev
 PAPER_QUESTION_CORRECTIONS = PROJECT_ROOT / "db" / "seed" / "paper_question_corrections_20260902_final_review.csv"
 PAPER_QUESTION_CORRECTIONS_SCRIPT = PROJECT_ROOT / "scripts" / "apply_paper_question_corrections_dry_run.py"
 QUESTION_TEX_CORRECTIONS = PROJECT_ROOT / "db" / "seed" / "question_tex_corrections_20260902_final_review.csv"
-PROGRESS_ESTIMATE = "99.6%"
+PROGRESS_ESTIMATE = "99.8%"
 FORMAL_DB_TABLES = [
     "question",
     "paper",
@@ -114,7 +114,7 @@ def print_current_summary() -> None:
         print(f"formal asset count: {count_table(FORMAL_DB, 'question_asset')}")
         print(f"formal book link count: {count_table(FORMAL_DB, 'book_exercise_question')}")
         print(f"formal topic link count: {count_table(FORMAL_DB, 'topic_question')}")
-    print("next focus: 提交前文件清单确认 / 图形化升级入口 / 后续录入优化")
+    print("next focus: 后续录入优化 / 独立启动器或打包版 / 可选默认数据源切换")
 
 
 def main() -> None:

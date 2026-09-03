@@ -14261,6 +14261,13 @@ def render_operation_log_panel():
             "update_chapter_index": "更新章节索引",
             "legacy_tex_migration_dry_run": "旧 TeX 迁移预览",
             "legacy_tex_migration_promote_check": "SQLite 提升检查",
+            "schema_migration_check": "数据库升级检查",
+            "schema_migration_apply": "应用数据库升级",
+            "local_update_plan": "本地更新预览",
+            "local_update_apply": "执行本地更新",
+            "local_data_bundle_export": "导出本地数据包",
+            "local_data_bundle_restore_check": "检查数据包恢复",
+            "local_data_bundle_restore_apply": "恢复本地数据包",
         }
         display_rows = []
         for operation in operations:
@@ -14356,6 +14363,424 @@ def _legacy_migration_run_command(command: list, timeout: int = 600) -> dict:
             "stderr": str(exc),
             "command": subprocess.list2cmdline(command),
         }
+
+
+def _maintenance_script_path(script_name: str) -> str:
+    return os.path.join(BASE_DIR, "scripts", script_name)
+
+
+def _maintenance_run_json_command(command: list, timeout: int = 900) -> dict:
+    result = _legacy_migration_run_command(command, timeout=timeout)
+    parsed_json = None
+    stdout = result.get("stdout") or ""
+    if stdout.strip():
+        try:
+            parsed_json = json.loads(stdout)
+        except json.JSONDecodeError:
+            parsed_json = None
+    result["json"] = parsed_json
+    result["parsed"] = _legacy_migration_parse_stdout(stdout)
+    return result
+
+
+def _maintenance_git_snapshot() -> dict:
+    def _git(args: list, timeout: int = 20) -> str:
+        try:
+            completed = subprocess.run(
+                ["git", *args],
+                cwd=BASE_DIR,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
+            return (completed.stdout or "").strip()
+        except Exception:
+            return ""
+
+    status_lines = [line for line in _git(["status", "--short"]).splitlines() if line.strip()]
+    return {
+        "branch": _git(["branch", "--show-current"]) or "未检测到",
+        "head": _git(["rev-parse", "--short", "HEAD"]) or "未检测到",
+        "upstream": _git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]) or "未设置",
+        "dirty_count": len(status_lines),
+        "dirty_preview": status_lines[:8],
+    }
+
+
+def _maintenance_status_text(status: str) -> str:
+    status = str(status or "").lower()
+    if status in {"ok", "pass"}:
+        return "正常"
+    if status in {"warning", "pending"}:
+        return "需确认"
+    if status in {"blocked", "missing_database", "failed", "fail"}:
+        return "阻塞"
+    return status or "未知"
+
+
+def _maintenance_render_summary_panel(title: str, items: list[tuple[str, str]], tone: str = "neutral"):
+    tone_class = {
+        "ok": "mc-maintenance-panel-ok",
+        "warning": "mc-maintenance-panel-warning",
+        "blocked": "mc-maintenance-panel-blocked",
+    }.get(tone, "mc-maintenance-panel-neutral")
+    rows = "".join(
+        f"""
+        <div class="mc-maintenance-kv">
+            <span>{html.escape(str(label))}</span>
+            <strong>{html.escape(str(value))}</strong>
+        </div>
+        """
+        for label, value in items
+    )
+    st.markdown(
+        f"""
+        <div class="mc-maintenance-panel {tone_class}">
+            <div class="mc-maintenance-panel-title">{html.escape(title)}</div>
+            <div class="mc-maintenance-kv-grid">{rows}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _maintenance_render_command_result(result: dict, *, title: str, expanded: bool = False):
+    status = "ok" if result.get("ok") else "blocked"
+    parsed_json = result.get("json") or {}
+    parsed = result.get("parsed") or {}
+    result_status = parsed_json.get("status") or parsed.get("status") or status
+    if result.get("ok") and str(result_status).lower() not in {"blocked", "failed", "fail", "missing_database"}:
+        st.success(f"{title}完成：{_maintenance_status_text(result_status)}")
+    else:
+        st.error(f"{title}失败或被阻断：{_maintenance_status_text(result_status)}")
+
+    report_path = parsed_json.get("report") or parsed.get("report") or ""
+    json_path = parsed_json.get("json") or parsed.get("json") or ""
+    if report_path or json_path:
+        st.caption(
+            "报告："
+            + (f"`{report_path}`" if report_path else "无")
+            + (" · JSON：" + f"`{json_path}`" if json_path else "")
+        )
+
+    with st.expander("查看命令输出", expanded=expanded or not result.get("ok")):
+        st.code(result.get("command") or "", language="powershell")
+        if result.get("stdout"):
+            st.code(result["stdout"], language="text")
+        if result.get("stderr"):
+            st.code(result["stderr"], language="text")
+
+
+def _maintenance_schema_status(force: bool = False) -> dict:
+    if force or "local_maintenance_schema_status" not in st.session_state:
+        script = _maintenance_script_path("migrate_schema.py")
+        st.session_state["local_maintenance_schema_status"] = _maintenance_run_json_command(
+            [sys.executable, script, "--status-only", "--json"],
+            timeout=120,
+        )
+    return st.session_state.get("local_maintenance_schema_status") or {}
+
+
+def render_local_maintenance_tool():
+    st.markdown("### 🧰 本地维护、升级与迁移")
+    st.caption("给 GitHub 源码版和后续打包版使用：检查更新、升级 SQLite schema、备份/恢复本地数据。默认不删除数据。")
+
+    st.markdown(
+        """
+        <style>
+        .mc-maintenance-note {
+            border: 1px solid rgba(109, 40, 217, 0.12);
+            border-radius: 14px;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.76);
+            color: #383445;
+            line-height: 1.7;
+            margin: 4px 0 16px;
+        }
+        .mc-maintenance-panel {
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin: 8px 0 14px;
+            border: 1px solid rgba(62, 53, 97, 0.12);
+            background: rgba(255, 255, 255, 0.82);
+        }
+        .mc-maintenance-panel-ok {
+            background: rgba(240, 253, 244, 0.82);
+            border-color: rgba(34, 197, 94, 0.18);
+        }
+        .mc-maintenance-panel-warning {
+            background: rgba(255, 251, 235, 0.84);
+            border-color: rgba(245, 158, 11, 0.2);
+        }
+        .mc-maintenance-panel-blocked {
+            background: rgba(254, 242, 242, 0.84);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+        .mc-maintenance-panel-title {
+            font-weight: 800;
+            color: #2f2552;
+            margin-bottom: 10px;
+            letter-spacing: -0.01em;
+        }
+        .mc-maintenance-kv-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px 14px;
+        }
+        .mc-maintenance-kv {
+            min-width: 0;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            color: #6b6680;
+            font-size: 13px;
+        }
+        .mc-maintenance-kv strong {
+            color: #27213f;
+            font-size: 13px;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+        @media (max-width: 900px) {
+            .mc-maintenance-kv-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        </style>
+        <div class="mc-maintenance-note">
+            <strong>安全边界：</strong>本页的检查按钮默认只读或 dry-run；真正更新代码、应用数据库迁移、恢复数据包，都需要输入确认文本。
+            本地 <code>data/</code>、<code>assets/questions/</code>、<code>reports/</code>、<code>exports/</code> 仍不上传 GitHub。
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    git_info = _maintenance_git_snapshot()
+    schema_result = _maintenance_schema_status()
+    schema_report = schema_result.get("json") or {}
+    schema_tone = "ok"
+    if schema_report.get("pending_count"):
+        schema_tone = "warning"
+    if not schema_result.get("ok") or str(schema_report.get("status", "")).lower() in {"blocked", "missing_database"}:
+        schema_tone = "blocked"
+    git_tone = "warning" if git_info["dirty_count"] else "ok"
+
+    overview_left, overview_right = st.columns([1, 1], gap="medium")
+    with overview_left:
+        _maintenance_render_summary_panel(
+            "Git 状态",
+            [
+                ("当前分支", git_info["branch"]),
+                ("提交", git_info["head"]),
+                ("上游", git_info["upstream"]),
+                ("未提交项", str(git_info["dirty_count"])),
+            ],
+            tone=git_tone,
+        )
+        if git_info["dirty_preview"]:
+            with st.expander("查看未提交项样例", expanded=False):
+                st.code("\n".join(git_info["dirty_preview"]), language="text")
+    with overview_right:
+        _maintenance_render_summary_panel(
+            "SQLite Schema",
+            [
+                ("状态", _maintenance_status_text(schema_report.get("status") or "")),
+                ("当前版本", str(schema_report.get("current_version", "未知"))),
+                ("目标版本", str(schema_report.get("target_version", "未知"))),
+                ("待执行迁移", str(schema_report.get("pending_count", "未知"))),
+            ],
+            tone=schema_tone,
+        )
+
+    st.markdown("#### 数据库升级")
+    c_schema_1, c_schema_2, c_schema_3 = st.columns([1, 1, 1], gap="small")
+    migrate_script = _maintenance_script_path("migrate_schema.py")
+    with c_schema_1:
+        if st.button("检查数据库版本", key="btn_maintenance_schema_status", use_container_width=True):
+            result = _maintenance_schema_status(force=True)
+            record_operation("schema_migration_check", details="migrate_schema --status-only")
+            _maintenance_render_command_result(result, title="数据库版本检查")
+    with c_schema_2:
+        if st.button("预览待执行迁移", key="btn_maintenance_schema_dry_run", use_container_width=True):
+            result = _maintenance_run_json_command([sys.executable, migrate_script, "--json"], timeout=180)
+            st.session_state["local_maintenance_schema_preview"] = result
+            record_operation("schema_migration_check", details="migrate_schema dry-run")
+    with c_schema_3:
+        confirm_schema = st.text_input(
+            "输入 APPLY_SCHEMA_MIGRATION 后应用",
+            key="local_maintenance_confirm_schema",
+            placeholder="APPLY_SCHEMA_MIGRATION",
+        )
+        if st.button(
+            "应用数据库升级",
+            key="btn_maintenance_schema_apply",
+            type="primary",
+            disabled=confirm_schema.strip() != "APPLY_SCHEMA_MIGRATION",
+            use_container_width=True,
+        ):
+            result = _maintenance_run_json_command(
+                [sys.executable, migrate_script, "--apply", "--json"],
+                timeout=300,
+            )
+            st.session_state["local_maintenance_schema_apply"] = result
+            st.session_state.pop("local_maintenance_schema_status", None)
+            record_operation("schema_migration_apply", details="migrate_schema --apply")
+
+    for key, title in (
+        ("local_maintenance_schema_preview", "最近一次迁移预览"),
+        ("local_maintenance_schema_apply", "最近一次数据库升级"),
+    ):
+        if st.session_state.get(key):
+            _maintenance_render_command_result(st.session_state[key], title=title, expanded=False)
+
+    st.divider()
+    st.markdown("#### 程序更新")
+    st.caption("适合未来 GitHub 源码版用户：先 dry-run 看计划，再决定是否执行。执行 `git pull` 时会拒绝脏工作区，避免覆盖本地改动。")
+    update_script = _maintenance_script_path("update_local_installation.py")
+    update_options = st.columns([1, 1, 1, 1], gap="small")
+    with update_options[0]:
+        update_pull = st.checkbox("从 GitHub 拉取", value=True, key="local_maintenance_update_pull")
+    with update_options[1]:
+        update_deps = st.checkbox("更新依赖", value=True, key="local_maintenance_update_deps")
+    with update_options[2]:
+        update_checks = st.checkbox("运行快速检查", value=True, key="local_maintenance_update_checks")
+    with update_options[3]:
+        update_allow_dirty = st.checkbox("允许脏工作区 pull", value=False, key="local_maintenance_update_allow_dirty")
+
+    update_command_base = [sys.executable, update_script]
+    if update_pull:
+        update_command_base.append("--pull")
+    if update_deps:
+        update_command_base.append("--install-deps")
+    if update_checks:
+        update_command_base.append("--run-checks")
+    if update_allow_dirty:
+        update_command_base.append("--allow-dirty")
+
+    c_update_1, c_update_2 = st.columns([1, 1], gap="small")
+    with c_update_1:
+        if st.button("生成更新计划（dry-run）", key="btn_maintenance_update_plan", use_container_width=True):
+            result = _maintenance_run_json_command(
+                [*update_command_base, "--write-report", "--json"],
+                timeout=600,
+            )
+            st.session_state["local_maintenance_update_plan"] = result
+            record_operation("local_update_plan", details=result.get("command", ""))
+    with c_update_2:
+        confirm_update = st.text_input(
+            "输入 APPLY_LOCAL_UPDATE 后执行",
+            key="local_maintenance_confirm_update",
+            placeholder="APPLY_LOCAL_UPDATE",
+        )
+        if st.button(
+            "执行本地升级",
+            key="btn_maintenance_update_apply",
+            type="primary",
+            disabled=confirm_update.strip() != "APPLY_LOCAL_UPDATE",
+            use_container_width=True,
+        ):
+            result = _maintenance_run_json_command(
+                [*update_command_base, "--apply", "--json"],
+                timeout=1800,
+            )
+            st.session_state["local_maintenance_update_apply"] = result
+            record_operation("local_update_apply", details=result.get("command", ""))
+
+    for key, title in (
+        ("local_maintenance_update_plan", "最近一次更新计划"),
+        ("local_maintenance_update_apply", "最近一次本地升级"),
+    ):
+        if st.session_state.get(key):
+            _maintenance_render_command_result(st.session_state[key], title=title, expanded=False)
+
+    st.divider()
+    st.markdown("#### 本地数据迁移包")
+    st.caption("用于换电脑或备份个人数据。默认包含 SQLite 和题目图片；旧 TeX、reports、exports 需要手动勾选。")
+    bundle_script = _maintenance_script_path("local_data_bundle.py")
+    bundle_options = st.columns([1, 1, 1], gap="small")
+    with bundle_options[0]:
+        include_legacy_tex = st.checkbox("包含旧 TeX 题源", value=False, key="local_maintenance_bundle_legacy")
+    with bundle_options[1]:
+        include_reports = st.checkbox("包含 reports", value=False, key="local_maintenance_bundle_reports")
+    with bundle_options[2]:
+        include_exports = st.checkbox("包含 exports", value=False, key="local_maintenance_bundle_exports")
+
+    bundle_command_base = [sys.executable, bundle_script, "export"]
+    if include_legacy_tex:
+        bundle_command_base.append("--include-legacy-tex")
+    if include_reports:
+        bundle_command_base.append("--include-reports")
+    if include_exports:
+        bundle_command_base.append("--include-exports")
+
+    c_bundle_1, c_bundle_2 = st.columns([1, 1], gap="small")
+    with c_bundle_1:
+        if st.button("预览备份范围", key="btn_maintenance_bundle_preview", use_container_width=True):
+            result = _maintenance_run_json_command([*bundle_command_base, "--dry-run", "--json"], timeout=600)
+            st.session_state["local_maintenance_bundle_preview"] = result
+    with c_bundle_2:
+        if st.button("导出本地数据包", key="btn_maintenance_bundle_export", type="primary", use_container_width=True):
+            result = _maintenance_run_json_command([*bundle_command_base, "--json"], timeout=1800)
+            st.session_state["local_maintenance_bundle_export"] = result
+            record_operation("local_data_bundle_export", details=result.get("command", ""))
+
+    for key, title in (
+        ("local_maintenance_bundle_preview", "最近一次备份范围预览"),
+        ("local_maintenance_bundle_export", "最近一次数据包导出"),
+    ):
+        if st.session_state.get(key):
+            _maintenance_render_command_result(st.session_state[key], title=title, expanded=False)
+
+    with st.expander("检查或恢复已有迁移包", expanded=False):
+        bundle_path = st.text_input("迁移包 zip 路径", key="local_maintenance_bundle_path")
+        restore_overwrite = st.checkbox("恢复时允许覆盖已有文件", value=False, key="local_maintenance_restore_overwrite")
+        restore_cols = st.columns([1, 1, 1], gap="small")
+        with restore_cols[0]:
+            if st.button("检查迁移包", key="btn_maintenance_bundle_inspect", disabled=not bundle_path.strip(), use_container_width=True):
+                result = _maintenance_run_json_command(
+                    [sys.executable, bundle_script, "inspect", bundle_path.strip(), "--json"],
+                    timeout=300,
+                )
+                st.session_state["local_maintenance_bundle_inspect"] = result
+        with restore_cols[1]:
+            if st.button("恢复预览（dry-run）", key="btn_maintenance_bundle_restore_preview", disabled=not bundle_path.strip(), use_container_width=True):
+                command = [sys.executable, bundle_script, "restore", bundle_path.strip(), "--json"]
+                if restore_overwrite:
+                    command.append("--overwrite")
+                result = _maintenance_run_json_command(command, timeout=600)
+                st.session_state["local_maintenance_bundle_restore_preview"] = result
+                record_operation("local_data_bundle_restore_check", details=result.get("command", ""))
+        with restore_cols[2]:
+            confirm_restore = st.text_input(
+                "输入 RESTORE_LOCAL_BUNDLE 后恢复",
+                key="local_maintenance_confirm_restore",
+                placeholder="RESTORE_LOCAL_BUNDLE",
+            )
+            if st.button(
+                "执行恢复",
+                key="btn_maintenance_bundle_restore_apply",
+                type="primary",
+                disabled=not bundle_path.strip() or confirm_restore.strip() != "RESTORE_LOCAL_BUNDLE",
+                use_container_width=True,
+            ):
+                command = [sys.executable, bundle_script, "restore", bundle_path.strip(), "--apply", "--json"]
+                if restore_overwrite:
+                    command.append("--overwrite")
+                result = _maintenance_run_json_command(command, timeout=1800)
+                st.session_state["local_maintenance_bundle_restore_apply"] = result
+                record_operation("local_data_bundle_restore_apply", details=result.get("command", ""))
+
+        for key, title in (
+            ("local_maintenance_bundle_inspect", "最近一次迁移包检查"),
+            ("local_maintenance_bundle_restore_preview", "最近一次恢复预览"),
+            ("local_maintenance_bundle_restore_apply", "最近一次恢复执行"),
+        ):
+            if st.session_state.get(key):
+                _maintenance_render_command_result(st.session_state[key], title=title, expanded=False)
 
 
 def render_legacy_tex_migration_tool():
@@ -14580,6 +15005,12 @@ def page_tools():
             st.session_state["tools_subpage"] = None
             st.rerun()
         render_legacy_tex_migration_tool()
+        return
+    if st.session_state.get("tools_subpage") == "local_maintenance":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_local_maintenance_tool()
         return
     
     st.markdown("""
@@ -14911,6 +15342,27 @@ def page_tools():
         if st.button("进入旧库迁移工具", key="btn_tools_legacy_tex_migration", use_container_width=True):
             st.session_state["tools_subpage"] = "legacy_tex_migration"
             st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    r5_c1, r5_c2, r5_c3 = st.columns([1, 1, 1])
+    with r5_c1:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="tool-title">🧰 13. 本地维护与升级</div>
+            <div class="tool-desc">
+                面向源码版和未来打包版用户：检查 GitHub 更新计划、应用 SQLite schema 迁移、导出/检查/恢复本地数据迁移包。默认 dry-run，真正写入需要手动确认。
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_local_maintenance']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入本地维护与升级", key="btn_tools_local_maintenance", use_container_width=True):
+            st.session_state["tools_subpage"] = "local_maintenance"
+            st.rerun()
+    with r5_c2:
+        st.empty()
+    with r5_c3:
+        st.empty()
 
     render_operation_log_panel()
 
@@ -16523,6 +16975,14 @@ def page_manual():
     - **同卷试题录入**：多题共享年份、卷别、文理/新高考和试卷名称；题号优先从 `problem` 头读取，读不到时按顺序编号。
     - **同书试题录入**：多题共享教材名称、册次/年级、页码和栏目；后续审核时可进一步维护教材来源关系。
     - **选项填写**：单题模式只填写选项内部 TeX；系统保存和导出时统一生成 `\\choice{{...}}`。
+
+    **🧰 六、 本地维护与升级规范**
+    - **入口**：工具箱 → 本地维护与升级。
+    - **数据库升级**：先检查或预览 schema 迁移；真正应用迁移必须输入 `APPLY_SCHEMA_MIGRATION`。
+    - **程序更新**：先生成 dry-run 更新计划；真正执行 GitHub 拉取、依赖安装和快速检查必须输入 `APPLY_LOCAL_UPDATE`。
+    - **数据迁移包**：用于备份或换电脑，默认包含 SQLite 与题目图片；旧 TeX、reports、exports 需要手动勾选。
+    - **恢复数据包**：默认只 dry-run；真正恢复必须输入 `RESTORE_LOCAL_BUNDLE`，避免误覆盖本地题库。
+    - **GitHub 边界**：`data/`、`assets/questions/`、`reports/`、`exports/` 和 `.env` 属于本地私有数据，不上传。
     """, unsafe_allow_html=True)
 
 def page_system_intro():

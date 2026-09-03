@@ -211,14 +211,23 @@ python scripts/local_data_bundle.py export --include-legacy-tex
 - 不上传 `exports/`；
 - 让用户下载代码后运行 `python scripts/init_local_workspace.py` 创建自己的空库。
 
+网页入口：
+
+- `工具箱 → 本地维护与升级` 已接入数据迁移包操作；
+- 可预览备份范围；
+- 可导出本地数据包；
+- 可检查迁移包清单；
+- 可 dry-run 恢复迁移包；
+- 真正恢复必须输入 `RESTORE_LOCAL_BUNDLE`，避免误覆盖本地数据。
+
 ## 7. 后续可扩展项
 
 正式安装包阶段可以继续补：
 
 - 图形化首次启动向导；
 - 启动时自动检测本地数据库是否存在，不存在则提示初始化；
-- 设置页中的“备份本地数据 / 恢复本地数据”按钮；
+- 独立启动器中的“备份本地数据 / 恢复本地数据”按钮；
 - 迁移包版本兼容检查；
-- schema 迁移脚本 `db/migrations/` 已建立，当前入口为 `scripts/migrate_schema.py`；
+- schema 迁移脚本 `db/migrations/` 已建立，当前入口为命令行和 `工具箱 → 本地维护与升级`；
 - 用户数据目录自定义位置；
 - 一键导出“程序配置 + 私有题库数据”的离线备份。

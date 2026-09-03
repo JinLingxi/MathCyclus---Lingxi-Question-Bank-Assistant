@@ -148,7 +148,8 @@ python scripts/release_readiness.py --skip-slow
 
 ## 8. 当前边界
 
-- 尚未做图形化“数据库升级”按钮；
-- 尚未把 schema 迁移入口放入 Streamlit 工具箱；
-- 目前迁移入口先通过命令行和版本更新助手使用；
-- 等 1.0 前核心页面稳定后，再决定是否把 `migrate_schema.py` 接进图形化设置或工具箱。
+- Streamlit 工具箱已接入“本地维护与升级”入口；
+- 页面内可以检查数据库版本、预览待执行迁移、应用 schema 迁移；
+- 真正应用迁移必须输入 `APPLY_SCHEMA_MIGRATION`；
+- 命令行入口 `scripts/migrate_schema.py` 继续保留，适合脚本化更新和故障排查；
+- 后续独立安装包仍需要更完整的启动器和用户数据目录策略。
