@@ -9369,7 +9369,8 @@ def _db_preview_collect_metadata_form_values(question_id: str, question: dict) -
     }
 
 
-def _db_preview_render_metadata_popover(db_path: str, question_id: str, question: dict):
+@st.dialog("修改标签信息", width="small")
+def _db_preview_metadata_dialog(db_path: str, question_id: str, question: dict):
     from services.question_edit_service import (
         edit_form_to_question_updates_with_canonical,
         normalize_question_updates,
@@ -9378,68 +9379,76 @@ def _db_preview_render_metadata_popover(db_path: str, question_id: str, question
 
     _db_preview_prepare_metadata_state(question_id, question)
     difficulty_options = [None, 1, 2, 3, 4, 5]
-    st.markdown('<span class="mc-db-meta-action-anchor"></span>', unsafe_allow_html=True)
-    with st.popover("标签信息", use_container_width=False):
-        st.markdown("**修改标签信息**")
-        st.caption("只保存难度、标签、备注；不会修改题干、答案、解析或旧 `.tex` 文件。")
-        st.selectbox(
-            "难度星级",
-            difficulty_options,
-            format_func=lambda value: "未设置" if value is None else f"{value} 星",
-            key=_db_preview_meta_field_key(question_id, "difficulty"),
-        )
-        st.text_input(
-            "标签",
-            key=_db_preview_meta_field_key(question_id, "tags_text"),
-            placeholder="多个标签用中文逗号分隔",
-        )
-        st.text_area(
-            "备注",
-            key=_db_preview_meta_field_key(question_id, "note"),
-            height=82,
-            placeholder="补充这道题的人工说明",
-        )
-        if st.button(
-            "保存标签信息",
-            key=_db_preview_meta_field_key(question_id, "save"),
-            type="primary",
-            use_container_width=True,
-        ):
-            try:
-                form_values = _db_preview_collect_metadata_form_values(question_id, question)
-                raw_updates = edit_form_to_question_updates_with_canonical(question, form_values)
-                metadata_updates = {
-                    field: raw_updates[field]
-                    for field in ("difficulty", "tags_json", "note")
-                    if field in raw_updates
-                }
-                current_metadata = normalize_question_updates(
-                    {field: question.get(field) for field in metadata_updates}
-                )
-                metadata_changed = [
-                    field
-                    for field, value in metadata_updates.items()
-                    if current_metadata.get(field) != value
-                ]
-                if metadata_changed and "canonical_tex" in raw_updates:
-                    metadata_updates["canonical_tex"] = raw_updates["canonical_tex"]
+    st.markdown("**修改标签信息**")
+    st.caption("只保存难度、标签、备注；不会修改题干、答案、解析或旧 `.tex` 文件。")
+    st.selectbox(
+        "难度星级",
+        difficulty_options,
+        format_func=lambda value: "未设置" if value is None else f"{value} 星",
+        key=_db_preview_meta_field_key(question_id, "difficulty"),
+    )
+    st.text_input(
+        "标签",
+        key=_db_preview_meta_field_key(question_id, "tags_text"),
+        placeholder="多个标签用中文逗号分隔",
+    )
+    st.text_area(
+        "备注",
+        key=_db_preview_meta_field_key(question_id, "note"),
+        height=82,
+        placeholder="补充这道题的人工说明",
+    )
+    if st.button(
+        "保存标签信息",
+        key=_db_preview_meta_field_key(question_id, "save"),
+        type="primary",
+        use_container_width=True,
+    ):
+        try:
+            form_values = _db_preview_collect_metadata_form_values(question_id, question)
+            raw_updates = edit_form_to_question_updates_with_canonical(question, form_values)
+            metadata_updates = {
+                field: raw_updates[field]
+                for field in ("difficulty", "tags_json", "note")
+                if field in raw_updates
+            }
+            current_metadata = normalize_question_updates(
+                {field: question.get(field) for field in metadata_updates}
+            )
+            metadata_changed = [
+                field
+                for field, value in metadata_updates.items()
+                if current_metadata.get(field) != value
+            ]
+            if metadata_changed and "canonical_tex" in raw_updates:
+                metadata_updates["canonical_tex"] = raw_updates["canonical_tex"]
 
-                update_result = update_question_fields(
-                    db_path,
-                    question_id,
-                    metadata_updates if metadata_changed else {},
-                    operator="streamlit_ui",
-                    note="SQLite 题卡标签信息快速编辑",
-                    change_source="metadata_quick_edit",
-                )
-                if update_result.get("changed_fields"):
-                    _db_preview_clear_question_payload_cache()
-                    st.toast(f"{question_id} 标签信息已保存", icon="✅")
-                    st.rerun()
-                else:
-                    st.toast("没有检测到标签信息变更。", icon="ℹ️")
-            except Exception as exc:
-                st.error(f"保存标签信息失败：{exc}")
+            update_result = update_question_fields(
+                db_path,
+                question_id,
+                metadata_updates if metadata_changed else {},
+                operator="streamlit_ui",
+                note="SQLite 题卡标签信息快速编辑",
+                change_source="metadata_quick_edit",
+            )
+            if update_result.get("changed_fields"):
+                _db_preview_clear_question_payload_cache()
+                st.toast(f"{question_id} 标签信息已保存", icon="✅")
+                st.rerun()
+            else:
+                st.toast("没有检测到标签信息变更。", icon="ℹ️")
+        except Exception as exc:
+            st.error(f"保存标签信息失败：{exc}")
+
+
+def _db_preview_render_metadata_popover(db_path: str, question_id: str, question: dict):
+    st.markdown('<span class="mc-db-meta-action-anchor"></span>', unsafe_allow_html=True)
+    if st.button(
+        "标签信息 ▾",
+        key=_db_preview_meta_field_key(question_id, "open"),
+        help="修改难度、标签和备注",
+    ):
+        _db_preview_metadata_dialog(db_path, question_id, question)
 
 
 def _db_preview_split_choice_lines(value: str) -> list[str]:
@@ -11096,8 +11105,8 @@ def render_sqlite_readonly_browse_preview(
     }
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) > div:first-child {
         min-width: 0 !important;
-        flex: 0 0 20.75rem !important;
-        max-width: 20.75rem !important;
+        flex: 0 0 clamp(18rem, 22vw, 21rem) !important;
+        max-width: clamp(18rem, 22vw, 21rem) !important;
     }
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) > div:last-child {
         min-width: 0 !important;
@@ -11127,7 +11136,7 @@ def render_sqlite_readonly_browse_preview(
         overflow-y: auto !important;
         scrollbar-gutter: stable !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) {
         border: 1px solid rgba(148, 163, 184, 0.22) !important;
         border-radius: 16px !important;
         background: #ffffff !important;
@@ -11135,7 +11144,7 @@ def render_sqlite_readonly_browse_preview(
         background-clip: padding-box !important;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035) !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) > div[data-testid="stVerticalBlock"] {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) > div[data-testid="stVerticalBlock"] {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
@@ -11144,43 +11153,50 @@ def render_sqlite_readonly_browse_preview(
         background-color: #ffffff !important;
         padding: 0.86rem 0.92rem 0.72rem !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) div[data-testid="stElementContainer"],
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) div[data-testid="stMarkdownContainer"] {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) div[data-testid="stElementContainer"],
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) div[data-testid="stMarkdownContainer"] {
         background: transparent !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) div[data-testid="stHorizontalBlock"] > div {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) div[data-testid="stHorizontalBlock"] > div {
         min-width: 0 !important;
-    }
-    body:has(.mc-db-browse-anchor) div[data-testid="column"]:has(.mc-db-meta-action-anchor) {
-        flex: 0 0 92px !important;
-        width: 92px !important;
-        min-width: 92px !important;
-        max-width: 92px !important;
     }
     body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) {
         display: none !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="column"]:has(.mc-db-meta-action-anchor) div[data-testid="stPopover"] > button,
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button {
-        width: 74px !important;
-        max-width: 74px !important;
+    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"],
+    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] div[data-testid="stButton"] {
+        width: max-content !important;
+        max-width: max-content !important;
         min-width: 0 !important;
-        min-height: 1.48rem !important;
-        padding: 0.08rem 0.42rem !important;
-        border: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button {
+        width: 82px !important;
+        max-width: 82px !important;
+        min-width: 0 !important;
+        min-height: 1.36rem !important;
+        height: 1.36rem !important;
+        padding: 0 0.46rem !important;
+        border: 1px solid rgba(109, 40, 217, 0.18) !important;
         border-radius: 999px !important;
-        background: #f3f4f6 !important;
-        color: #374151 !important;
+        background: #ffffff !important;
+        color: #6d28d9 !important;
         box-shadow: none !important;
-        font-size: 0.76rem !important;
+        font-size: 0.68rem !important;
         line-height: 1.2 !important;
-        font-weight: 650 !important;
+        font-weight: 720 !important;
         white-space: nowrap !important;
         word-break: keep-all !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="column"]:has(.mc-db-meta-action-anchor) div[data-testid="stPopover"] > button:hover,
+    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button p {
+        font-size: 0.68rem !important;
+        line-height: 1.1 !important;
+        white-space: nowrap !important;
+    }
     body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button:hover {
         background: #ede9fe !important;
         color: #5b21b6 !important;
@@ -11969,7 +11985,7 @@ def render_sqlite_readonly_browse_preview(
         st.error(f"读取 SQLite 筛选项失败：{exc}")
         return
 
-    left_col, right_col = st.columns([0.78, 3.2], gap="large")
+    left_col, right_col = st.columns([1.08, 3.42], gap="large")
 
     year_options = ["全部年份"] + [str(year) for year in base_options.get("years", [])]
     chapter_options = ["全部板块"] + base_options.get("chapters", [])
@@ -12354,7 +12370,7 @@ def render_sqlite_readonly_browse_preview(
                     unsafe_allow_html=True,
                 )
                 st.markdown(f"<div class='mc-db-browse-title'>{html.escape(title)}</div>", unsafe_allow_html=True)
-                meta_col, meta_action_col, _ = st.columns([1.42, 0.34, 2.24], gap="small", vertical_alignment="center")
+                meta_col, meta_action_col, _ = st.columns([1.72, 0.42, 1.88], gap="small", vertical_alignment="center")
                 with meta_col:
                     st.markdown(
                         f"""
@@ -12406,7 +12422,7 @@ def render_sqlite_readonly_browse_preview(
                                 use_container_width=True,
                             )
 
-                    code_col, preview_col = st.columns([1, 1.12], gap="large")
+                    code_col, preview_col = st.columns([0.94, 1.32], gap="large")
                     with code_col:
                         st.markdown("**TeX 源码**")
                         if allow_edit:
@@ -19068,23 +19084,7 @@ def main():
     elif selected_nav == sqlite_entry_nav_option:
         render_sqlite_manual_draft_entry()
     elif selected_nav == browse_nav_option:
-        from services.database_service import DEFAULT_DATABASE_PATH
-        from services.local_preferences_service import QUESTION_SOURCE_SQLITE, get_browse_default_source
-        from services.question_db_service import get_question_bank_availability
-
-        sqlite_availability = get_question_bank_availability(DEFAULT_DATABASE_PATH)
-        if get_browse_default_source() == QUESTION_SOURCE_SQLITE and sqlite_availability.get("ready_for_browse"):
-            render_sqlite_readonly_browse_preview(
-                allow_exam_basket=False,
-                right_heading="### 全局浏览与编辑",
-                right_caption="默认读取 SQLite 正式库；单题点击开始修改后保存到 SQLite，不修改旧 .tex 文件。",
-            )
-        else:
-            if not sqlite_availability.get("exists"):
-                st.caption("未找到 SQLite 正式库，已回退旧 TeX 浏览。")
-            elif get_browse_default_source() == QUESTION_SOURCE_SQLITE and not sqlite_availability.get("ready_for_browse"):
-                st.caption("SQLite 正式库暂无可浏览题目，已回退旧 TeX 浏览。")
-            page_browse()
+        page_browse()
     elif selected_nav == sqlite_nav_option:
         from services.database_service import DEFAULT_DATABASE_PATH
         from services.question_db_service import get_question_bank_availability
