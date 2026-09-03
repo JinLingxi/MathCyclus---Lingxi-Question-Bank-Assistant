@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
+import tempfile
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +26,7 @@ from services.paper_service import count_papers, list_question_paper_links
 from services.question_db_service import (
     QuestionListFilters,
     count_questions,
+    get_question_bank_availability,
     get_question_bundle,
     list_question_filter_options,
     list_questions_page,
@@ -63,6 +67,39 @@ def main() -> None:
     paper_total = count_papers(str(db_path))
     checks.append(check("question_count", question_total > 0, question_total))
     checks.append(check("paper_count", paper_total > 0, paper_total))
+    availability = get_question_bank_availability(str(db_path))
+    checks.append(
+        check(
+            "question_bank_availability_ready",
+            availability.get("ready_for_browse") is True and availability.get("question_count") == question_total,
+            availability,
+        )
+    )
+    with tempfile.TemporaryDirectory(prefix="mathcyclus_availability_smoke_") as temp_dir:
+        empty_db = Path(temp_dir) / "empty.sqlite3"
+        schema_sql = (PROJECT_ROOT / "db" / "schema.sql").read_text(encoding="utf-8")
+        with closing(sqlite3.connect(empty_db)) as conn:
+            conn.executescript(schema_sql)
+            conn.commit()
+        empty_availability = get_question_bank_availability(str(empty_db))
+        checks.append(
+            check(
+                "question_bank_availability_empty",
+                empty_availability.get("status") == "empty"
+                and empty_availability.get("has_schema") is True
+                and empty_availability.get("ready_for_browse") is False,
+                empty_availability,
+            )
+        )
+        missing_availability = get_question_bank_availability(str(Path(temp_dir) / "missing.sqlite3"))
+        checks.append(
+            check(
+                "question_bank_availability_missing",
+                missing_availability.get("status") == "missing"
+                and missing_availability.get("ready_for_browse") is False,
+                missing_availability,
+            )
+        )
 
     options = list_question_filter_options(str(db_path))
     checks.append(check("filter_years", len(options["years"]) > 0, options["years"][:5]))

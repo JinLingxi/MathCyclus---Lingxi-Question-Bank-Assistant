@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from services.database_service import readonly_database_connection, row_to_dict
+from services.database_service import readonly_database_connection, resolve_database_path, row_to_dict
 
 
 _SEARCH_FIELDS = (
@@ -42,6 +43,66 @@ def _safe_limit(value: int) -> int:
 
 def _safe_offset(value: int) -> int:
     return max(0, int(value or 0))
+
+
+def get_question_bank_availability(db_path: str | None = None) -> dict[str, Any]:
+    """Return whether a SQLite database can serve question browse pages."""
+    target = Path(resolve_database_path(db_path))
+    if not target.exists():
+        return {
+            "status": "missing",
+            "path": str(target),
+            "exists": False,
+            "has_schema": False,
+            "question_count": 0,
+            "ready_for_browse": False,
+        }
+    if target.stat().st_size <= 0:
+        return {
+            "status": "empty_file",
+            "path": str(target),
+            "exists": True,
+            "has_schema": False,
+            "question_count": 0,
+            "ready_for_browse": False,
+        }
+
+    try:
+        with readonly_database_connection(str(target)) as conn:
+            has_question_table = bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'question'"
+                ).fetchone()
+            )
+            if not has_question_table:
+                return {
+                    "status": "missing_question_table",
+                    "path": str(target),
+                    "exists": True,
+                    "has_schema": False,
+                    "question_count": 0,
+                    "ready_for_browse": False,
+                }
+            question_count = int(conn.execute("SELECT COUNT(*) FROM question").fetchone()[0])
+    except Exception as exc:
+        return {
+            "status": "error",
+            "path": str(target),
+            "exists": True,
+            "has_schema": False,
+            "question_count": 0,
+            "ready_for_browse": False,
+            "error": str(exc),
+        }
+
+    return {
+        "status": "ready" if question_count > 0 else "empty",
+        "path": str(target),
+        "exists": True,
+        "has_schema": True,
+        "question_count": question_count,
+        "ready_for_browse": question_count > 0,
+    }
 
 
 def _split_keyword_terms(keyword: str) -> list[str]:

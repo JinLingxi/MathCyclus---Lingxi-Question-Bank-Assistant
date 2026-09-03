@@ -169,6 +169,10 @@ CREATE TABLE IF NOT EXISTS topic (
     name TEXT NOT NULL,
     file_name TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
+    problem_intro_tex TEXT NOT NULL DEFAULT '',
+    answer_intro_tex TEXT NOT NULL DEFAULT '',
+    export_note TEXT NOT NULL DEFAULT '',
+    extra_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(module_id, name)
@@ -320,8 +324,9 @@ INSERT OR IGNORE INTO question_type(question_type_id, code, name, description) V
 
 INSERT OR IGNORE INTO app_meta(key, value) VALUES
     ('app_name', 'MathCyclus'),
-    ('schema_version', '1'),
+    ('schema_version', '2'),
     ('schema_baseline', '20260903');
 
 INSERT OR IGNORE INTO schema_migration(version, name, checksum) VALUES
-    (1, 'schema_version_baseline', '');
+    (1, 'schema_version_baseline', ''),
+    (2, 'topic_intro_fields', '');

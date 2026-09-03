@@ -33,11 +33,30 @@ def empty_statistics() -> dict[str, Any]:
         "type_counts": {},
         "difficulty_dist": {},
         "tag_counts": {},
+        "year_counts": {},
+        "source_series_counts": {},
+        "track_counts": {},
+        "revision_source_counts": {},
+        "topic_counts": {},
+        "book_counts": {},
+        "paper_relation_count": 0,
+        "paper_linked_questions": 0,
+        "topic_count": 0,
+        "topic_link_count": 0,
+        "topic_linked_questions": 0,
+        "book_count": 0,
+        "book_link_count": 0,
+        "book_linked_questions": 0,
+        "asset_count": 0,
+        "asset_linked_questions": 0,
         "total_difficulty": 0.0,
         "difficulty_count": 0,
         "source": "empty",
         "source_label": "暂无数据源",
         "source_detail": "",
+        "source_priority": "SQLite -> CSV -> legacy TeX",
+        "sqlite_primary": False,
+        "fallback_used": False,
         "fallback_error": "",
     }
 
@@ -201,6 +220,165 @@ def _sqlite_revision_rows(conn: sqlite3.Connection, question_ids: set[str]) -> l
     return [dict(row) for row in rows]
 
 
+def _group_counts(
+    conn: sqlite3.Connection,
+    sql: str,
+    params: tuple[Any, ...] = (),
+    *,
+    empty_label: str = "未标注",
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in conn.execute(sql, params).fetchall():
+        label = str(row[0] or "").strip() or empty_label
+        counts[label] = int(row[1] or 0)
+    return counts
+
+
+def _scalar_count(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> int:
+    row = conn.execute(sql, params).fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def _question_placeholders(question_ids: set[str]) -> tuple[str, tuple[str, ...]]:
+    ordered = tuple(sorted(question_ids))
+    return ",".join("?" for _ in ordered), ordered
+
+
+def _sqlite_relation_statistics(conn: sqlite3.Connection, question_ids: set[str]) -> dict[str, Any]:
+    stats: dict[str, Any] = {}
+    if not question_ids:
+        return stats
+    placeholders, params = _question_placeholders(question_ids)
+
+    if _table_exists(conn, "paper") and _table_exists(conn, "paper_question"):
+        stats["paper_relation_count"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(*) FROM paper_question WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["paper_linked_questions"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(DISTINCT question_id) FROM paper_question WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["year_counts"] = _group_counts(
+            conn,
+            f"""
+            SELECT COALESCE(CAST(p.year AS TEXT), ''), COUNT(DISTINCT pq.question_id)
+            FROM paper_question pq
+            JOIN paper p ON p.paper_id = pq.paper_id
+            WHERE pq.question_id IN ({placeholders})
+              AND COALESCE(p.paper_series, '') <> 'WK'
+            GROUP BY p.year
+            ORDER BY p.year DESC
+            """,
+            params,
+        )
+        stats["source_series_counts"] = _group_counts(
+            conn,
+            f"""
+            SELECT COALESCE(NULLIF(p.paper_series, ''), '未标注'), COUNT(DISTINCT pq.question_id)
+            FROM paper_question pq
+            JOIN paper p ON p.paper_id = pq.paper_id
+            WHERE pq.question_id IN ({placeholders})
+              AND COALESCE(p.paper_series, '') <> 'WK'
+            GROUP BY COALESCE(NULLIF(p.paper_series, ''), '未标注')
+            ORDER BY COUNT(DISTINCT pq.question_id) DESC
+            """,
+            params,
+        )
+        stats["track_counts"] = _group_counts(
+            conn,
+            f"""
+            SELECT COALESCE(NULLIF(p.track, ''), '未标注'), COUNT(DISTINCT pq.question_id)
+            FROM paper_question pq
+            JOIN paper p ON p.paper_id = pq.paper_id
+            WHERE pq.question_id IN ({placeholders})
+              AND COALESCE(p.paper_series, '') <> 'WK'
+            GROUP BY COALESCE(NULLIF(p.track, ''), '未标注')
+            ORDER BY COUNT(DISTINCT pq.question_id) DESC
+            """,
+            params,
+        )
+
+    if _table_exists(conn, "topic") and _table_exists(conn, "topic_question"):
+        stats["topic_count"] = _scalar_count(conn, "SELECT COUNT(*) FROM topic")
+        stats["topic_link_count"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(*) FROM topic_question WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["topic_linked_questions"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(DISTINCT question_id) FROM topic_question WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["topic_counts"] = _group_counts(
+            conn,
+            f"""
+            SELECT t.name, COUNT(tq.question_id)
+            FROM topic_question tq
+            JOIN topic t ON t.topic_id = tq.topic_id
+            WHERE tq.question_id IN ({placeholders})
+            GROUP BY t.topic_id, t.name
+            ORDER BY COUNT(tq.question_id) DESC, t.name
+            """,
+            params,
+        )
+
+    if _table_exists(conn, "book") and _table_exists(conn, "book_exercise_question"):
+        stats["book_count"] = _scalar_count(conn, "SELECT COUNT(*) FROM book")
+        stats["book_link_count"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(*) FROM book_exercise_question WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["book_linked_questions"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(DISTINCT question_id) FROM book_exercise_question WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["book_counts"] = _group_counts(
+            conn,
+            f"""
+            SELECT b.title, COUNT(beq.question_id)
+            FROM book_exercise_question beq
+            JOIN book b ON b.book_id = beq.book_id
+            WHERE beq.question_id IN ({placeholders})
+            GROUP BY b.book_id, b.title
+            ORDER BY COUNT(beq.question_id) DESC, b.title
+            """,
+            params,
+        )
+
+    if _table_exists(conn, "question_asset"):
+        stats["asset_count"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(*) FROM question_asset WHERE question_id IN ({placeholders})",
+            params,
+        )
+        stats["asset_linked_questions"] = _scalar_count(
+            conn,
+            f"SELECT COUNT(DISTINCT question_id) FROM question_asset WHERE question_id IN ({placeholders})",
+            params,
+        )
+
+    if _table_exists(conn, "question_revision"):
+        stats["revision_source_counts"] = _group_counts(
+            conn,
+            f"""
+            SELECT COALESCE(NULLIF(change_source, ''), '未标注'), COUNT(*)
+            FROM question_revision
+            WHERE question_id IN ({placeholders})
+            GROUP BY COALESCE(NULLIF(change_source, ''), '未标注')
+            ORDER BY COUNT(*) DESC
+            """,
+            params,
+        )
+
+    return stats
+
+
 def get_statistics_from_sqlite(db_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     stats = empty_statistics()
     stats.update(
@@ -208,6 +386,8 @@ def get_statistics_from_sqlite(db_path: str | os.PathLike[str] | None = None) ->
             "source": "sqlite",
             "source_label": "SQLite 正式库",
             "source_detail": "读取 data/mathcyclus.sqlite3 的结构化字段",
+            "sqlite_primary": True,
+            "fallback_used": False,
         }
     )
 
@@ -215,8 +395,10 @@ def get_statistics_from_sqlite(db_path: str | os.PathLike[str] | None = None) ->
         rows = _sqlite_question_rows(conn)
         question_ids = {str(row.get("question_id") or "") for row in rows if row.get("question_id")}
         revision_rows = _sqlite_revision_rows(conn, question_ids)
+        relation_stats = _sqlite_relation_statistics(conn, question_ids)
 
     stats["total_questions"] = len(rows)
+    stats.update(relation_stats)
     today = _datetime.date.today()
     tikz_question_ids: set[str] = set()
     created_today_tikz: set[str] = set()
@@ -307,6 +489,8 @@ def get_statistics_from_csv() -> dict[str, Any]:
             "source": "csv",
             "source_label": "CSV 索引缓存",
             "source_detail": "SQLite 不可用时读取 utils/题库索引表.csv",
+            "sqlite_primary": False,
+            "fallback_used": True,
         }
     )
     csv_data = _csv_rows_for_statistics()
@@ -343,6 +527,8 @@ def get_statistics_from_legacy_tex(chapters_dir: str | os.PathLike[str] | None =
             "source": "legacy_tex",
             "source_label": "旧 TeX 扫描兜底",
             "source_detail": "SQLite 和 CSV 均不可用时扫描 chapters 目录",
+            "sqlite_primary": False,
+            "fallback_used": True,
         }
     )
     root_dir = os.fspath(chapters_dir or CHAPTERS_DIR)

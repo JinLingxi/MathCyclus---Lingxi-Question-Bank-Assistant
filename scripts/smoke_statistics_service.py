@@ -119,6 +119,65 @@ def main() -> None:
                 ("PQWK", "PWK", "QSTATSWK"),
             )
             conn.execute(
+                "INSERT INTO paper(paper_id, year, paper_series, track, paper_name) VALUES (?, ?, ?, ?, ?)",
+                ("P2026G", 2026, "G", "新高考", "统计测试卷"),
+            )
+            conn.execute(
+                """
+                INSERT INTO paper_question(paper_question_id, paper_id, question_id)
+                VALUES (?, ?, ?)
+                """,
+                ("PQSTATS001", "P2026G", "QSTATS001"),
+            )
+            conn.execute(
+                """
+                INSERT INTO paper_question(paper_question_id, paper_id, question_id)
+                VALUES (?, ?, ?)
+                """,
+                ("PQSTATS002", "P2026G", "QSTATS002"),
+            )
+            conn.execute(
+                "INSERT INTO topic_module(module_id, name) VALUES (?, ?)",
+                ("TMSTATS", "统计模块"),
+            )
+            conn.execute(
+                "INSERT INTO topic(topic_id, module_id, name) VALUES (?, ?, ?)",
+                ("TSTATS", "TMSTATS", "统计专题"),
+            )
+            conn.execute(
+                """
+                INSERT INTO topic_question(topic_question_id, topic_id, question_id, sort_order)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("TQSTATS", "TSTATS", "QSTATS001", 1),
+            )
+            conn.execute(
+                "INSERT INTO book(book_id, title) VALUES (?, ?)",
+                ("BSTATS", "统计教材"),
+            )
+            conn.execute(
+                """
+                INSERT INTO book_exercise_question(book_exercise_question_id, book_id, question_id, display_order)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("BEQSTATS", "BSTATS", "QSTATS002", 1),
+            )
+            conn.execute(
+                """
+                INSERT INTO question_asset(asset_id, question_id, role, file_path, original_file_name, mime_type, file_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "ASTATS",
+                    "QSTATS002",
+                    "problem_image",
+                    "assets/questions/QSTATS002/figure_01.png",
+                    "figure_01.png",
+                    "image/png",
+                    "stats-asset-hash",
+                ),
+            )
+            conn.execute(
                 """
                 INSERT INTO question_revision(
                     revision_id, question_id, change_source, changed_fields_json, created_at
@@ -137,6 +196,8 @@ def main() -> None:
 
         stats = get_statistics_from_sqlite(str(db_path))
         assert_equal("source", stats["source"], "sqlite")
+        assert_equal("sqlite_primary", stats["sqlite_primary"], True)
+        assert_equal("fallback_used", stats["fallback_used"], False)
         assert_equal("total_questions", stats["total_questions"], 2)
         assert_equal("total_tikz", stats["total_tikz"], 1)
         assert_equal("today_new_questions", stats["today_new_questions"], 1)
@@ -148,6 +209,22 @@ def main() -> None:
         assert_equal("tag_counts", stats["tag_counts"], {"函数": 1, "周期": 1, "导数": 1})
         assert_equal("subject_counts", stats["subject_counts"], {"函数": 1, "导数": 1})
         assert_equal("type_counts", stats["type_counts"], {"单选题": 1, "解答题": 1})
+        assert_equal("paper_relation_count", stats["paper_relation_count"], 2)
+        assert_equal("paper_linked_questions", stats["paper_linked_questions"], 2)
+        assert_equal("year_counts", stats["year_counts"], {"2026": 2})
+        assert_equal("source_series_counts", stats["source_series_counts"], {"G": 2})
+        assert_equal("track_counts", stats["track_counts"], {"新高考": 2})
+        assert_equal("topic_count", stats["topic_count"], 1)
+        assert_equal("topic_link_count", stats["topic_link_count"], 1)
+        assert_equal("topic_linked_questions", stats["topic_linked_questions"], 1)
+        assert_equal("topic_counts", stats["topic_counts"], {"统计专题": 1})
+        assert_equal("book_count", stats["book_count"], 1)
+        assert_equal("book_link_count", stats["book_link_count"], 1)
+        assert_equal("book_linked_questions", stats["book_linked_questions"], 1)
+        assert_equal("book_counts", stats["book_counts"], {"统计教材": 1})
+        assert_equal("asset_count", stats["asset_count"], 1)
+        assert_equal("asset_linked_questions", stats["asset_linked_questions"], 1)
+        assert_equal("revision_source_counts", stats["revision_source_counts"], {"manual": 1})
 
     print("smoke_statistics_service: status=ok")
 

@@ -40,7 +40,7 @@ db/migrations/
 
 ```text
 0001_schema_version_baseline.sql
-0002_add_xxx.sql
+0002_topic_intro_fields.sql
 0003_alter_xxx.sql
 ```
 
@@ -116,19 +116,27 @@ python scripts/update_local_installation.py --apply --pull --install-deps --run-
 
 ## 6. 当前基线迁移
 
-当前只有一条基线迁移：
+当前迁移包括一条基线迁移和一条专题字段迁移：
 
 ```text
 db/migrations/0001_schema_version_baseline.sql
+db/migrations/0002_topic_intro_fields.sql
 ```
 
-它做的事情：
+`0001_schema_version_baseline.sql` 做的事情：
 
 - 给旧库补 `app_meta`；
 - 给旧库补 `schema_migration`；
 - 标记 `schema_version = 1`；
 - 标记 `schema_baseline = 20260903`；
 - 不碰题目表、来源表、图片表和旧 TeX。
+
+`0002_topic_intro_fields.sql` 做的事情：
+
+- 给 `topic` 增加 `problem_intro_tex`，用于专题导出时插入题目部分引言；
+- 给 `topic` 增加 `answer_intro_tex`，用于专题导出时插入答案部分引言；
+- 给 `topic` 增加 `export_note` 与 `extra_json`，保留专题导出备注和未来扩展信息；
+- 不修改 `topic_question` 既有题目关系，也不触碰旧 `.tex` 题源。
 
 ## 7. 后续新增字段时的流程
 
@@ -141,8 +149,9 @@ db/migrations/0001_schema_version_baseline.sql
 5. 运行：
 
 ```text
-python -m py_compile services/schema_migration_service.py scripts/migrate_schema.py
+python -m py_compile services/schema_migration_service.py scripts/migrate_schema.py scripts/smoke_topic_collection_service.py
 python scripts/smoke_schema_migration_service.py
+python scripts/smoke_topic_collection_service.py
 python scripts/release_readiness.py --skip-slow
 ```
 

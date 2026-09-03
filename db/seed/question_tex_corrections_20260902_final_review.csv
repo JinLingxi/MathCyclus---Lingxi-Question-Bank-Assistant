@@ -1,4 +1,0 @@
-correction_id,review_status,action,question_id,fields,match_text,replacement_text,rationale
-QTC20260902_001,approved,remove_includegraphics_ref,Q000696,solution_tex|canonical_tex|raw_source_tex,images/2021 新高考I 卷 12答案1.png,,"缺失图片不在工作区；按用户确认先删除该 includegraphics 引用及其 wrapfigure 块；仅修正数据库副本，不修改原始 tex。"
-QTC20260902_002,approved,remove_includegraphics_ref,Q000696,solution_tex|canonical_tex|raw_source_tex,images/2021 新高考I 卷 12答案2.png,,"缺失图片不在工作区；按用户确认先删除该 includegraphics 引用及其 wrapfigure 块；仅修正数据库副本，不修改原始 tex。"
-QTC20260902_003,approved,remove_includegraphics_ref,Q000696,solution_tex|canonical_tex|raw_source_tex,images/2021 新高考I 卷 12答案3.png,,"缺失图片不在工作区；按用户确认先删除该 includegraphics 引用及其 wrapfigure 块；仅修正数据库副本，不修改原始 tex。"

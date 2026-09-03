@@ -1,0 +1,43 @@
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'db/schema.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/planning/database_schema_notes.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/planning/local_workspace_and_migration.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/planning/schema_migration_flow.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/planning/version_update_and_installer.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'question_bank_app.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/init_local_workspace.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/local_data_bundle.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/rebuild_status.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/release_readiness.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/smoke_database_services.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/smoke_local_workspace_tools.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/smoke_statistics_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'services/export_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'services/question_db_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'services/statistics_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'services/topic_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '启动程序.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '题库数据库重构实施规划.md', LF will be replaced by CRLF the next time Git touches it
+ .gitignore                                         |   19 [32m+[m[31m-[m
+ README.md                                          |   50 [32m+[m[31m-[m
+ db/schema.sql                                      |    9 [32m+[m[31m-[m
+ docs/planning/database_schema_notes.md             |   11 [32m+[m[31m-[m
+ docs/planning/local_workspace_and_migration.md     |   31 [32m+[m
+ docs/planning/schema_migration_flow.md             |   17 [32m+[m[31m-[m
+ docs/planning/version_update_and_installer.md      |   46 [32m+[m[31m-[m
+ question_bank_app.py                               | 2174 [32m+++++++++++++[m[31m-------[m
+ scripts/init_local_workspace.py                    |    1 [32m+[m
+ scripts/local_data_bundle.py                       |    2 [32m+[m
+ scripts/rebuild_status.py                          |    8 [32m+[m[31m-[m
+ scripts/release_readiness.py                       |   13 [32m+[m
+ scripts/smoke_database_services.py                 |   37 [32m+[m
+ scripts/smoke_local_workspace_tools.py             |    8 [32m+[m[31m-[m
+ scripts/smoke_statistics_service.py                |   77 [32m+[m
+ services/export_service.py                         |   16 [32m+[m
+ services/question_db_service.py                    |   63 [32m+[m[31m-[m
+ services/statistics_service.py                     |  186 [32m++[m
+ services/topic_service.py                          |  417 [32m+++[m[31m-[m
+ ...20\257\345\212\250\347\250\213\345\272\217.bat" |   24 [32m+[m[31m-[m
+ ...256\236\346\226\275\350\247\204\345\210\222.md" |  598 [32m+++++[m[31m-[m
+ 21 files changed, 2994 insertions(+), 813 deletions(-)

@@ -133,6 +133,9 @@ def source_export_label(source_kind: str, source: dict) -> str:
 def source_export_default_filename(source_kind: str, source: dict) -> str:
     """Return the default `.tex` filename for a source export."""
     kind = _normalize_source_kind(source_kind)
+    if kind == "topic" and _text(source.get("file_name")):
+        filename = sanitize_tex_filename_component(_text(source.get("file_name")), "topic_export")
+        return filename if filename.lower().endswith(".tex") else f"{filename}.tex"
     prefix = SOURCE_KIND_LABELS[kind]
     label = source_export_label(kind, source)
     return sanitize_tex_filename_component(f"{prefix}_{label}", f"{kind}_export") + ".tex"
@@ -734,6 +737,12 @@ def export_source_to_tex(
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sections = [_source_export_header(bundle, generated_at), ""]
     graphics_rows: list[dict[str, str]] = []
+    if bundle["source_kind"] == "topic":
+        problem_intro = _text(bundle.get("source", {}).get("problem_intro_tex"))
+        if problem_intro:
+            sections.append("% --- Topic Problem Intro ---")
+            sections.append(problem_intro)
+            sections.append("")
 
     for index, item in enumerate(bundle["items"], start=1):
         question = item["question"]
@@ -763,6 +772,13 @@ def export_source_to_tex(
         sections.append(f"% --- {index}. {position} · {question_id} ---")
         sections.append(tex)
         sections.append("")
+
+    if bundle["source_kind"] == "topic":
+        answer_intro = _text(bundle.get("source", {}).get("answer_intro_tex"))
+        if answer_intro:
+            sections.append("% --- Topic Answer Intro ---")
+            sections.append(answer_intro)
+            sections.append("")
 
     target.write_text("\n".join(sections).rstrip() + "\n", encoding="utf-8")
     return {

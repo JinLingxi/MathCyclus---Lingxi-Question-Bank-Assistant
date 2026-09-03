@@ -13,6 +13,7 @@ set "VENV_DIR=%CD%\.venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "MAIN_APP=%CD%\question_bank_app.py"
 set "REQUIREMENTS=%CD%\requirements.txt"
+set "INIT_WORKSPACE=%CD%\scripts\init_local_workspace.py"
 
 echo ========================================================
 echo              MathCyclus Question Bank
@@ -32,13 +33,21 @@ if not exist "%REQUIREMENTS%" (
     exit /b 1
 )
 
+if not exist "%INIT_WORKSPACE%" (
+    echo [ERROR] scripts\init_local_workspace.py was not found.
+    pause
+    exit /b 1
+)
+
 if not exist "%VENV_PYTHON%" (
-    echo [1/3] First run: creating a Python 3.10 - 3.12 virtual environment...
+    echo [1/4] First run: creating a Python 3.10 - 3.12 virtual environment...
     goto :find_python
 )
 
+echo [1/4] Virtual environment found.
+
 :venv_ready
-echo [2/3] Synchronizing locked dependencies...
+echo [2/4] Synchronizing locked dependencies...
 "%VENV_PYTHON%" -m pip install --disable-pip-version-check --requirement "%REQUIREMENTS%"
 if errorlevel 1 (
     echo.
@@ -48,7 +57,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/3] Starting Streamlit...
+echo [3/4] Preparing local workspace...
+"%VENV_PYTHON%" "%INIT_WORKSPACE%" --skip-gitignore-check
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Local workspace initialization failed.
+    pause
+    exit /b 1
+)
+
+echo [4/4] Starting Streamlit...
 echo The browser should open automatically. Close this window to stop the service.
 echo.
 "%VENV_PYTHON%" -m streamlit run "%MAIN_APP%" --server.port=8501 --server.headless=false

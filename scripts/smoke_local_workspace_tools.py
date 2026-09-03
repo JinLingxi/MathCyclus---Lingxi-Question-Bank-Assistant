@@ -44,15 +44,20 @@ def main() -> int:
         asset_dir = source_root / "assets" / "questions" / "Q000001"
         asset_dir.mkdir(parents=True, exist_ok=True)
         (asset_dir / "problem_01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (source_root / "data" / "local_preferences.json").write_text(
+            '{"browse_default_source":"legacy","exam_default_source":"sqlite"}\n',
+            encoding="utf-8",
+        )
         (source_root / "utils").mkdir(parents=True, exist_ok=True)
         (source_root / "utils" / "题库索引表.csv").write_text("题目ID,文件名称\n", encoding="utf-8-sig")
 
         bundle_path = source_root / "data" / "backups" / "smoke_bundle.zip"
         export_report = export_bundle(project_root=source_root, output=bundle_path, stamp="smoke")
         assert bundle_path.exists()
-        assert export_report["item_count"] >= 3, export_report
+        assert export_report["item_count"] >= 4, export_report
         assert export_report["contains_personal_data"] is True
         assert export_report["intended_for_git"] is False
+        assert export_report["counts_by_kind"].get("local_preferences") == 1, export_report
 
         inspect_report = inspect_bundle(bundle_path)
         assert inspect_report["status"] == "ok", inspect_report
@@ -67,6 +72,7 @@ def main() -> int:
         restore_apply = restore_bundle(project_root=target_root, bundle=bundle_path, apply=True)
         assert restore_apply["status"] == "ok", restore_apply
         assert (target_root / "data" / "mathcyclus.sqlite3").exists()
+        assert (target_root / "data" / "local_preferences.json").exists()
         assert (target_root / "assets" / "questions" / "Q000001" / "problem_01.png").exists()
         assert (target_root / "utils" / "题库索引表.csv").exists()
 

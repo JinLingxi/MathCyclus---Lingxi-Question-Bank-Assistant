@@ -145,7 +145,16 @@
 
 ### 6.2 `topic`
 
-小专题，属于某个大专题，可以有简介和导出文件名。
+小专题，属于某个大专题，可以有简介、导出文件名和专题级 TeX 引言。
+
+当前关键字段：
+
+- `file_name`：专题导出时优先使用的 TeX 文件名；
+- `description`：专题用途或选题说明；
+- `problem_intro_tex`：专题导出题目部分前插入的 TeX 片段；
+- `answer_intro_tex`：专题导出答案部分前插入的 TeX 片段；
+- `export_note`：专题导出备注，供后续模板或人工复核使用；
+- `extra_json`：尚未稳定进入 schema 的专题扩展信息。
 
 ### 6.3 `topic_question`
 

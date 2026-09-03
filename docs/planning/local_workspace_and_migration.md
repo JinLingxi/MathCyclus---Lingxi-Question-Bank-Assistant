@@ -15,8 +15,11 @@
 以下内容默认视为个人数据或运行生成物，不应提交：
 
 - `data/mathcyclus.sqlite3`
+- `data/local_preferences.json`
 - `data/backups/*`
 - `data/indexes/*`
+- `db/seed/*.csv`
+- `db/seed/*.json`
 - `assets/questions/*`
 - `reports/*`
 - `exports/*`
@@ -31,6 +34,24 @@ python scripts/release_readiness.py
 
 确认没有数据库、报告、导出文件或题目图片泄漏到 Git 状态中。
 
+如果要生成源码版 zip 或未来安装包的程序部分，必须使用白名单脚本，不直接压缩整个项目目录：
+
+```bash
+python scripts/build_source_release_package.py --json
+python scripts/build_source_release_package.py --create
+```
+
+如果历史版本中已经有旧题源或导出文件被 Git 跟踪，`.gitignore` 不会自动取消跟踪。提交前应运行：
+
+```bash
+python scripts/audit_tracked_private_files.py
+python scripts/audit_tracked_private_files.py --commands
+python scripts/audit_tracked_private_files.py --apply --confirm KEEP_LOCAL
+```
+
+脚本输出的 `git rm --cached -- "路径"` 只移除 Git 跟踪，不删除本地文件。
+如果使用 `--apply --confirm KEEP_LOCAL`，脚本会替你执行同样的 `git rm --cached`，仍然不会删除本地文件。
+
 ## 3. 初始化脚本
 
 脚本：
@@ -38,6 +59,8 @@ python scripts/release_readiness.py
 ```bash
 python scripts/init_local_workspace.py
 ```
+
+Windows 用户双击 `启动程序.bat` 时，启动器会在安装依赖后自动运行一次 `scripts/init_local_workspace.py --skip-gitignore-check`。这一步只补齐缺失目录和空库，不覆盖已有本地数据库；命令行初始化仍保留给排错和手动部署使用。
 
 如果是从旧版本升级，初始化目录后还应检查数据库 schema：
 
@@ -100,6 +123,7 @@ python scripts/local_data_bundle.py export
 默认包含：
 
 - `data/mathcyclus.sqlite3`
+- `data/local_preferences.json`
 - `assets/questions/`
 - `utils/题库索引表.csv`
 
@@ -163,6 +187,7 @@ python scripts/local_data_bundle.py restore data/backups/mathcyclus_local_bundle
 允许恢复的路径范围：
 
 - `data/mathcyclus.sqlite3`
+- `data/local_preferences.json`
 - `assets/questions/`
 - `utils/题库索引表.csv`
 - `chapters/`
@@ -194,6 +219,8 @@ python scripts/local_data_bundle.py restore data/backups/mathcyclus_local_bundle
 ```bash
 python scripts/init_local_workspace.py --dry-run --strict-gitignore
 python scripts/smoke_local_workspace_tools.py
+python scripts/build_source_release_package.py --json
+python scripts/audit_tracked_private_files.py
 python scripts/release_readiness.py
 ```
 
@@ -206,9 +233,13 @@ python scripts/local_data_bundle.py export --include-legacy-tex
 如果只是发布给别人安装：
 
 - 不上传 `data/mathcyclus.sqlite3`；
+- 不上传 `data/local_preferences.json`；
+- 不上传 `db/seed/` 中基于个人题库生成的迁移复核表；
 - 不上传 `assets/questions/` 中的真实图片；
 - 不上传 `reports/`；
 - 不上传 `exports/`；
+- 不上传 `chapters/` 中的旧 TeX 题源和旧题目图片；
+- 不上传 `Test Paper Group/导出文件/` 中的历史导出成品；
 - 让用户下载代码后运行 `python scripts/init_local_workspace.py` 创建自己的空库。
 
 网页入口：

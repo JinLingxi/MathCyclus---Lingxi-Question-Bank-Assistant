@@ -30,13 +30,15 @@ EQUIVALENCE_REVIEW_HELPER = PROJECT_ROOT / "scripts" / "review_equivalence_decis
 PREVIEW_PIPELINE = PROJECT_ROOT / "scripts" / "rebuild_preview_pipeline.py"
 PROJECT_HYGIENE_SCRIPT = PROJECT_ROOT / "scripts" / "check_project_hygiene.py"
 RELEASE_READINESS_SCRIPT = PROJECT_ROOT / "scripts" / "release_readiness.py"
+SOURCE_RELEASE_PACKAGE_SCRIPT = PROJECT_ROOT / "scripts" / "build_source_release_package.py"
+TRACKED_PRIVATE_AUDIT_SCRIPT = PROJECT_ROOT / "scripts" / "audit_tracked_private_files.py"
 DATABASE_SERVICE_SMOKE_SCRIPT = PROJECT_ROOT / "scripts" / "smoke_database_services.py"
 DATA_WARNING_REVIEW_PACK = PROJECT_ROOT / "scripts" / "generate_data_warning_review_pack.py"
 DATA_WARNING_REVIEW_DRY_RUN = PROJECT_ROOT / "scripts" / "apply_data_warning_review_dry_run.py"
 PAPER_QUESTION_CORRECTIONS = PROJECT_ROOT / "db" / "seed" / "paper_question_corrections_20260902_final_review.csv"
 PAPER_QUESTION_CORRECTIONS_SCRIPT = PROJECT_ROOT / "scripts" / "apply_paper_question_corrections_dry_run.py"
 QUESTION_TEX_CORRECTIONS = PROJECT_ROOT / "db" / "seed" / "question_tex_corrections_20260902_final_review.csv"
-PROGRESS_ESTIMATE = "99.8%"
+PROGRESS_ESTIMATE = "99.99%"
 FORMAL_DB_TABLES = [
     "question",
     "paper",
@@ -114,7 +116,7 @@ def print_current_summary() -> None:
         print(f"formal asset count: {count_table(FORMAL_DB, 'question_asset')}")
         print(f"formal book link count: {count_table(FORMAL_DB, 'book_exercise_question')}")
         print(f"formal topic link count: {count_table(FORMAL_DB, 'topic_question')}")
-    print("next focus: 后续录入优化 / 独立启动器或打包版 / 可选默认数据源切换")
+    print("next focus: 发布白名单复核、旧跟踪文件清理、独立启动器或打包版（可选）")
 
 
 def main() -> None:
@@ -149,6 +151,8 @@ def main() -> None:
     print(f"project hygiene script: {PROJECT_HYGIENE_SCRIPT.exists()}")
     print(f"project hygiene reports: {report_count('project_hygiene_*.md')}")
     print(f"release readiness script: {RELEASE_READINESS_SCRIPT.exists()}")
+    print(f"source release package script: {SOURCE_RELEASE_PACKAGE_SCRIPT.exists()}")
+    print(f"tracked private audit script: {TRACKED_PRIVATE_AUDIT_SCRIPT.exists()}")
     print(f"release readiness reports: {report_count('release_readiness_*.md')}")
     print(f"database service smoke script: {DATABASE_SERVICE_SMOKE_SCRIPT.exists()}")
     print(f"data warning review pack script: {DATA_WARNING_REVIEW_PACK.exists()}")

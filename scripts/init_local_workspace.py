@@ -46,6 +46,7 @@ GITKEEP_DIRECTORIES = [
 
 GITIGNORE_PROBES = [
     ("formal_database", "data/mathcyclus.sqlite3"),
+    ("local_preferences", "data/local_preferences.json"),
     ("database_backup", "data/backups/example.sqlite3"),
     ("runtime_index", "data/indexes/example.sqlite3"),
     ("question_asset", "assets/questions/Q000001/example.png"),

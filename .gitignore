@@ -54,6 +54,8 @@ data/indexes/*
 !data/backups/
 data/backups/*
 !data/backups/.gitkeep
+db/seed/*
+!db/seed/.gitkeep
 reports/*
 !reports/.gitkeep
 import_reports/
@@ -92,13 +94,26 @@ old_app.py
 
 MathCyclus_demo.html
 cloze_exports/
-Test Paper Group/
-Test Paper Group/导出文件/
 AutoTikz.md
 exports/*
 !exports/.gitkeep
 assets/questions/*
 !assets/questions/.gitkeep
+
+# 试卷组卷目录：只允许模板进入源码包/版本库，导出成品留在本地
+Test Paper Group/*
+!Test Paper Group/主题模板/
+!Test Paper Group/主题模板/**
+Test Paper Group/导出文件/
+Test Paper Group/主题模板/**/*.pdf
+Test Paper Group/主题模板/**/*.log
+Test Paper Group/主题模板/**/*.aux
+Test Paper Group/主题模板/**/*.out
+Test Paper Group/主题模板/**/*.synctex.gz
+
+# 旧 TeX 题库目录：本地可用，但源码版/安装包默认不携带真实题源
+chapters/*
+!chapters/.gitkeep
 
 # 题库试题源文件默认不上传 GitHub，避免版权与仓库体积风险
 *-G-*.tex

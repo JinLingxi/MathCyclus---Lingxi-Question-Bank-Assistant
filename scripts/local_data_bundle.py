@@ -23,6 +23,7 @@ MANIFEST_NAME = "mathcyclus_local_bundle_manifest.json"
 
 DEFAULT_ITEMS = [
     ("formal_database", "data/mathcyclus.sqlite3"),
+    ("local_preferences", "data/local_preferences.json"),
     ("question_assets", "assets/questions"),
     ("csv_cache", "utils/题库索引表.csv"),
 ]
@@ -35,6 +36,7 @@ OPTIONAL_ITEMS = {
 
 RESTORE_ALLOWED_EXACT = {
     "data/mathcyclus.sqlite3",
+    "data/local_preferences.json",
     "utils/题库索引表.csv",
 }
 
