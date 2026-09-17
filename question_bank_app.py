@@ -730,16 +730,21 @@ def inject_sidebar_layout_switch(layout: str):
 
             function applySidebarState(isCollapsed) {{
                 sidebarCollapsed = isCollapsed;
-                collapseButton.textContent = isCollapsed ? ">>" : "<<";
-                collapseButton.title = isCollapsed ? "展开侧边栏" : "收缩侧边栏";
-                collapseButton.setAttribute("aria-label", collapseButton.title);
-                modeButton.dataset.sidebarCollapsed = isCollapsed ? "true" : "false";
-                modeButton.setAttribute("aria-hidden", isCollapsed ? "true" : "false");
-                modeButton.tabIndex = isCollapsed ? -1 : 0;
+                const nextLabel = isCollapsed ? ">>" : "<<";
+                const nextTitle = isCollapsed ? "展开侧边栏" : "收缩侧边栏";
+                if (collapseButton.textContent !== nextLabel) collapseButton.textContent = nextLabel;
+                if (collapseButton.title !== nextTitle) collapseButton.title = nextTitle;
+                if (collapseButton.getAttribute("aria-label") !== nextTitle) collapseButton.setAttribute("aria-label", nextTitle);
+                const nextCollapsed = isCollapsed ? "true" : "false";
+                if (modeButton.dataset.sidebarCollapsed !== nextCollapsed) modeButton.dataset.sidebarCollapsed = nextCollapsed;
+                const nextHidden = isCollapsed ? "true" : "false";
+                if (modeButton.getAttribute("aria-hidden") !== nextHidden) modeButton.setAttribute("aria-hidden", nextHidden);
+                const nextTabIndex = isCollapsed ? -1 : 0;
+                if (modeButton.tabIndex !== nextTabIndex) modeButton.tabIndex = nextTabIndex;
                 if (!isCollapsed) {{
-                    delete modeButton.dataset.switching;
-                    modeButton.style.opacity = "";
-                    modeButton.style.pointerEvents = "";
+                    if (modeButton.dataset.switching) delete modeButton.dataset.switching;
+                    if (modeButton.style.opacity) modeButton.style.opacity = "";
+                    if (modeButton.style.pointerEvents) modeButton.style.pointerEvents = "";
                 }}
             }}
 
