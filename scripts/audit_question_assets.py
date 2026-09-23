@@ -17,7 +17,7 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.asset_service import collect_asset_reference_issues
+from services.asset_service import collect_asset_reference_issues, is_tikz_derived_asset
 
 INCLUDE_GRAPHICS_PATTERN = re.compile(
     r"\\includegraphics(?:\[[^\]]*\])?\{(?P<path>[^{}]+)\}",
@@ -188,12 +188,13 @@ def audit_assets(db_path: Path) -> dict[str, object]:
                         }
                     )
 
-            if assets and not include_refs and not questionasset_refs:
+            ordinary_assets = [asset for asset in assets if not is_tikz_derived_asset(asset)]
+            if ordinary_assets and not include_refs and not questionasset_refs:
                 unused_asset_questions.append(
                     {
                         "question_id": row["question_id"],
                         "legacy_id": row["legacy_id"],
-                        "asset_count": len(assets),
+                        "asset_count": len(ordinary_assets),
                     }
                 )
 

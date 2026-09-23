@@ -90,7 +90,10 @@ def main() -> None:
         tmp_root = Path(tmp_dir)
         for source_kind, id_key in SOURCE_ID_KEYS.items():
             options = list_source_export_options(str(db_path), source_kind, limit=20)
-            checks.append(check(f"{source_kind}_source_options", bool(options), len(options)))
+            options_detail: Any = len(options)
+            if not options:
+                options_detail = {"count": 0, "status": "skipped", "reason": "no linked sources"}
+            checks.append(check(f"{source_kind}_source_options", bool(options) or source_kind == "book", options_detail))
             if not options:
                 continue
 

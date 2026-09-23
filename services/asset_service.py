@@ -7,6 +7,7 @@ import mimetypes
 import re
 import shutil
 import struct
+import unicodedata
 from pathlib import Path
 
 from services.database_service import (
@@ -22,6 +23,7 @@ from services.revision_service import insert_question_revision_from_conn
 PROJECT_ROOT = Path(BASE_DIR)
 ASSET_ROOT = PROJECT_ROOT / "assets" / "questions"
 ASSET_EDITABLE_FIELDS = {"role", "caption", "sort_order"}
+ASSET_ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 INCLUDE_GRAPHICS_PATTERN = re.compile(
     r"\\includegraphics(?:\[[^\]]*\])?\{(?P<path>[^{}]+)\}",
     re.MULTILINE,
@@ -53,6 +55,13 @@ def question_asset_dir(question_id: str, asset_root: str | Path | None = None) -
 
 def preferred_asset_alias(asset: dict) -> str:
     """Return the stable default alias used by \\questionasset placeholders."""
+    explicit_alias = str(asset.get("alias") or "").strip()
+    if explicit_alias:
+        return explicit_alias
+    extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+    explicit_alias = str(extra.get("alias") or "").strip()
+    if explicit_alias:
+        return explicit_alias
     file_path = str(asset.get("file_path") or "")
     alias = Path(file_path).stem
     if alias:
@@ -72,13 +81,30 @@ def asset_placeholder(asset: dict) -> str:
     return f"\\questionasset{{{alias}}}"
 
 
+def is_tikz_derived_asset(asset: dict) -> bool:
+    """Identify auxiliary images generated from inline TikZ source."""
+    for value in (
+        asset.get("file_path"),
+        asset.get("source_path"),
+        asset.get("planned_file_path"),
+        asset.get("original_file_name"),
+    ):
+        normalized = str(value or "").replace("\\", "/")
+        if "相关图" in normalized or "/related/" in normalized.lower():
+            return True
+    return False
+
+
 def asset_aliases(asset: dict) -> set[str]:
     """Return aliases that can identify a formal or draft asset in TeX placeholders."""
     aliases = {
+        str(asset.get("alias") or "").strip(),
         str(asset.get("asset_id") or ""),
         str(asset.get("draft_asset_id") or ""),
         str(asset.get("caption") or "").strip(),
     }
+    extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+    aliases.add(str(extra.get("alias") or "").strip())
     for field in ["file_path", "source_path", "planned_file_path", "original_file_name"]:
         value = str(asset.get(field) or "").strip()
         if not value:
@@ -168,8 +194,17 @@ def collect_asset_reference_issues(
 
     missing_asset_files = []
     unreferenced_assets = []
+    tikz_derived_assets = []
     for asset in assets:
         aliases = asset_aliases(asset)
+        if is_tikz_derived_asset(asset):
+            tikz_derived_assets.append(
+                {
+                    "asset_id": asset.get("asset_id") or asset.get("draft_asset_id") or "",
+                    "path": asset.get("file_path") or asset.get("source_path") or "",
+                }
+            )
+            continue
         if not resolve_asset_record_path(asset, project_root=project_root):
             missing_asset_files.append(
                 {
@@ -194,6 +229,7 @@ def collect_asset_reference_issues(
         "unresolved_questionasset": unresolved_questionasset,
         "missing_asset_files": missing_asset_files,
         "unreferenced_assets": unreferenced_assets,
+        "tikz_derived_assets": tikz_derived_assets,
         "has_blockers": bool(missing_includegraphics or unresolved_questionasset or missing_asset_files),
     }
 
@@ -202,10 +238,16 @@ def normalize_asset_alias(alias: str, fallback: str = "asset") -> str:
     """Normalize a user-facing alias used by \\questionasset{...}."""
     text = str(alias or "").strip()
     text = Path(text).stem if text else ""
-    text = re.sub(r"[^0-9A-Za-z_\-]+", "_", text)
-    text = re.sub(r"_+", "_", text).strip("._-")
-    fallback_text = re.sub(r"[^0-9A-Za-z_\-]+", "_", str(fallback or "asset")).strip("._-")
-    return (text or fallback_text or "asset")[:80]
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    fallback_text = unicodedata.normalize("NFKD", str(fallback or "asset"))
+    fallback_text = fallback_text.encode("ascii", "ignore").decode("ascii").lower()
+    fallback_text = re.sub(r"[^a-z0-9]+", "_", fallback_text).strip("_") or "asset"
+    if text and text[0].isdigit():
+        text = f"asset_{text}"
+    normalized = (text or fallback_text or "asset")[:80].strip("_")
+    return normalized if ASSET_ALIAS_PATTERN.fullmatch(normalized) else "asset"
 
 
 def copy_asset_to_question_dir(
@@ -227,7 +269,7 @@ def copy_asset_to_question_dir(
         suffix = source.suffix.lower()
         index = 2
         while True:
-            candidate = target_dir / f"{stem}-{index}{suffix}"
+            candidate = target_dir / f"{stem}_{index:02d}{suffix}"
             if not candidate.exists():
                 target = candidate
                 break
@@ -363,6 +405,7 @@ def attach_asset_to_question(
             if copy_file
             else source
         )
+        target_alias = normalize_asset_alias(target.stem, fallback=target_alias)
         asset_id = make_asset_id(safe_question_id, safe_role, target)
         mime_type = mimetypes.guess_type(target.name)[0] or ""
         width, height = _image_dimensions(target) if mime_type.startswith("image/") else (None, None)
@@ -428,7 +471,7 @@ def attach_asset_to_question(
         "sort_order": int(final_sort_order),
         "revision_id": revision_id,
         "caption": caption,
-        "alias": preferred_asset_alias({"file_path": stored_path, "caption": caption or alias}),
+        "alias": target_alias,
     }
     result["placeholder"] = asset_placeholder(result)
     return result
@@ -613,4 +656,56 @@ def delete_asset(
         "question_id": str(before.get("question_id") or ""),
         "revision_id": revision_id,
         "deleted_file": deleted_file,
+    }
+
+def audit_asset_library(db_path: str | None = None, *, project_root: str | Path | None = None) -> dict[str, object]:
+    """Audit registered question assets and files without changing either."""
+    from services.question_db_service import get_question
+
+    root = Path(project_root or PROJECT_ROOT)
+    registered = list_assets(db_path)
+    missing = []
+    valid = []
+    for asset in registered:
+        resolved = resolve_asset_record_path(asset, project_root=root)
+        if resolved:
+            valid.append(asset)
+        else:
+            missing.append({
+                "asset_id": asset.get("asset_id", ""),
+                "question_id": asset.get("question_id", ""),
+                "file_path": asset.get("file_path", ""),
+                "caption": asset.get("caption", ""),
+            })
+
+    referenced_paths = set()
+    for asset in registered:
+        resolved = resolve_asset_record_path(asset, project_root=root)
+        if resolved:
+            try:
+                referenced_paths.add(resolved.resolve())
+            except OSError:
+                pass
+    orphan_files = []
+    asset_root = (root / "assets" / "questions").resolve()
+    if asset_root.exists():
+        for candidate in asset_root.rglob("*"):
+            if candidate.is_file() and candidate.resolve() not in referenced_paths:
+                orphan_files.append(str(candidate.relative_to(root)))
+
+    reference_issues = []
+    question_ids = sorted({str(asset.get("question_id") or "") for asset in registered if asset.get("question_id")})
+    for question_id in question_ids:
+        record = get_question(db_path, question_id)
+        question_assets = [asset for asset in registered if asset.get("question_id") == question_id]
+        issues = collect_asset_reference_issues(record, question_assets, project_root=root)
+        if issues.get("has_blockers") or issues.get("unreferenced_assets"):
+            reference_issues.append({"question_id": question_id, "issues": issues})
+
+    return {
+        "registered": len(registered),
+        "valid": len(valid),
+        "missing": missing,
+        "orphan_files": orphan_files,
+        "reference_issues": reference_issues,
     }

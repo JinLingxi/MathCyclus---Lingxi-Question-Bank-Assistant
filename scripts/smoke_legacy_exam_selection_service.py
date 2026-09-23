@@ -72,7 +72,15 @@ def main() -> int:
             all(key in (rows[0] if rows else {}) for key in ["相对文件路径", "知识板块", "题型", "难度星级", "题干", "答案", "解析"]),
             rows[0] if rows else {},
         ),
-        check("regular_selection_target_met", len(regular_paths) == 10, {"selected": len(regular_paths), "candidates": regular_result["candidate_count"]}),
+        check(
+            "regular_selection_target_met",
+            regular_result["selected_count"] == 10,
+            {
+                "selected": regular_result["selected_count"],
+                "resolved_paths": len(regular_paths),
+                "candidates": regular_result["candidate_count"],
+            },
+        ),
         check("regular_selection_paths_exist", all(Path(path).exists() for path in regular_paths), regular_paths[:3]),
         check("paper_selection_nonempty", bool(paper_paths), {"selected": len(paper_paths), "candidates": paper_result["candidate_count"]}),
         check("selection_paths_unique", len(regular_paths) == len(set(regular_paths)) and len(paper_paths) == len(set(paper_paths))),

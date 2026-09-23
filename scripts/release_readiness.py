@@ -62,6 +62,13 @@ def build_commands(skip_slow: bool) -> list[CheckCommand]:
         CheckCommand("smoke_topic_collection_service", [python, "scripts/smoke_topic_collection_service.py"]),
         CheckCommand("smoke_question_traceback_service", [python, "scripts/smoke_question_traceback_service.py"]),
         CheckCommand("smoke_draft_parse_service", [python, "scripts/smoke_draft_parse_service.py"]),
+        CheckCommand("smoke_document_parser_service", [python, "scripts/smoke_document_parser_service.py"]),
+        CheckCommand("smoke_document_ai_queue_service", [python, "scripts/smoke_document_ai_queue_service.py"]),
+        CheckCommand("smoke_question_ai_service", [python, "scripts/smoke_question_ai_service.py"]),
+        CheckCommand("smoke_image_region_service", [python, "scripts/smoke_image_region_service.py"]),
+        CheckCommand("smoke_pdf_import_service", [python, "scripts/smoke_pdf_import_service.py"]),
+        CheckCommand("smoke_pdf_import_ui", [python, "scripts/smoke_pdf_import_ui.py"]),
+        CheckCommand("smoke_unified_batch_entry_ui", [python, "scripts/smoke_unified_batch_entry_ui.py"]),
         CheckCommand("smoke_update_local_installation", [python, "scripts/smoke_update_local_installation.py"]),
         CheckCommand("smoke_source_release_package", [python, "scripts/smoke_source_release_package.py"]),
         CheckCommand(

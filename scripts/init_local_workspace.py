@@ -17,6 +17,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,8 @@ LOCAL_DIRECTORIES = [
     "data",
     "data/backups",
     "data/indexes",
+    "data/imports",
+    "data/imports/pdf_jobs",
     "assets",
     "assets/questions",
     "exports",
@@ -38,6 +41,8 @@ GITKEEP_DIRECTORIES = [
     "data",
     "data/backups",
     "data/indexes",
+    "data/imports",
+    "data/imports/pdf_jobs",
     "assets",
     "assets/questions",
     "exports",
@@ -49,6 +54,7 @@ GITIGNORE_PROBES = [
     ("local_preferences", "data/local_preferences.json"),
     ("database_backup", "data/backups/example.sqlite3"),
     ("runtime_index", "data/indexes/example.sqlite3"),
+    ("pdf_import_job", "data/imports/pdf_jobs/pdf_20260911_example/source.pdf"),
     ("question_asset", "assets/questions/Q000001/example.png"),
     ("report", "reports/example.md"),
     ("export", "exports/example.tex"),
@@ -117,7 +123,7 @@ def create_gitkeeps(project_root: Path, *, dry_run: bool) -> list[dict[str, Any]
 
 
 def database_table_names(db_path: Path) -> list[str]:
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
     return [str(row[0]) for row in rows]
 
@@ -167,10 +173,23 @@ def initialize_database(
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     schema_sql = schema_path.read_text(encoding="utf-8")
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(schema_sql)
         conn.commit()
+
+    # Bring a newly created database through the same migration chain used by
+    # existing installations, including derived search indexes and triggers.
+    from services.schema_migration_service import apply_pending_migrations
+
+    migration_result = apply_pending_migrations(
+        db_path,
+        apply=True,
+        backup=False,
+        allow_external_database=True,
+    )
+    if migration_result.get("status") not in {"ok", "pending"}:
+        raise RuntimeError(f"schema migration failed: {migration_result}")
 
     tables = database_table_names(db_path)
     return {

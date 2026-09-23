@@ -12,7 +12,11 @@ import subprocess
 import shutil
 import uuid
 import sys
+import textwrap
 import tempfile
+import mimetypes
+from urllib.parse import quote
+from pathlib import Path
 from dotenv import load_dotenv, dotenv_values
 try:
     from PIL import ImageGrab
@@ -23,6 +27,7 @@ import streamlit.components.v1 as components
 import io
 from services.ai_service import extract_json_obj_from_text, normalize_chat_completions_url, post_chat_completion
 from services.file_service import atomic_write_text, backup_existing_file, file_change_token
+from services.prompt_service import load_prompt, prompt_values, save_prompt
 from services.operation_log import read_recent_operations, record_operation
 from services.question_service import (
     QuestionDuplicateError,
@@ -36,7 +41,9 @@ from services.semantic_search_service import (
     build_index as build_semantic_index,
     invalidate_path as invalidate_semantic_path,
     index_status as semantic_index_status,
+    refresh_pending as refresh_pending_semantic,
     search as semantic_search,
+    search_similar_row as semantic_search_similar_row,
 )
 from services.draft_parse_service import (
     asset_caption_from_source_path as _service_asset_caption_from_source_path,
@@ -126,7 +133,68 @@ def render_question_preview(content: str, show_title: bool = False, prepared_mar
     preview_markdown = prepared_markdown
     if preview_markdown is None:
         preview_markdown = _cached_latex_to_markdown(content, show_title)
-    st.markdown(preview_markdown, unsafe_allow_html=True)
+    _render_preview_with_inline_assets(preview_markdown)
+
+
+_INLINE_PREVIEW_HTML_PATTERN = re.compile(
+    r"(<(?:figure|span)\s+class=[\"']mc-db-inline-asset(?:-[^\"']+)?[\"'][\s\S]*?</(?:figure|span)>)",
+    re.IGNORECASE,
+)
+
+
+def _render_preview_with_inline_assets(preview_markdown: str) -> None:
+    """Render asset fragments outside Markdown so they cannot become source text."""
+    text = str(preview_markdown or "")
+    if not _INLINE_PREVIEW_HTML_PATTERN.search(text):
+        st.markdown(text, unsafe_allow_html=True)
+        return
+
+    parts = _INLINE_PREVIEW_HTML_PATTERN.split(text)
+    for part in parts:
+        if not part or not part.strip():
+            continue
+        if _INLINE_PREVIEW_HTML_PATTERN.fullmatch(part.strip()):
+            _render_preview_asset_fragment(part.strip())
+        else:
+            st.markdown(part, unsafe_allow_html=True)
+
+
+def _render_preview_asset_fragment(fragment: str) -> None:
+    """Render generated asset markup with native Streamlit elements.
+
+    The preview converter produces small, controlled HTML fragments for assets.
+    Keeping those fragments out of Markdown avoids Streamlit/CommonMark treating
+    indented HTML as a literal code block on different runtime versions.
+    """
+    figure_match = re.search(
+        r"<" + r"img\b[^>]*\bsrc=[\"']([^\"']+)[\"'][^>]*>[\s\S]*?</figure>",
+        fragment,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if figure_match:
+        image_source = html.unescape(figure_match.group(1))
+        caption_match = re.search(
+            r"<figcaption>([\s\S]*?)</figcaption>",
+            fragment,
+            flags=re.IGNORECASE,
+        )
+        caption = html.unescape(caption_match.group(1)).strip() if caption_match else ""
+        if image_source.lower().startswith("data:image/"):
+            _mime, _separator, encoded = image_source.partition(",")
+            try:
+                image_bytes = base64.b64decode(encoded, validate=True)
+            except (ValueError, base64.binascii.Error):
+                image_bytes = b""
+            if image_bytes:
+                st.image(image_bytes, caption=caption or None, use_column_width=True)
+                return
+
+    visible_text = re.sub(r"<[^>]+>", "", fragment)
+    visible_text = html.unescape(visible_text).strip()
+    if "mc-db-inline-asset-missing" in fragment:
+        st.warning(visible_text or "图片资源缺失")
+    else:
+        st.info(visible_text or "附件无法预览")
 
 
 @st.cache_data(show_spinner=False, max_entries=256)
@@ -753,16 +821,21 @@ def inject_sidebar_layout_switch(layout: str):
 
             function applySidebarState(isCollapsed) {{
                 sidebarCollapsed = isCollapsed;
-                collapseButton.textContent = isCollapsed ? ">>" : "<<";
-                collapseButton.title = isCollapsed ? "展开侧边栏" : "收缩侧边栏";
-                collapseButton.setAttribute("aria-label", collapseButton.title);
-                modeButton.dataset.sidebarCollapsed = isCollapsed ? "true" : "false";
-                modeButton.setAttribute("aria-hidden", isCollapsed ? "true" : "false");
-                modeButton.tabIndex = isCollapsed ? -1 : 0;
+                const nextLabel = isCollapsed ? ">>" : "<<";
+                const nextTitle = isCollapsed ? "展开侧边栏" : "收缩侧边栏";
+                if (collapseButton.textContent !== nextLabel) collapseButton.textContent = nextLabel;
+                if (collapseButton.title !== nextTitle) collapseButton.title = nextTitle;
+                if (collapseButton.getAttribute("aria-label") !== nextTitle) collapseButton.setAttribute("aria-label", nextTitle);
+                const nextCollapsed = isCollapsed ? "true" : "false";
+                if (modeButton.dataset.sidebarCollapsed !== nextCollapsed) modeButton.dataset.sidebarCollapsed = nextCollapsed;
+                const nextHidden = isCollapsed ? "true" : "false";
+                if (modeButton.getAttribute("aria-hidden") !== nextHidden) modeButton.setAttribute("aria-hidden", nextHidden);
+                const nextTabIndex = isCollapsed ? -1 : 0;
+                if (modeButton.tabIndex !== nextTabIndex) modeButton.tabIndex = nextTabIndex;
                 if (!isCollapsed) {{
-                    delete modeButton.dataset.switching;
-                    modeButton.style.opacity = "";
-                    modeButton.style.pointerEvents = "";
+                    if (modeButton.dataset.switching) delete modeButton.dataset.switching;
+                    if (modeButton.style.opacity) modeButton.style.opacity = "";
+                    if (modeButton.style.pointerEvents) modeButton.style.pointerEvents = "";
                 }}
             }}
 
@@ -903,11 +976,12 @@ def _write_ocr_prompt_file(prompt: str):
     atomic_write_text(ocr_prompt_file, normalized + ("\n" if normalized else ""), backup=False)
     globals()["AI_OCR_PROMPT"] = normalized
 
-@st.dialog("API 设置", width="large")
+@st.dialog("API 与\n提示词", width="large")
 def api_settings_dialog():
     env_path = _root_env_path()
     config = _read_root_ai_env_config()
     ocr_prompt_value, prompt_file_exists = _read_ocr_prompt_for_settings(config)
+    editable_prompts = prompt_values()
     env_state = "已读取根目录 .env" if os.path.exists(env_path) else "未找到 .env，保存时会自动创建"
     prompt_state = "已读取根目录 ocr_prompt.txt" if prompt_file_exists else "未找到 ocr_prompt.txt，保存时会自动创建"
 
@@ -990,6 +1064,12 @@ def api_settings_dialog():
             placeholder="例如 text-embedding-v4",
             help="留空即可继续使用精确搜索；填写后可在搜索页启用语义检索。",
         )
+        st.markdown("#### 提示词配置")
+        st.caption("以下提示词会保存到项目根目录的独立文本文件，修改后对应功能下次调用立即生效。")
+        tags_prompt = st.text_area("难度与知识标签提示词", value=editable_prompts["tags"], height=180)
+        solution_prompt = st.text_area("答案与解析提示词", value=editable_prompts["solution"], height=220)
+        cloze_prompt = st.text_area("挖空题提示词", value=editable_prompts["cloze"], height=200)
+        exam_polish_prompt = st.text_area("组卷意图润色提示词", value=editable_prompts["exam_polish"], height=160)
         ocr_prompt = st.text_area(
             "OCR 提示词（保存到 ocr_prompt.txt）",
             value=ocr_prompt_value,
@@ -1020,6 +1100,10 @@ def api_settings_dialog():
                 "AI_EMBEDDING_MODEL_NAME": embedding_model.strip(),
             })
             _write_ocr_prompt_file(ocr_prompt)
+            save_prompt("tags", tags_prompt)
+            save_prompt("solution", solution_prompt)
+            save_prompt("cloze", cloze_prompt)
+            save_prompt("exam_polish", exam_polish_prompt)
             st.success(".env 与 ocr_prompt.txt 已保存，当前会话已重新加载 API 配置。")
         except Exception as e:
             st.error(f"保存失败：{e}")
@@ -1399,7 +1483,7 @@ def inject_unified_visual_system_css():
             backdrop-filter: none !important;
             -webkit-backdrop-filter: none !important;
         }
-        [data-testid="stSidebarUserContent"] { padding: 0.6rem 0.5rem 1.2rem !important; }
+        [data-testid="stSidebarUserContent"] { padding: 0.6rem 0 1.2rem !important; }
         [data-testid="stSidebar"] div[role="radiogroup"] { gap: 8px !important; }
         [data-testid="stSidebar"] div[role="radiogroup"] > label {
             max-width: 96px !important;
@@ -1552,20 +1636,22 @@ def zoom_image(img):
 def show_mathcyclus_intro():
     page_system_intro()
 
-def _adv_search_queries_from_session():
-    t1 = st.session_state.get("adv_t1", "全文内容")
-    t2 = st.session_state.get("adv_t2", "全文内容")
-    t3 = st.session_state.get("adv_t3", "全文内容")
+def _adv_search_queries_from_session(submitted_only=False):
+    prefix = "adv_submitted_" if submitted_only else "adv_"
+    t1 = st.session_state.get(f"{prefix}t1", st.session_state.get("adv_t1", "全文内容"))
+    t2 = st.session_state.get(f"{prefix}t2", st.session_state.get("adv_t2", "全文内容"))
+    t3 = st.session_state.get(f"{prefix}t3", st.session_state.get("adv_t3", "全文内容"))
 
-    q1 = st.session_state.get("adv_q1_sel" if t1 == "题目类型" else "adv_q1", "")
-    q2 = st.session_state.get("adv_q2_sel" if t2 == "题目类型" else "adv_q2", "")
-    q3 = st.session_state.get("adv_q3_sel" if t3 == "题目类型" else "adv_q3", "")
+    q1 = st.session_state.get(f"{prefix}q1_sel" if t1 == "题目类型" else f"{prefix}q1", "")
+    q2 = st.session_state.get(f"{prefix}q2_sel" if t2 == "题目类型" else f"{prefix}q2", "")
+    q3 = st.session_state.get(f"{prefix}q3_sel" if t3 == "题目类型" else f"{prefix}q3", "")
     return (q1 or ""), (q2 or ""), (q3 or "")
 
-def _adv_search_has_query():
-    q1, q2, q3 = _adv_search_queries_from_session()
-    search_mode = st.session_state.get("adv_search_mode", "精确筛选")
-    semantic_query = st.session_state.get("adv_semantic_query", "") if search_mode != "精确筛选" else ""
+def _adv_search_has_query(submitted_only=False):
+    q1, q2, q3 = _adv_search_queries_from_session(submitted_only=submitted_only)
+    prefix = "adv_submitted_" if submitted_only else "adv_"
+    search_mode = st.session_state.get(f"{prefix}search_mode", st.session_state.get("adv_search_mode", "精确筛选"))
+    semantic_query = st.session_state.get(f"{prefix}semantic_query", "") if search_mode != "精确筛选" else ""
     return bool(str(q1).strip() or str(q2).strip() or str(q3).strip() or str(semantic_query).strip())
 
 
@@ -2059,7 +2145,7 @@ def restore_deleted_questions_dialog():
 
         render_static_question_header(q_label, content, rec.get("original_path", ""), extra_html_label=extra_label)
         try:
-            st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+            _render_preview_with_inline_assets(latex_to_markdown(content, show_title=False))
         except Exception as e:
             st.error(f"渲染错误: {e}")
 
@@ -2156,7 +2242,7 @@ def manage_backup_questions_dialog():
 
         render_static_question_header(q_label, content, rec.get("original_path", ""), extra_html_label=extra_label)
         try:
-            st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+            _render_preview_with_inline_assets(latex_to_markdown(content, show_title=False))
         except Exception as e:
             st.error(f"渲染错误: {e}")
 
@@ -2335,7 +2421,7 @@ def render_delete_question_item(fpath: str, q_label: str = None, content: str = 
         render_static_question_header(q_label, content, fpath, extra_html_label=extra_html_label)
 
     try:
-        st.markdown(latex_to_markdown(content, show_title=False), unsafe_allow_html=True)
+        _render_preview_with_inline_assets(latex_to_markdown(content, show_title=False))
     except Exception as e:
         st.error(f"渲染错误: {e}")
 
@@ -2369,7 +2455,8 @@ def ocr_image_to_latex(images=None, max_image_size: int = 1024, max_tokens: int 
     prompt = (
         "你是 OCR 转写助手。你只需要把图片中的内容逐字逐符号转写成 LaTeX 源码。\n"
         "禁止解题、禁止推理、禁止补全缺失步骤、禁止生成答案与解析。\n"
-        "如果图片里本身包含答案/解析/提示，请原样转写；否则不要凭空生成。\n\n"
+        "如果图片里本身包含答案/解析/提示，请原样转写；否则不要凭空生成。\n"
+        "如果图片同时包含题干、选项、答案或解析，必须先完整转写题干，再转写选项，不能只输出选项或答案解析；输出前检查图片最上方的题干是否已经进入结果。\n\n"
         + (prompt or "")
     )
 
@@ -2402,7 +2489,8 @@ def ocr_image_to_latex(images=None, max_image_size: int = 1024, max_tokens: int 
             content_parts.append({
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
+                    "url": f"data:image/jpeg;base64,{base64_image}",
+                    "detail": "high",
                 }
             })
 
@@ -2574,6 +2662,7 @@ def call_ai_for_tags(content: str) -> dict:
 
 题目内容：
 {content}"""
+    prompt = load_prompt("tags").format(content=content)
 
     headers = {
         "Content-Type": "application/json",
@@ -3062,6 +3151,12 @@ def call_ai_for_cloze_question(source_tex: str, cloze_type: str) -> dict:
 
 原题：
 {source_tex}"""
+    prompt = load_prompt("cloze").format(
+        cloze_type=cloze_type,
+        rule=rule,
+        blank_token=CLOZE_BLANK_TEX,
+        source_tex=source_tex,
+    )
 
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     payload = {
@@ -3278,6 +3373,15 @@ def call_ai_for_answer_solutions(problem_tex: str, fast: bool = True) -> dict:
         return {"error": "未识别到 \\begin{problem}...\\end{problem}，无法生成解答"}
 
     def _build_prompt() -> str:
+        mode_instructions = (
+            "只生成简洁有效的最终答案和关键步骤。"
+            if fast
+            else "生成完整、可核对的答案与解析；每个逻辑步骤单独成段，优先使用公式表达。"
+        )
+        return load_prompt("solution").format(
+            mode_instructions=mode_instructions,
+            problem_tex=problem_tex,
+        )
         if fast:
             return f"""请为下面的 LaTeX problem 生成答案与解析。
 
@@ -3591,7 +3695,7 @@ def render_ai_solution_panel(fpath: str, q_label: str, key_prefix: str):
     with c_right:
         try:
             preview_text = _normalize_ai_generated_tex_for_preview(gen_text)
-            st.markdown(latex_to_markdown(preview_text, show_title=False), unsafe_allow_html=True)
+            _render_preview_with_inline_assets(latex_to_markdown(preview_text, show_title=False))
         except Exception as e:
             st.error(f"渲染错误: {e}")
 
@@ -3642,6 +3746,7 @@ def call_ai_for_polish(intent_text: str) -> str:
 
 原想法：
 {intent_text}"""
+    prompt = load_prompt("exam_polish").format(intent_text=intent_text)
 
     headers = {
         "Content-Type": "application/json",
@@ -3917,7 +4022,7 @@ def _sqlite_draft_preview_question_from_state() -> dict:
     }
 
 
-SQLITE_DRAFT_ENTRY_MODES = ["单题录入", "批量试题录入", "同卷试题录入", "同书试题录入"]
+SQLITE_DRAFT_ENTRY_MODES = ["批量试题录入", "同卷试题录入", "同书试题录入"]
 
 
 def _sqlite_draft_read_balanced_argument(text: str, start_brace: int) -> tuple[str | None, int]:
@@ -3934,6 +4039,51 @@ def _sqlite_draft_extract_choices_from_stem(stem_tex: str) -> tuple[str, list[st
 
 def _sqlite_draft_strip_problem_body(tex: str) -> tuple[dict, str, list[str], str, str]:
     return _service_strip_problem_body(tex, paper_types=PAPER_TYPES)
+
+
+def _sqlite_draft_normalize_choice_values(values) -> list[str]:
+    """Store choice bodies in the editor; add the TeX wrapper only for preview/export."""
+    normalized = []
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        unwrapped = _db_preview_unwrap_choice_value(text)
+        normalized.append(unwrapped.strip() if unwrapped.strip() else text)
+    return normalized
+
+
+def _sqlite_draft_infer_question_type_id(current_type, choices, answer_tex, stem_tex=""):
+    """Infer only the default type, preserving an explicit user selection."""
+    try:
+        current = int(current_type)
+    except (TypeError, ValueError):
+        current = 5
+    if current != 5:
+        return current
+    non_empty_choices = [item for item in choices or [] if str(item or "").strip()]
+    if not non_empty_choices and re.search(
+        r"判断正误|正确或错误|正确与否|对错|对或错",
+        f"{stem_tex or ''} {answer_tex or ''}",
+    ):
+        return 6
+    if len(non_empty_choices) < 2:
+        return current
+    answer_letters = re.findall(r"(?<![A-Za-z])([A-D])(?![A-Za-z])", str(answer_tex or "").upper())
+    return 2 if len(dict.fromkeys(answer_letters)) >= 2 else 1
+
+
+def _sqlite_draft_has_explicit_source_fields(fields: dict) -> bool:
+    """Do not let missing OCR metadata inherit the batch's default paper source."""
+    placeholders = {"", "?", "未知", "未识别", "无"}
+    return all(
+        str(fields.get(key) or "").strip() not in placeholders
+        for key in ("year", "p_type", "paper")
+    )
+
+
+_UNMARKED_SOURCE_KIND = "\u672a\u6807\u8bb0\u6765\u6e90"
+_PAPER_SOURCE_KIND = "\u8bd5\u5377"
 
 
 def _sqlite_draft_split_input_items(text: str) -> list[dict[str, str]]:
@@ -4011,6 +4161,20 @@ def _sqlite_draft_problem_body_preview_tex(payload: dict) -> str:
     return f"{stem}\n{choices_tex}" if stem else choices_tex
 
 
+def _sqlite_draft_standard_preview_tex(payload: dict) -> str:
+    """Render the same complete TeX envelope used by formal export previews."""
+    from services.export_service import question_to_legacy_tex
+
+    normalized_payload = dict(payload or {})
+    stem = str(normalized_payload.get("stem_tex") or "")
+    choices = list(normalized_payload.get("choices") or [])
+    if not choices:
+        stem, choices = _sqlite_draft_extract_choices_from_stem(stem)
+    normalized_payload["stem_tex"] = stem
+    normalized_payload["choices"] = choices
+    return question_to_legacy_tex(_sqlite_draft_preview_question_from_payload(normalized_payload))
+
+
 def _sqlite_draft_preview_fragment_markdown(tex: str) -> str:
     text = str(tex or "").strip()
     if not text:
@@ -4018,10 +4182,417 @@ def _sqlite_draft_preview_fragment_markdown(tex: str) -> str:
     return _cached_latex_to_markdown(text, show_title=False)
 
 
+def _sqlite_draft_preview_with_assets(tex: str, assets: list[dict] | None = None) -> str:
+    markdown = _sqlite_draft_preview_fragment_markdown(tex)
+    return _db_preview_apply_questionasset_previews(markdown, assets or [])
+
+
 def _render_sqlite_draft_preview_section(title: str, markdown_text: str):
     st.markdown(f"<div class='mc-sqlite-entry-preview-box-title'>{html.escape(title)}</div>", unsafe_allow_html=True)
     if str(markdown_text or "").strip():
-        st.markdown(markdown_text, unsafe_allow_html=True)
+        _render_preview_with_inline_assets(markdown_text)
+
+
+def _sqlite_paper_match_fingerprint(year, paper_series, track, paper_name) -> str:
+    raw = json.dumps(
+        {
+            "year": str(year or "").strip(),
+            "paper_series": str(paper_series or "").strip(),
+            "track": str(track or "").strip(),
+            "paper_name": str(paper_name or "").strip(),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.md5(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _sqlite_resolved_paper_metadata(state_prefix: str, year, paper_series, track, paper_name) -> dict:
+    resolution = st.session_state.get(f"{state_prefix}_resolution") or {}
+    fingerprint = _sqlite_paper_match_fingerprint(year, paper_series, track, paper_name)
+    if resolution.get("fingerprint") != fingerprint:
+        return {}
+    selected = resolution.get("selected") or {}
+    if not selected.get("paper_standard_id"):
+        return {}
+    return selected
+
+
+def _sqlite_batch_paper_resolution(year, paper_series, track, paper_name) -> dict:
+    fingerprint = _sqlite_paper_match_fingerprint(year, paper_series, track, paper_name)
+    resolutions = st.session_state.get("sqlite_draft_batch_paper_match_resolutions") or {}
+    resolution = resolutions.get(fingerprint) or {}
+    if resolution.get("fingerprint") == fingerprint:
+        return resolution.get("selected") or {}
+    return _sqlite_resolved_paper_metadata(
+        "sqlite_draft_batch_paper_match",
+        year,
+        paper_series,
+        track,
+        paper_name,
+    )
+
+
+def _sqlite_store_batch_paper_resolution(fingerprint: str, resolution: dict):
+    resolutions = dict(st.session_state.get("sqlite_draft_batch_paper_match_resolutions") or {})
+    resolutions[fingerprint] = resolution
+    st.session_state["sqlite_draft_batch_paper_match_resolutions"] = resolutions
+
+
+def _sqlite_apply_batch_paper_candidate(group_key, candidate, match_result, db_path: str):
+    from services.paper_catalog_service import record_match_review
+
+    review = record_match_review(
+        db_path,
+        match_result,
+        decision="accepted_standard",
+        confirmed_standard_id=str(candidate.get("paper_standard_id") or ""),
+    )
+    _sqlite_store_batch_paper_resolution(
+        group_key,
+        {
+            "fingerprint": group_key,
+            "selected": candidate,
+            "review_id": str(review.get("paper_match_review_id") or ""),
+            "decision": "accepted_standard",
+        },
+    )
+
+
+def _sqlite_confirm_batch_new_standard(group_key, year, paper_series, track, paper_name, db_path, match_result):
+    from services.paper_catalog_service import add_standard_paper, record_match_review
+
+    selected = add_standard_paper(
+        db_path,
+        year=year,
+        paper_series=paper_series,
+        track=track,
+        paper_name=paper_name,
+        source_name=paper_name,
+        status="confirmed",
+    )
+    review = record_match_review(
+        db_path,
+        match_result,
+        decision="confirmed_new_standard",
+        confirmed_standard_id=str(selected.get("paper_standard_id") or ""),
+    )
+    _sqlite_store_batch_paper_resolution(
+        group_key,
+        {
+            "fingerprint": group_key,
+            "selected": selected,
+            "review_id": str(review.get("paper_match_review_id") or ""),
+            "decision": "confirmed_new_standard",
+        },
+    )
+
+
+def _render_sqlite_batch_paper_matchers(db_path: str, mode: str):
+    if mode in {"批量试题录入", "同书试题录入"}:
+        return
+    from services.paper_catalog_service import catalog_schema_available, match_paper
+
+    if not catalog_schema_available(db_path):
+        return
+    groups = {}
+    common_kind = st.session_state.get("sqlite_draft_batch_source_kind", "试卷")
+    if mode == "同卷试题录入":
+        common_kind = "试卷"
+    raw_items = _sqlite_draft_split_input_items(st.session_state.get("sqlite_draft_batch_text", ""))
+    common_year = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_year", ""))
+    common_series = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_paper_series", "G"))
+    common_track = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_track", ""))
+    common_source = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_source_name", ""))
+    if common_kind == _UNMARKED_SOURCE_KIND and common_source:
+        common_kind = _PAPER_SOURCE_KIND
+    for item in raw_items:
+        fields, _, _, _, _ = _sqlite_draft_strip_problem_body(item.get("tex", ""))
+        detected_year = _sqlite_paper_match_text(fields.get("year") or common_year)
+        paper_series = _sqlite_paper_match_text(fields.get("p_type") or common_series)
+        detected_source = _sqlite_paper_match_text(fields.get("paper") or common_source)
+        track = common_track
+        if mode == "同卷试题录入":
+            detected_year = common_year
+            paper_series = common_series
+            detected_source = common_source
+        if common_kind != "试卷" or not str(detected_source or "").strip():
+            continue
+        identity = (detected_year, paper_series, track, detected_source)
+        if identity[3]:
+            groups.setdefault(identity, None)
+    if not groups:
+        return
+    st.markdown("##### 批量试卷校准")
+    st.caption(f"识别到 {len(groups)} 组试卷信息；每组只需确认一次，确认结果会继承到该组全部题目。")
+    for index, identity in enumerate(groups, start=1):
+        year, paper_series, track, paper_name = identity
+        group_key = _sqlite_paper_match_fingerprint(year, paper_series, track, paper_name)
+        selected = _sqlite_batch_paper_resolution(year, paper_series, track, paper_name)
+        if selected:
+            st.success(f"第 {index} 组已确认：{selected.get('year') or '未设年份'} · {selected.get('paper_name') or ''} · {selected.get('track') or '未分科'}")
+            continue
+        match_result = match_paper(
+            db_path,
+            year=year,
+            paper_series=paper_series,
+            track=track,
+            paper_name=paper_name,
+        )
+        candidates = match_result.get("candidates") or []
+        if match_result.get("status") == "exact":
+            exact = match_result.get("selected") or {}
+            _sqlite_store_batch_paper_resolution(
+                group_key,
+                {"fingerprint": group_key, "selected": exact, "review_id": "", "decision": "auto_exact"},
+            )
+            st.success(f"第 {index} 组已精确匹配：{exact.get('year') or '未设年份'} · {exact.get('paper_name') or ''} · {exact.get('track') or '未分科'}")
+        elif match_result.get("status") == "needs_confirmation" and candidates:
+            candidate_by_id = {str(item.get("paper_standard_id") or ""): item for item in candidates}
+            selected_id = st.selectbox(
+                f"第 {index} 组候选标准试卷 · {paper_name}",
+                list(candidate_by_id),
+                key=f"sqlite_batch_group_candidate_{group_key}",
+                format_func=lambda value: f"{candidate_by_id[value].get('year') or '未设年份'} · {candidate_by_id[value].get('paper_name') or ''} · {candidate_by_id[value].get('track') or '未分科'} · {candidate_by_id[value].get('score', 0):.0%}",
+            )
+            st.button(
+                f"采用第 {index} 组标准名",
+                key=f"sqlite_batch_group_accept_{group_key}",
+                use_container_width=True,
+                on_click=_sqlite_apply_batch_paper_candidate,
+                args=(group_key, candidate_by_id[selected_id], match_result, db_path),
+            )
+        elif match_result.get("status") == "new_paper":
+            st.caption(f"第 {index} 组尚未收录：{paper_name}")
+            st.button(
+                f"确认第 {index} 组新增标准试卷",
+                key=f"sqlite_batch_group_new_{group_key}",
+                use_container_width=True,
+                on_click=_sqlite_confirm_batch_new_standard,
+                args=(group_key, year, paper_series, track, paper_name, db_path, match_result),
+            )
+
+
+def _sqlite_attach_batch_paper_review_contexts(db_path: str, result: dict):
+    from services.paper_catalog_service import attach_review_context, record_match_review
+
+    resolutions = st.session_state.get("sqlite_draft_batch_paper_match_resolutions") or {}
+    batch_id = str(result.get("batch_id") or "")
+    for resolution in resolutions.values():
+        selected = resolution.get("selected") or {}
+        if not selected:
+            continue
+        review_id = str(resolution.get("review_id") or "")
+        if review_id:
+            attach_review_context(db_path, review_id, batch_id=batch_id)
+            continue
+        recognized = {"year": selected.get("year"), "paper_series": selected.get("paper_series"), "track": selected.get("track"), "paper_name": selected.get("paper_name")}
+        record_match_review(
+            db_path,
+            {"recognized": recognized, "selected": selected, "candidates": [selected]},
+            decision=str(resolution.get("decision") or "auto_exact"),
+            confirmed_standard_id=str(selected.get("paper_standard_id") or ""),
+            batch_id=batch_id,
+        )
+
+
+def _sqlite_apply_paper_candidate(
+    state_prefix: str,
+    candidate: dict,
+    field_keys: dict,
+    match_result: dict,
+    db_path: str,
+):
+    from services.paper_catalog_service import record_match_review
+
+    st.session_state[field_keys["year"]] = str(candidate.get("year") or "")
+    st.session_state[field_keys["paper_series"]] = str(candidate.get("paper_series") or "")
+    st.session_state[field_keys["track"]] = str(candidate.get("track") or "")
+    st.session_state[field_keys["paper_name"]] = str(candidate.get("paper_name") or "")
+    fingerprint = _sqlite_paper_match_fingerprint(
+        candidate.get("year"),
+        candidate.get("paper_series"),
+        candidate.get("track"),
+        candidate.get("paper_name"),
+    )
+    review = record_match_review(
+        db_path,
+        match_result,
+        decision="accepted_standard",
+        confirmed_standard_id=str(candidate.get("paper_standard_id") or ""),
+    )
+    st.session_state[f"{state_prefix}_resolution"] = {
+        "fingerprint": fingerprint,
+        "selected": candidate,
+        "review_id": str(review.get("paper_match_review_id") or ""),
+        "decision": "accepted_standard",
+    }
+
+
+def _sqlite_confirm_new_standard_paper(
+    state_prefix: str,
+    year,
+    paper_series,
+    track,
+    paper_name,
+    db_path: str,
+    match_result: dict,
+):
+    from services.paper_catalog_service import add_standard_paper, record_match_review
+
+    selected = add_standard_paper(
+        db_path,
+        year=year,
+        paper_series=paper_series,
+        track=track,
+        paper_name=paper_name,
+        source_name=paper_name,
+        status="confirmed",
+    )
+    review = record_match_review(
+        db_path,
+        match_result,
+        decision="confirmed_new_standard",
+        confirmed_standard_id=str(selected.get("paper_standard_id") or ""),
+    )
+    st.session_state[f"{state_prefix}_resolution"] = {
+        "fingerprint": _sqlite_paper_match_fingerprint(year, paper_series, track, paper_name),
+        "selected": selected,
+        "review_id": str(review.get("paper_match_review_id") or ""),
+        "decision": "confirmed_new_standard",
+    }
+
+
+def _render_sqlite_paper_matcher(
+    db_path: str,
+    *,
+    state_prefix: str,
+    source_kind: str,
+    year,
+    paper_series,
+    track,
+    paper_name,
+    field_keys: dict,
+):
+    year = _sqlite_paper_match_text(year)
+    paper_series = _sqlite_paper_match_text(paper_series)
+    track = _sqlite_paper_match_text(track)
+    paper_name = _sqlite_paper_match_text(paper_name)
+    if _sqlite_paper_match_text(source_kind) == _UNMARKED_SOURCE_KIND and paper_name:
+        source_kind = _PAPER_SOURCE_KIND
+    if _sqlite_paper_match_text(source_kind) != "试卷" or not paper_name:
+        return
+
+    from services.paper_catalog_service import catalog_schema_available, match_paper
+
+    if not catalog_schema_available(db_path):
+        st.warning("试卷标准名录尚未启用。请先在工具箱应用数据库迁移，再使用试卷名校准。")
+        return
+
+    match_result = match_paper(
+        db_path,
+        year=year,
+        paper_series=paper_series,
+        track=track,
+        paper_name=paper_name,
+    )
+    fingerprint = _sqlite_paper_match_fingerprint(year, paper_series, track, paper_name)
+    resolution_key = f"{state_prefix}_resolution"
+    resolution = st.session_state.get(resolution_key) or {}
+    if resolution.get("fingerprint") != fingerprint:
+        resolution = {}
+
+    if match_result.get("status") == "exact":
+        selected = match_result.get("selected") or {}
+        if not resolution:
+            st.session_state[resolution_key] = {
+                "fingerprint": fingerprint,
+                "selected": selected,
+                "review_id": "",
+                "decision": "auto_exact",
+            }
+        st.success(
+            f"已匹配标准试卷：{selected.get('year') or '未设年份'} · "
+            f"{selected.get('paper_name') or ''} · {selected.get('track') or '未分科'}"
+        )
+        return
+
+    if resolution:
+        selected = resolution.get("selected") or {}
+        st.success(
+            f"已确认标准试卷：{selected.get('year') or '未设年份'} · "
+            f"{selected.get('paper_name') or ''} · {selected.get('track') or '未分科'}"
+        )
+        return
+
+    candidates = match_result.get("candidates") or []
+    if match_result.get("status") == "needs_confirmation" and candidates:
+        st.caption("检测到相似试卷。不会自动替换，请人工确认后再保存草稿。")
+        candidate_by_id = {str(item.get("paper_standard_id") or ""): item for item in candidates}
+        selected_id = st.selectbox(
+            "候选标准试卷",
+            list(candidate_by_id),
+            key=f"{state_prefix}_candidate",
+            format_func=lambda value: (
+                f"{candidate_by_id[value].get('year') or '未设年份'} · "
+                f"{candidate_by_id[value].get('paper_name') or ''} · "
+                f"{candidate_by_id[value].get('track') or '未分科'} · "
+                f"相似度 {candidate_by_id[value].get('score', 0):.0%}"
+            ),
+            label_visibility="collapsed",
+        )
+        candidate = candidate_by_id[selected_id]
+        st.button(
+            "采用此标准名",
+            key=f"{state_prefix}_accept_candidate",
+            use_container_width=True,
+            on_click=_sqlite_apply_paper_candidate,
+            args=(state_prefix, candidate, field_keys, match_result, db_path),
+        )
+        return
+
+    if match_result.get("status") == "new_paper":
+        st.caption("标准名录中尚未收录该试卷。确认新增后，本次录入及后续同名试卷将复用此标准名。")
+        st.button(
+            "确认新增为标准试卷",
+            key=f"{state_prefix}_confirm_new",
+            use_container_width=True,
+            on_click=_sqlite_confirm_new_standard_paper,
+            args=(state_prefix, year, paper_series, track, paper_name, db_path, match_result),
+        )
+
+
+def _sqlite_attach_paper_review_context(db_path: str, state_prefix: str, result: dict):
+    from services.paper_catalog_service import attach_review_context, record_match_review
+
+    resolution = st.session_state.get(f"{state_prefix}_resolution") or {}
+    selected = resolution.get("selected") or {}
+    if not selected:
+        return
+    batch_id = str(result.get("batch_id") or "")
+    draft_id = str(result.get("draft_id") or "")
+    if not draft_id and result.get("results"):
+        draft_id = str((result.get("results") or [{}])[0].get("draft_id") or "")
+    review_id = str(resolution.get("review_id") or "")
+    if review_id:
+        attach_review_context(db_path, review_id, batch_id=batch_id, draft_id=draft_id)
+        return
+    recognized = {
+        "year": selected.get("year"),
+        "paper_series": selected.get("paper_series"),
+        "track": selected.get("track"),
+        "paper_name": selected.get("paper_name"),
+    }
+    review = record_match_review(
+        db_path,
+        {"recognized": recognized, "selected": selected, "candidates": [selected]},
+        decision=str(resolution.get("decision") or "auto_exact"),
+        confirmed_standard_id=str(selected.get("paper_standard_id") or ""),
+        batch_id=batch_id,
+        draft_id=draft_id,
+    )
+    resolution["review_id"] = str(review.get("paper_match_review_id") or "")
+    st.session_state[f"{state_prefix}_resolution"] = resolution
 
 
 def _sqlite_draft_payload_from_state(question_to_legacy_tex_func) -> dict:
@@ -4031,11 +4602,28 @@ def _sqlite_draft_payload_from_state(question_to_legacy_tex_func) -> dict:
     source_kind = st.session_state.get("sqlite_draft_source_kind", "")
     year_value = st.session_state.get("sqlite_draft_year", "")
     source_name = st.session_state.get("sqlite_draft_source_name", "")
+    if source_kind == _UNMARKED_SOURCE_KIND and str(source_name or "").strip():
+        source_kind = _PAPER_SOURCE_KIND
     question_number = st.session_state.get("sqlite_draft_question_number", "")
     sub_number = st.session_state.get("sqlite_draft_sub_number", "") if st.session_state.get("sqlite_draft_show_sub_number") else ""
+    if source_kind == "未标记来源":
+        year_value = ""
+        source_name = "未标记来源"
+        sub_number = ""
+        question_number = ""
     display_question_number = _sqlite_draft_join_number_and_sub_number(question_number, sub_number) if sub_number else question_number
     topic_multi = st.session_state.get("sqlite_draft_topic_multi") or []
-    topic_value = "，".join(topic_multi) if topic_multi else st.session_state.get("sqlite_draft_topic", "")
+    topic_value = "，".join(_sqlite_paper_match_text(value) for value in topic_multi if _sqlite_paper_match_text(value)) if topic_multi else st.session_state.get("sqlite_draft_topic", "")
+    resolved_paper = _sqlite_resolved_paper_metadata(
+        "sqlite_draft_single_paper_match",
+        year_value,
+        st.session_state.get("sqlite_draft_paper_series", ""),
+        st.session_state.get("sqlite_draft_track", ""),
+        source_name,
+    )
+    if source_kind == "试卷" and resolved_paper:
+        year_value = resolved_paper.get("year") or year_value
+        source_name = resolved_paper.get("paper_name") or source_name
     source_label = _sqlite_draft_source_label(
         source_kind,
         year_value,
@@ -4063,12 +4651,18 @@ def _sqlite_draft_payload_from_state(question_to_legacy_tex_func) -> dict:
         "extra": {
             "source_kind": source_kind,
             "detected_year": year_value,
-            "paper_series": st.session_state.get("sqlite_draft_paper_series", ""),
+            "paper_series": resolved_paper.get("paper_series") or st.session_state.get("sqlite_draft_paper_series", ""),
             "detected_source": source_name,
             "detected_question_number": display_question_number,
             "detected_topic": topic_value,
             "sub_number": sub_number,
-            "track": st.session_state.get("sqlite_draft_track", ""),
+            "track": resolved_paper.get("track") or st.session_state.get("sqlite_draft_track", ""),
+            "paper_standard_id": resolved_paper.get("paper_standard_id") or "",
+            "paper_match_decision": (st.session_state.get("sqlite_draft_single_paper_match_resolution") or {}).get("decision", ""),
+            "topic_name": source_name if source_kind == "专题" else "",
+            "topic_module": st.session_state.get("sqlite_draft_topic_module", "") if source_kind == "专题" else "",
+            "topic_group": st.session_state.get("sqlite_draft_topic_group", "") if source_kind == "专题" else "",
+            "topic_note": st.session_state.get("sqlite_draft_topic_note", "") if source_kind == "专题" else "",
         },
     }
     payload["normalized_tex"] = question_to_legacy_tex_func(_sqlite_draft_preview_question_from_payload(payload))
@@ -4076,6 +4670,11 @@ def _sqlite_draft_payload_from_state(question_to_legacy_tex_func) -> dict:
 
 
 def _sqlite_draft_batch_preview_state_key(mode: str) -> str:
+    item_state = {
+        key: value
+        for key, value in st.session_state.items()
+        if str(key).startswith("sqlite_draft_batch_item_")
+    }
     snapshot = {
         "mode": mode,
         "text": st.session_state.get("sqlite_draft_batch_text", ""),
@@ -4084,6 +4683,7 @@ def _sqlite_draft_batch_preview_state_key(mode: str) -> str:
         "paper_series": st.session_state.get("sqlite_draft_batch_paper_series", ""),
         "source_name": st.session_state.get("sqlite_draft_batch_source_name", ""),
         "topic": st.session_state.get("sqlite_draft_batch_topic", ""),
+        "topics": st.session_state.get("sqlite_draft_batch_topics", []),
         "tags": st.session_state.get("sqlite_draft_batch_tags_text", ""),
         "note": st.session_state.get("sqlite_draft_batch_note", ""),
         "assets": st.session_state.get("sqlite_draft_batch_asset_lines", ""),
@@ -4094,9 +4694,92 @@ def _sqlite_draft_batch_preview_state_key(mode: str) -> str:
         "book_page": st.session_state.get("sqlite_draft_batch_book_page", ""),
         "book_column": st.session_state.get("sqlite_draft_batch_book_column", ""),
         "book_exercise": st.session_state.get("sqlite_draft_batch_book_exercise", ""),
+        "item_state": item_state,
     }
     raw = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.md5(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _sqlite_paper_match_text(value) -> str:
+    """Normalize values coming from widgets or restored session state."""
+    return str(value or "").strip()
+
+
+def _sqlite_draft_batch_item_field_key(index: int, field: str) -> str:
+    return f"sqlite_draft_batch_item_{index}_{field}"
+
+
+def _sqlite_document_asset_metadata(asset: dict) -> dict:
+    return {
+        key: value
+        for key, value in asset.items()
+        if key
+        not in {
+            "role",
+            "source_path",
+            "planned_file_path",
+            "original_file_name",
+            "caption",
+            "sort_order",
+            "review_status",
+            "note",
+        }
+    }
+
+
+def _sqlite_move_document_asset(source_index: int, asset_index: int, target_index: int, role: str) -> None:
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    questions = document_job.get("questions") or []
+    if not (0 <= source_index < len(questions) and 0 <= target_index < len(questions)):
+        return
+    source_assets = questions[source_index].get("assets") or []
+    if not 0 <= asset_index < len(source_assets):
+        return
+    asset = source_assets.pop(asset_index)
+    asset["role"] = role
+    target_assets = questions[target_index].setdefault("assets", [])
+    target_assets.append(asset)
+    for question in questions:
+        for sort_order, item in enumerate(question.get("assets") or [], start=1):
+            item["sort_order"] = sort_order
+    st.session_state.pop("sqlite_draft_batch_preview_cache", None)
+
+
+def _sqlite_remove_document_asset(question_index: int, asset_index: int) -> None:
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    questions = document_job.get("questions") or []
+    if not 0 <= question_index < len(questions):
+        return
+    assets = questions[question_index].get("assets") or []
+    if not 0 <= asset_index < len(assets):
+        return
+    assets.pop(asset_index)
+    for sort_order, item in enumerate(assets, start=1):
+        item["sort_order"] = sort_order
+    st.session_state.pop("sqlite_draft_batch_preview_cache", None)
+
+
+def _sqlite_toggle_document_asset_reference(question_index: int, asset: dict, stem_key: str) -> None:
+    from services.asset_service import find_questionasset_refs
+
+    alias = str(asset.get("alias") or "").strip()
+    if not alias:
+        extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+        alias = str(extra.get("alias") or asset.get("caption") or "").strip()
+    if not alias:
+        return
+    stem = str(st.session_state.get(stem_key) or "").strip()
+    token = f"\\questionasset{{{alias}}}"
+    if alias in find_questionasset_refs(stem):
+        stem = re.sub(rf"\s*\\questionasset\{{{re.escape(alias)}\}}", "", stem).strip()
+    else:
+        stem = f"{stem}\n\n{token}".strip()
+    st.session_state[stem_key] = stem
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    questions = document_job.get("questions") or []
+    if 0 <= question_index < len(questions):
+        questions[question_index]["stem_tex"] = stem
+    st.session_state.pop("sqlite_draft_batch_preview_cache", None)
 
 
 def _sqlite_draft_batch_payloads_from_state(mode: str, question_to_legacy_tex_func, include_normalized_tex: bool = True) -> list[dict]:
@@ -4109,68 +4792,211 @@ def _sqlite_draft_batch_payloads_from_state(mode: str, question_to_legacy_tex_fu
         common_kind = "试卷"
     elif mode == "同书试题录入":
         common_kind = "教材"
-    common_year = st.session_state.get("sqlite_draft_batch_year", "")
-    common_series = st.session_state.get("sqlite_draft_batch_paper_series", "G")
-    common_source = st.session_state.get("sqlite_draft_batch_source_name", "")
-    common_topic = st.session_state.get("sqlite_draft_batch_topic", "")
+    common_year = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_year", ""))
+    common_series = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_paper_series", "G"))
+    common_source = _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_source_name", ""))
+    if common_kind == "未标记来源":
+        common_year = ""
+        common_series = ""
+        common_source = "未标记来源"
+    resolved_paper = _sqlite_batch_paper_resolution(
+        common_year,
+        common_series,
+        st.session_state.get("sqlite_draft_batch_track", ""),
+        common_source,
+    )
+    if common_kind == "试卷" and resolved_paper:
+        common_year = resolved_paper.get("year") or common_year
+        common_series = resolved_paper.get("paper_series") or common_series
+        common_source = resolved_paper.get("paper_name") or common_source
+    common_topic_values = st.session_state.get("sqlite_draft_batch_topics")
+    common_topic = (
+        "，".join(_sqlite_paper_match_text(value) for value in common_topic_values if _sqlite_paper_match_text(value))
+        if isinstance(common_topic_values, list)
+        else st.session_state.get("sqlite_draft_batch_topic", "")
+    )
     common_tags = _sqlite_draft_split_text_list(st.session_state.get("sqlite_draft_batch_tags_text", ""))
     common_note = st.session_state.get("sqlite_draft_batch_note", "")
     common_assets = _sqlite_draft_parse_asset_lines(st.session_state.get("sqlite_draft_batch_asset_lines", ""))
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    document_questions = [item for item in document_job.get("questions", []) if isinstance(item, dict)]
     payloads = []
     for index, item in enumerate(raw_items, start=1):
+        document_question = document_questions[index - 1] if index <= len(document_questions) else {}
         fields, stem_tex, choices, answer_tex, solution_tex = _sqlite_draft_strip_problem_body(item.get("tex", ""))
-        detected_year = fields.get("year") or common_year
-        paper_series = fields.get("p_type") or common_series
-        detected_source = fields.get("paper") or common_source
-        question_number = fields.get("number") or str(index)
-        topic = fields.get("subject_str") or common_topic
+        stem_tex = st.session_state.get(_sqlite_draft_batch_item_field_key(index, "stem_tex"), stem_tex)
+        choices_text = st.session_state.get(
+            _sqlite_draft_batch_item_field_key(index, "choices_text"),
+            "\n".join(_sqlite_paper_match_text(value) for value in choices if _sqlite_paper_match_text(value)),
+        )
+        choices = _sqlite_draft_normalize_choice_values(str(choices_text or "").splitlines())
+        answer_tex = st.session_state.get(_sqlite_draft_batch_item_field_key(index, "answer_tex"), answer_tex)
+        solution_tex = st.session_state.get(_sqlite_draft_batch_item_field_key(index, "solution_tex"), solution_tex)
+        detected_year = _sqlite_paper_match_text(fields.get("year") or common_year)
+        paper_series = _sqlite_paper_match_text(fields.get("p_type") or common_series)
+        detected_source = _sqlite_paper_match_text(fields.get("paper") or common_source)
+        item_source_year = str(st.session_state.get(_sqlite_draft_batch_item_field_key(index, "source_year"), "") or "").strip()
+        item_source_series = str(st.session_state.get(_sqlite_draft_batch_item_field_key(index, "source_series"), "") or "").strip()
+        item_source_track = str(st.session_state.get(_sqlite_draft_batch_item_field_key(index, "source_track"), "") or "").strip()
+        item_source_name = str(st.session_state.get(_sqlite_draft_batch_item_field_key(index, "source_name"), "") or "").strip()
+        if mode == "批量试题录入":
+            detected_year = item_source_year or detected_year
+            paper_series = item_source_series or paper_series
+            detected_source = item_source_name or detected_source
+        item_unmarked_source = item_source_series == "__UNMARKED_SOURCE__"
+        item_track = item_source_track or _sqlite_paper_match_text(st.session_state.get("sqlite_draft_batch_track", ""))
+        question_number = _sqlite_paper_match_text(fields.get("number") or str(index))
+        document_topic = _sqlite_paper_match_text(
+            (document_question.get("extra") or {}).get("detected_topic")
+            or document_question.get("topic")
+            or ""
+        )
+        topic = _sqlite_paper_match_text(fields.get("subject_str") or document_topic or common_topic)
+        question_number = st.session_state.get(
+            _sqlite_draft_batch_item_field_key(index, "question_number"),
+            question_number,
+        )
+        topic_values = st.session_state.get(_sqlite_draft_batch_item_field_key(index, "topics"))
+        normalized_topic_values = (
+            [_sqlite_paper_match_text(value) for value in topic_values if _sqlite_paper_match_text(value)]
+            if isinstance(topic_values, list)
+            else []
+        )
+        if document_topic and normalized_topic_values in ([], ["未分类"]):
+            topic = document_topic
+        elif normalized_topic_values:
+            topic = "，".join(normalized_topic_values)
+        else:
+            topic = _sqlite_paper_match_text(
+                st.session_state.get(_sqlite_draft_batch_item_field_key(index, "topic"), topic)
+            )
         if mode == "同书试题录入":
             paper_series = "BK"
             detected_source = common_source
-            page_number = st.session_state.get("sqlite_draft_batch_book_page", "")
-            column_name = st.session_state.get("sqlite_draft_batch_book_column", "")
-            exercise_number = fields.get("number") or st.session_state.get("sqlite_draft_batch_book_exercise", "") or str(index)
-            question_number = " · ".join(part for part in [f"p{page_number}" if page_number else "", column_name, exercise_number] if part)
+            page_number = st.session_state.get(
+                _sqlite_draft_batch_item_field_key(index, "book_page"),
+                st.session_state.get("sqlite_draft_batch_book_page", ""),
+            )
+            column_name = st.session_state.get(
+                _sqlite_draft_batch_item_field_key(index, "book_column"),
+                st.session_state.get("sqlite_draft_batch_book_column", ""),
+            )
+            exercise_number = question_number or st.session_state.get("sqlite_draft_batch_book_exercise", "") or str(index)
+            question_number = " · ".join(
+                _sqlite_paper_match_text(part)
+                for part in [f"p{page_number}" if page_number else "", column_name, exercise_number]
+                if _sqlite_paper_match_text(part)
+            )
             topic = column_name or topic
         elif mode == "同卷试题录入":
             paper_series = common_series
             detected_source = common_source
             detected_year = common_year
+        if common_kind == "未标记来源":
+            detected_year = ""
+            paper_series = ""
+            detected_source = common_source
+        if item_unmarked_source:
+            detected_year = ""
+            paper_series = ""
+            detected_source = "未标记来源"
+            item_track = "不区分"
+            question_number = ""
+        effective_source_kind = "未标记来源" if item_unmarked_source else common_kind
+        item_type = st.session_state.get(
+            _sqlite_draft_batch_item_field_key(index, "question_type_id"),
+            document_question.get("question_type_id")
+            or st.session_state.get("sqlite_draft_batch_question_type_id"),
+        )
+        item_type = _sqlite_draft_infer_question_type_id(item_type, choices, answer_tex, stem_tex)
+        item_difficulty = st.session_state.get(
+            _sqlite_draft_batch_item_field_key(index, "difficulty"),
+            difficulty_value,
+        )
+        if item_difficulty == "未设置":
+            item_difficulty = None
+        item_tags = _sqlite_draft_split_text_list(
+            st.session_state.get(
+                _sqlite_draft_batch_item_field_key(index, "tags_text"),
+                "，".join(_sqlite_paper_match_text(value) for value in common_tags if _sqlite_paper_match_text(value)),
+            )
+        )
+        item_note = st.session_state.get(
+            _sqlite_draft_batch_item_field_key(index, "note"),
+            common_note,
+        )
+        item_resolved_paper = _sqlite_batch_paper_resolution(
+            detected_year,
+            paper_series,
+            item_track,
+            detected_source,
+        )
         source_label = _sqlite_draft_source_label(
-            common_kind,
+            effective_source_kind,
             detected_year,
             detected_source,
-            question_number,
+            "" if effective_source_kind == "未标记来源" else question_number,
             "",
         )
+        document_extra = document_question.get("extra") if isinstance(document_question.get("extra"), dict) else {}
+        item_assets = []
+        for asset in document_question.get("assets") or []:
+            if not isinstance(asset, dict):
+                continue
+            normalized_asset = dict(asset)
+            normalized_asset["extra"] = _sqlite_document_asset_metadata(asset)
+            item_assets.append(normalized_asset)
+        if item_assets:
+            from services.ai_service import ensure_question_asset_placeholders
+
+            stem_tex, _ = ensure_question_asset_placeholders(stem_tex, item_assets)
         payload = {
             "source_item_id": f"{source_label} · {item.get('label', index)}",
             "source_label": source_label,
             "proposed_action": "insert",
             "target_question_id": "",
             "review_status": "ready" if st.session_state.get("sqlite_draft_batch_allow_ready") else "needs_review",
-            "question_type_id": st.session_state.get("sqlite_draft_batch_question_type_id"),
+            "recognition_status": str(document_question.get("recognition_status") or "pending_ai"),
+            "question_type_id": item_type,
             "stem_tex": stem_tex,
             "choices": choices,
             "answer_tex": answer_tex,
             "solution_tex": solution_tex,
-            "difficulty": difficulty_value,
-            "tags": common_tags,
-            "note": common_note,
+            "difficulty": item_difficulty,
+            "tags": item_tags,
+            "note": item_note,
             "official_flag": False,
             "raw_source_text": item.get("tex", ""),
-            "assets": common_assets,
+            "assets": item_assets or common_assets,
             "extra": {
-                "source_kind": common_kind,
+                "source_kind": effective_source_kind,
                 "entry_mode": mode,
                 "detected_year": detected_year,
                 "paper_series": paper_series,
                 "detected_source": detected_source,
                 "detected_question_number": question_number,
                 "detected_topic": topic,
-                "track": st.session_state.get("sqlite_draft_batch_track", ""),
-                "book_page_number": st.session_state.get("sqlite_draft_batch_book_page", ""),
-                "book_column_name": st.session_state.get("sqlite_draft_batch_book_column", ""),
+                "track": item_resolved_paper.get("track") or item_track,
+                "paper_standard_id": item_resolved_paper.get("paper_standard_id") or "",
+                "paper_match_decision": ((st.session_state.get("sqlite_draft_batch_paper_match_resolutions") or {}).get(_sqlite_paper_match_fingerprint(detected_year, paper_series, st.session_state.get("sqlite_draft_batch_track", ""), detected_source)) or {}).get("decision", ""),
+                "book_page_number": page_number if mode == "同书试题录入" else st.session_state.get("sqlite_draft_batch_book_page", ""),
+                "book_column_name": column_name if mode == "同书试题录入" else st.session_state.get("sqlite_draft_batch_book_column", ""),
+                "book_title": common_source if mode == "同书试题录入" else "",
+                "book_exercise_number": exercise_number if mode == "同书试题录入" else "",
+                "topic_name": detected_source if common_kind == "专题" else "",
+                "topic_module": st.session_state.get("sqlite_draft_batch_topic_module", "") if common_kind == "专题" else "",
+                "topic_group": st.session_state.get("sqlite_draft_batch_topic_group", "") if common_kind == "专题" else "",
+                "topic_note": st.session_state.get("sqlite_draft_batch_topic_note", "") if common_kind == "专题" else "",
+                "document_job_id": document_job.get("job_id") or "",
+                "page_start": document_extra.get("page_start"),
+                "page_end": document_extra.get("page_end"),
+                "source_page_images": document_extra.get("source_page_images") or [],
+                "question_crop_paths": [
+                    str((Path(str(document_job.get("job_dir") or "")) / str(path)).resolve())
+                    if not Path(str(path)).is_absolute()
+                    else str(Path(str(path)))
+                    for path in document_extra.get("question_crop_paths") or []
+                ],
             },
         }
         if include_normalized_tex:
@@ -4212,6 +5038,418 @@ def _sqlite_draft_append_batch_text(tex: str, label: str = "AI-OCR"):
     current = st.session_state.get("sqlite_draft_batch_text", "")
     separator = "\n\n" if current.strip() else ""
     st.session_state["sqlite_draft_batch_text"] = f"{current.rstrip()}{separator}---{label}.tex---\n{(tex or '').strip()}".strip()
+
+
+def _sqlite_clear_batch_item_state():
+    for key in list(st.session_state):
+        if str(key).startswith("sqlite_draft_batch_item_"):
+            st.session_state.pop(key, None)
+    st.session_state.pop("sqlite_draft_batch_preview_cache", None)
+
+
+def _sqlite_document_questions_to_batch_tex(questions: list[dict], entry_mode: str) -> str:
+    year = str(st.session_state.get("sqlite_draft_batch_year") or "?")
+    paper_series = "BK" if entry_mode == "同书试题录入" else str(st.session_state.get("sqlite_draft_batch_paper_series") or "G")
+    source_name = str(st.session_state.get("sqlite_draft_batch_source_name") or "待确认来源")
+    items = []
+    for index, question in enumerate(questions, start=1):
+        extra = question.get("extra") or {}
+        number = str(extra.get("question_number") or index)
+        topic = str(extra.get("detected_topic") or "未分类")
+        # Local parser text is reference material only; semantic TeX must come from AI.
+        stem = str(question.get("stem_tex") or "").strip()
+        answer = str(question.get("answer_tex") or "").strip()
+        solution = str(question.get("solution_tex") or "").strip()
+        tex = (
+            f"\\begin{{problem}}{{{year}}}{{{paper_series}}}{{{source_name}}}{{{number}}}{{{topic}}}\n"
+            f"{stem}\n"
+            "\\end{problem}\n\n"
+            f"\\begin{{answer}}{answer}\\end{{answer}}\n\n"
+            f"\\begin{{solutions}}{solution}\\end{{solutions}}"
+        )
+        items.append(f"---document-question-{index:03d}.tex---\n{tex}")
+    return "\n\n".join(items)
+
+
+def _sqlite_apply_document_job_to_batch(job_result: dict, entry_mode: str):
+    from services.ai_service import ensure_question_asset_placeholders, normalize_question_structure_result
+    from services.pdf_import_service import load_pdf_import_job
+    from services.document_ai_queue_service import load_queue
+
+    job_dir = Path(str(job_result.get("job_dir") or ""))
+    jobs_root = job_dir.parent
+    loaded = load_pdf_import_job(str(job_result.get("job_id") or ""), jobs_root=jobs_root)
+    questions = [item for item in loaded.get("draft_payload", {}).get("questions", []) if isinstance(item, dict)]
+    queue = load_queue(str(job_result.get("job_id") or ""), jobs_root=jobs_root)
+    queue_results = {
+        str(item.get("source_item_id") or ""): item.get("result") or {}
+        for item in queue.get("items") or []
+        if item.get("status") == "succeeded" and isinstance(item.get("result"), dict)
+    }
+    for question in questions:
+        ai_result = queue_results.get(str(question.get("source_item_id") or "")) or {}
+        if ai_result:
+            question_extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
+            ai_result = normalize_question_structure_result(
+                ai_result,
+                question_number=str(question_extra.get("detected_question_number") or ""),
+            )
+            question.update(
+                {
+                    "question_type_id": ai_result.get("question_type_id") or question.get("question_type_id"),
+                    "stem_tex": ai_result.get("stem_tex") or question.get("stem_tex") or "",
+                    "choices": ai_result.get("choices") or question.get("choices") or [],
+                    "answer_tex": ai_result.get("answer_tex") or question.get("answer_tex") or "",
+                    "solution_tex": ai_result.get("solution_tex") or question.get("solution_tex") or "",
+                    "difficulty": ai_result.get("difficulty") if ai_result.get("difficulty") is not None else question.get("difficulty"),
+                    "tags": ai_result.get("tags") or question.get("tags") or [],
+                }
+            )
+            if ai_result.get("topics"):
+                question_extra["detected_topic"] = "，".join(
+                    str(topic).strip()
+                    for topic in ai_result["topics"]
+                    if str(topic).strip()
+                )
+        normalized_assets = []
+        for asset in question.get("assets") or []:
+            normalized = dict(asset)
+            source_text = str(normalized.get("source_path") or "").strip()
+            source_path = Path(source_text) if source_text else None
+            if source_path is not None and not source_path.is_absolute():
+                normalized["source_path"] = str((job_dir / source_path).resolve())
+            normalized_assets.append(normalized)
+        question["assets"] = normalized_assets
+        question_extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
+        has_ai_result = bool(ai_result)
+        restored_stem, restored_aliases = ensure_question_asset_placeholders(
+            question.get("stem_tex") if has_ai_result else "",
+            normalized_assets,
+        )
+        question["stem_tex"] = restored_stem
+        question["recognition_status"] = "ai_succeeded" if has_ai_result else "pending_ai"
+        question_extra["image_reference_status"] = "restored" if restored_aliases else ("complete" if normalized_assets else "none")
+        if restored_aliases:
+            question_extra["restored_image_aliases"] = restored_aliases
+        question_extra["question_crop_paths"] = [
+            str((job_dir / path).resolve()) if not Path(str(path)).is_absolute() else str(Path(str(path)))
+            for path in question_extra.get("question_crop_paths") or []
+        ]
+        question["extra"] = question_extra
+    _sqlite_clear_batch_item_state()
+    st.session_state["sqlite_draft_batch_document_job"] = {
+        "job_id": job_result.get("job_id") or "",
+        "job_dir": str(job_dir),
+        "questions": questions,
+    }
+    st.session_state["sqlite_draft_batch_text"] = _sqlite_document_questions_to_batch_tex(questions, entry_mode)
+    for index, question in enumerate(questions, start=1):
+        ai_result = queue_results.get(str(question.get("source_item_id") or "")) or {}
+        if not ai_result:
+            continue
+        ai_result = normalize_question_structure_result(
+            ai_result,
+            question_number=str(question.get("extra", {}).get("detected_question_number") or index),
+        )
+        prefix = lambda field: _sqlite_draft_batch_item_field_key(index, field)
+        st.session_state[prefix("question_type_id")] = ai_result.get("question_type_id") or 5
+        ai_stem, _ = ensure_question_asset_placeholders(ai_result.get("stem_tex") or "", question.get("assets") or [])
+        st.session_state[prefix("stem_tex")] = ai_stem
+        st.session_state[prefix("choices_text")] = "\n".join(ai_result.get("choices") or [])
+        st.session_state[prefix("answer_tex")] = ai_result.get("answer_tex") or ""
+        st.session_state[prefix("solution_tex")] = ai_result.get("solution_tex") or ""
+        if ai_result.get("topics"):
+            st.session_state[prefix("topics")] = [topic for topic in ai_result["topics"] if topic in SUBJECTS]
+            st.session_state[prefix("topic")] = "，".join(st.session_state[prefix("topics")])
+        if ai_result.get("difficulty") is not None:
+            st.session_state[prefix("difficulty")] = ai_result["difficulty"]
+        if ai_result.get("tags"):
+            st.session_state[prefix("tags_text")] = "，".join(ai_result["tags"])
+
+
+def _sqlite_auto_refine_document_job(job_result: dict, entry_mode: str) -> dict[str, int]:
+    """Run first-pass document candidates through the per-question vision pipeline."""
+    from services.ai_service import ensure_question_asset_placeholders, recognize_question_structure
+    from services.document_ai_queue_service import (
+        create_or_refresh_queue,
+        finish_queue_item,
+        next_queue_item,
+        set_queue_status,
+    )
+    from services.pdf_import_service import load_pdf_import_job
+
+    load_dotenv(_root_env_path(), override=True)
+    if not all(os.getenv(key, "").strip() for key in ("AI_API_KEY", "AI_BASE_URL", "AI_MODEL_NAME")):
+        return {"succeeded": 0, "failed": 0, "skipped": 0, "unavailable": 1}
+
+    job_id = str(job_result.get("job_id") or "")
+    job_dir = Path(str(job_result.get("job_dir") or ""))
+    jobs_root = job_dir.parent
+    loaded = load_pdf_import_job(job_id, jobs_root=jobs_root)
+    questions = [item for item in loaded["draft_payload"].get("questions") or [] if isinstance(item, dict)]
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    session_questions = document_job.get("questions") or questions
+    queue = create_or_refresh_queue(job_id, jobs_root=jobs_root)
+    set_queue_status(job_id, "running", jobs_root=jobs_root)
+    counts = {"succeeded": 0, "failed": 0, "skipped": 0, "unavailable": 0}
+    progress = st.progress(0.0, text=f"正在精修第 1/{len(questions)} 题...")
+    processed = 0
+    while True:
+        item = next_queue_item(job_id, jobs_root=jobs_root)
+        if not item:
+            break
+        index = int(item.get("index") or 0)
+        if not 0 <= index < len(questions):
+            finish_queue_item(job_id, str(item.get("source_item_id") or ""), error="题目索引越界", jobs_root=jobs_root)
+            counts["failed"] += 1
+            continue
+        question = questions[index]
+        extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
+        crop_paths = []
+        for raw_path in extra.get("question_crop_paths") or []:
+            crop_path = Path(str(raw_path))
+            if not crop_path.is_absolute():
+                crop_path = job_dir / crop_path
+            if crop_path.is_file():
+                crop_paths.append(str(crop_path.resolve()))
+        progress.progress(processed / max(1, len(questions)), text=f"正在精修第 {index + 1}/{len(questions)} 题...")
+        result = recognize_question_structure(
+            crop_paths,
+            extracted_text=str(extra.get("stem_source_with_image_markers") or question.get("raw_source_text") or question.get("stem_tex") or ""),
+            question_number=str(extra.get("detected_question_number") or index + 1),
+            allowed_topics=SUBJECTS,
+            image_markers=[str(asset.get("alias") or asset.get("caption") or "") for asset in question.get("assets") or []],
+        )
+        source_item_id = str(item.get("source_item_id") or "")
+        if result.get("error"):
+            finish_queue_item(job_id, source_item_id, error=str(result["error"]), jobs_root=jobs_root)
+            counts["failed"] += 1
+        else:
+            result["stem_tex"], _ = ensure_question_asset_placeholders(result.get("stem_tex") or "", question.get("assets") or [])
+            finish_queue_item(job_id, source_item_id, result=result, jobs_root=jobs_root)
+            if index < len(session_questions):
+                _sqlite_apply_ai_result_to_batch_item(index + 1, result)
+            counts["succeeded"] += 1
+        processed += 1
+    progress.progress(1.0, text=f"AI 精修完成：成功 {counts['succeeded']} 题，失败 {counts['failed']} 题")
+    return counts
+
+
+def _sqlite_refine_document_pages(
+    job_id: str,
+    jobs_root: Path,
+    *,
+    only_source_item_ids: set[str] | None = None,
+) -> dict[str, int]:
+    """Recognize each PDF page once, then map returned TeX blocks to questions."""
+    from services.ai_service import ensure_question_asset_placeholders, normalize_question_structure_result, recognize_document_page_tex
+    from services.document_ai_queue_service import (
+        create_or_refresh_queue,
+        finish_queue_item,
+        load_queue,
+        set_queue_status,
+        update_queue_progress,
+    )
+    from services.pdf_import_service import load_pdf_import_job
+
+    loaded = load_pdf_import_job(job_id, jobs_root=jobs_root)
+    payload = loaded["draft_payload"]
+    questions = [item for item in payload.get("questions") or [] if isinstance(item, dict)]
+    pages = {int(item.get("page_number") or 0): item for item in payload.get("pages") or [] if isinstance(item, dict)}
+    queue = create_or_refresh_queue(job_id, jobs_root=jobs_root)
+    pending_ids = only_source_item_ids or {
+        str(item.get("source_item_id") or "")
+        for item in questions
+        if str(item.get("recognition_status") or "pending_ai") != "ai_succeeded"
+    }
+    page_to_questions: dict[int, list[dict[str, Any]]] = {}
+    for question in questions:
+        source_item_id = str(question.get("source_item_id") or "")
+        if source_item_id not in pending_ids:
+            continue
+        extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
+        start = int(extra.get("page_start") or 1)
+        end = int(extra.get("page_end") or start)
+        for page_number in range(start, end + 1):
+            page_to_questions.setdefault(page_number, []).append(question)
+
+    counts = {"succeeded": 0, "failed": 0, "pages": 0}
+    completed_ids: set[str] = set()
+    set_queue_status(job_id, "running", jobs_root=jobs_root)
+    queue_state = load_queue(job_id, jobs_root=jobs_root)
+    elapsed_before = float(queue_state.get("elapsed_seconds") or 0)
+    run_started = time.monotonic()
+    total_pages = len(page_to_questions)
+    update_queue_progress(
+        job_id,
+        current_page=0,
+        total_pages=total_pages,
+        elapsed_seconds=elapsed_before,
+        jobs_root=jobs_root,
+    )
+    for page_number, page_questions in sorted(page_to_questions.items()):
+        queue_state = load_queue(job_id, jobs_root=jobs_root)
+        if queue_state.get("status") != "running" or queue_state.get("pause_requested"):
+            update_queue_progress(
+                job_id,
+                elapsed_seconds=elapsed_before + time.monotonic() - run_started,
+                jobs_root=jobs_root,
+            )
+            return counts
+        page = pages.get(page_number) or {}
+        image_path = jobs_root / job_id / str(page.get("image_path") or "")
+        numbers = [str((item.get("extra") or {}).get("question_number") or "") for item in page_questions]
+        result = recognize_document_page_tex(image_path, page_number=page_number, question_numbers=numbers)
+        counts["pages"] += 1
+        update_queue_progress(
+            job_id,
+            current_page=counts["pages"],
+            total_pages=total_pages,
+            elapsed_seconds=elapsed_before + time.monotonic() - run_started,
+            jobs_root=jobs_root,
+        )
+        parsed_by_number: dict[str, dict[str, Any]] = {}
+        if not result.get("error"):
+            for item in _sqlite_draft_split_input_items(str(result.get("tex") or "")):
+                fields, stem, choices, answer, solution = _sqlite_draft_strip_problem_body(item.get("tex") or "")
+                number = str(fields.get("number") or "").strip()
+                if number:
+                    parsed_by_number[number] = {
+                        "stem_tex": stem,
+                        "choices": choices,
+                        "answer_tex": answer,
+                        "solution_tex": solution,
+                    }
+        for question in page_questions:
+            source_item_id = str(question.get("source_item_id") or "")
+            if source_item_id in completed_ids:
+                continue
+            number = str((question.get("extra") or {}).get("question_number") or "").strip()
+            parsed = parsed_by_number.get(number)
+            if not parsed:
+                finish_queue_item(job_id, source_item_id, error=str(result.get("error") or f"第 {page_number} 页未返回第 {number} 题的完整 TeX"), jobs_root=jobs_root)
+                counts["failed"] += 1
+                continue
+            normalized = normalize_question_structure_result(parsed, question_number=number)
+            normalized["stem_tex"], _ = ensure_question_asset_placeholders(normalized.get("stem_tex") or "", question.get("assets") or [])
+            question.update({
+                "question_type_id": normalized.get("question_type_id") or question.get("question_type_id"),
+                "stem_tex": normalized.get("stem_tex") or "",
+                "choices": normalized.get("choices") or [],
+                "answer_tex": normalized.get("answer_tex") or "",
+                "solution_tex": normalized.get("solution_tex") or "",
+                "recognition_status": "ai_succeeded",
+                "recognizer_version": "page_v1",
+            })
+            question_extra = question.setdefault("extra", {})
+            if normalized.get("topics"):
+                question_extra["detected_topic"] = "，".join(
+                    str(topic).strip()
+                    for topic in normalized["topics"]
+                    if str(topic).strip()
+                )
+            finish_queue_item(job_id, source_item_id, result=normalized, jobs_root=jobs_root)
+            counts["succeeded"] += 1
+            completed_ids.add(source_item_id)
+    update_queue_progress(
+        job_id,
+        current_page=total_pages,
+        total_pages=total_pages,
+        elapsed_seconds=elapsed_before + time.monotonic() - run_started,
+        jobs_root=jobs_root,
+    )
+    set_queue_status(job_id, "completed", jobs_root=jobs_root)
+    from services.pdf_import_service import write_json
+    payload["questions"] = questions
+    payload["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    write_json(jobs_root / job_id / "draft_payload.json", payload)
+    return counts
+
+
+def _sqlite_apply_ai_result_to_batch_item(index: int, result: dict) -> None:
+    from services.ai_service import ensure_question_asset_placeholders, normalize_question_structure_result
+
+    result = normalize_question_structure_result(result, question_number=str(index))
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    document_questions = document_job.get("questions") or []
+    assets = document_questions[index - 1].get("assets") or [] if 0 < index <= len(document_questions) else []
+    result["stem_tex"], restored_aliases = ensure_question_asset_placeholders(result.get("stem_tex") or "", assets)
+    if restored_aliases and 0 < index <= len(document_questions):
+        extra = document_questions[index - 1].setdefault("extra", {})
+        extra["image_reference_status"] = "restored"
+        extra["restored_image_aliases"] = restored_aliases
+    if 0 < index <= len(document_questions):
+        document_questions[index - 1]["recognition_status"] = "ai_succeeded"
+        document_questions[index - 1]["question_type_id"] = result.get("question_type_id") or 5
+        if result.get("topics"):
+            document_questions[index - 1].setdefault("extra", {})["detected_topic"] = "，".join(
+                str(topic).strip()
+                for topic in result["topics"]
+                if str(topic).strip()
+            )
+    prefix = lambda field: _sqlite_draft_batch_item_field_key(index, field)
+    st.session_state[prefix("question_type_id")] = result.get("question_type_id") or 5
+    st.session_state[prefix("stem_tex")] = result.get("stem_tex") or ""
+    st.session_state[prefix("choices_text")] = "\n".join(result.get("choices") or [])
+    st.session_state[prefix("answer_tex")] = result.get("answer_tex") or ""
+    st.session_state[prefix("solution_tex")] = result.get("solution_tex") or ""
+    if result.get("topics"):
+        st.session_state[prefix("topics")] = [topic for topic in result["topics"] if topic in SUBJECTS]
+        st.session_state[prefix("topic")] = "，".join(st.session_state[prefix("topics")])
+    if result.get("difficulty") is not None:
+        st.session_state[prefix("difficulty")] = result["difficulty"]
+    if result.get("tags"):
+        st.session_state[prefix("tags_text")] = "，".join(result["tags"])
+    st.session_state.pop("sqlite_draft_batch_preview_cache", None)
+
+
+def _render_sqlite_document_ai_queue(entry_mode: str) -> None:
+    """Show the compact page-level recognition status for a PDF job."""
+    from services.document_ai_queue_service import create_or_refresh_queue, queue_summary, set_queue_status
+
+    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+    job_id = str(document_job.get("job_id") or "")
+    job_dir = Path(str(document_job.get("job_dir") or ""))
+    jobs_root = job_dir.parent
+    questions = [item for item in document_job.get("questions") or [] if isinstance(item, dict)]
+    if not job_id or not questions:
+        return
+    queue = create_or_refresh_queue(job_id, jobs_root=jobs_root)
+    summary = queue_summary(queue)
+    st.markdown("##### PDF 页面识别")
+    st.caption("每页 PDF 调用一次 AI；AI 返回本页全部题目的完整 TeX，随后按题号回填到下方逐题草稿。")
+    total = int(summary["total"])
+    finished = int(summary["finished"])
+    elapsed_seconds = int(float(queue.get("elapsed_seconds") or 0))
+    elapsed_text = f"{elapsed_seconds // 60:02d}:{elapsed_seconds % 60:02d}"
+    current_page = int(queue.get("current_page") or 0)
+    total_pages = int(queue.get("total_pages") or 0)
+    page_text = f"页面 {current_page}/{total_pages}" if total_pages else "页面进度待开始"
+    st.progress(
+        finished / max(1, total),
+        text=f"{page_text} · 已处理 {finished}/{total} 题 · 成功 {summary['succeeded']} · 失败 {summary['failed']} · 已用时 {elapsed_text}",
+    )
+    if summary["status"] == "running":
+        if st.button("暂停识别", key=f"sqlite_document_pause_{job_id}", use_container_width=True):
+            set_queue_status(job_id, "paused", jobs_root=jobs_root)
+            st.rerun()
+    elif summary["status"] == "paused" and finished < total:
+        if st.button("继续识别", key=f"sqlite_document_resume_{job_id}", use_container_width=True):
+            result = _sqlite_refine_document_pages(job_id, jobs_root)
+            _sqlite_apply_document_job_to_batch({"job_id": job_id, "job_dir": str(job_dir)}, entry_mode)
+            st.toast(f"继续完成：识别 {result['pages']} 页，成功 {result['succeeded']} 题，失败 {result['failed']} 题", icon="✅")
+            st.rerun()
+    failed_items = [item for item in queue.get("items") or [] if item.get("status") == "failed"]
+    if failed_items:
+        if st.button("按页重试失败题", key=f"sqlite_document_page_retry_{job_id}", use_container_width=True):
+            failed_ids = {str(item.get("source_item_id") or "") for item in failed_items}
+            result = _sqlite_refine_document_pages(job_id, jobs_root, only_source_item_ids=failed_ids)
+            _sqlite_apply_document_job_to_batch({"job_id": job_id, "job_dir": str(job_dir)}, entry_mode)
+            st.toast(f"重试完成：调用 {result['pages']} 页，成功 {result['succeeded']} 题，失败 {result['failed']} 题", icon="✅" if not result["failed"] else "⚠️")
+            st.rerun()
+        with st.expander(f"查看 {len(failed_items)} 个失败题"):
+            for item in failed_items:
+                st.caption(f"第 {item.get('question_number')} 题：{item.get('error')}")
 
 
 def _render_png_clipboard_button(png_bytes: bytes, key: str):
@@ -4291,9 +5529,32 @@ def _render_text_clipboard_button(text: str, label: str, key: str, *, height: in
     )
 
 
+def _sqlite_exit_document_job(entry_mode: str) -> None:
+    """Leave a restored document task without changing the formal database."""
+    st.session_state.pop("sqlite_draft_batch_document_job", None)
+    st.session_state.pop("sqlite_draft_batch_text", None)
+    st.session_state.pop("sqlite_draft_batch_preview_cache", None)
+    st.session_state.pop(f"sqlite_restore_document_job_{entry_mode}", None)
+    for key in list(st.session_state):
+        if str(key).startswith("sqlite_draft_batch_item_"):
+            st.session_state.pop(key, None)
+
+
+def _sqlite_remove_ocr_history(index: int) -> None:
+    history = [
+        item
+        for item in (st.session_state.get("sqlite_entry_ocr_history") or [])
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ]
+    if 0 <= index < len(history):
+        history.pop(index)
+    st.session_state["sqlite_entry_ocr_history"] = history[:5]
+    selected = int(st.session_state.get("sqlite_entry_ocr_history_selected") or 0)
+    st.session_state["sqlite_entry_ocr_history_selected"] = min(selected, max(0, len(history) - 1))
+
+
 def _render_sqlite_entry_ai_recognition_panel(entry_mode: str):
-    st.markdown("##### 🖼️ AI 图片 / PDF 识别")
-    st.caption("识别结果会自动填入当前录入方式：单题填字段，批量/同卷/同书填入批量 TeX。")
+    st.markdown("**上传图片或 PDF**")
     uploaded_files = st.file_uploader(
         "上传图片或 PDF",
         type=["pdf", "png", "jpg", "jpeg"],
@@ -4347,7 +5608,296 @@ def _render_sqlite_entry_ai_recognition_panel(entry_mode: str):
     else:
         st.info("请添加图片或 PDF 进行识别")
 
-    if st.button("🚀 识别并填入", key="sqlite_entry_run_ocr", type="primary", use_container_width=True):
+    pdf_uploads = [item for item in (uploaded_files or []) if os.path.splitext(item.name)[1].lower() == ".pdf"]
+    image_uploads = [
+        item for item in (uploaded_files or [])
+        if os.path.splitext(item.name)[1].lower() in {".png", ".jpg", ".jpeg"}
+    ]
+    clipboard_images = list(st.session_state.get("sqlite_entry_clipboard_images") or [])
+    if clipboard_images or image_uploads:
+        st.markdown("**图片预览**")
+        if clipboard_images:
+            st.markdown(
+                """
+                <style>
+                    [class*="st-key-sqlite_entry_clipboard_delete_"] button {
+                        background: #dc2626 !important;
+                        border-color: #dc2626 !important;
+                        color: #ffffff !important;
+                        font-weight: 700 !important;
+                    }
+                    [class*="st-key-sqlite_entry_clipboard_delete_"] button:hover {
+                        background: #b91c1c !important;
+                        border-color: #b91c1c !important;
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            for index, image in enumerate(clipboard_images):
+                image_col, action_col = st.columns([1.7, 0.8], gap="medium")
+                with image_col:
+                    st.markdown(
+                        f"<div style='font-weight: 750; color: #6d28d9; margin-bottom: 0.35rem;'>剪贴板图片 {index + 1}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    image_buffer = io.BytesIO()
+                    image.convert("RGB").save(image_buffer, format="PNG")
+                    image_data = base64.b64encode(image_buffer.getvalue()).decode("ascii")
+                    image_dom_id = f"sqlite-clipboard-preview-{uuid.uuid4().hex}"
+                    preview_width = 260
+                    image_width, image_height = image.size
+                    preview_height = min(
+                        285,
+                        max(175, int(preview_width * image_height / max(1, image_width)) + 12),
+                    )
+                    components.html(
+                        f"""
+                        <style>
+                            html, body {{ margin: 0; padding: 0; background: transparent; overflow: hidden; }}
+                            .clipboard-thumb {{ width: 100%; height: {preview_height - 8}px; display: flex; align-items: flex-start; justify-content: flex-start; }}
+                            .clipboard-thumb img {{ max-width: {preview_width}px; max-height: {preview_height - 18}px; width: auto; height: auto; cursor: zoom-in; border-radius: 4px; }}
+                            .clipboard-lightbox {{ position: fixed; inset: 0; z-index: 999; display: none; align-items: center; justify-content: center; padding: 10px; background: rgba(15, 23, 42, 0.88); cursor: zoom-out; }}
+                            .clipboard-lightbox img {{ max-width: 98%; max-height: 98%; width: auto; height: auto; object-fit: contain; }}
+                        </style>
+                        <div class="clipboard-thumb" id="{image_dom_id}-thumb">
+                            <img src="data:image/png;base64,{image_data}" alt="剪贴板图片，点击放大">
+                        </div>
+                        <div class="clipboard-lightbox" id="{image_dom_id}-lightbox">
+                            <img src="data:image/png;base64,{image_data}" alt="放大后的剪贴板图片">
+                        </div>
+                        <script>
+                            const thumb = document.getElementById('{image_dom_id}-thumb');
+                            const lightbox = document.getElementById('{image_dom_id}-lightbox');
+                            thumb.addEventListener('click', () => {{ lightbox.style.display = 'flex'; }});
+                            lightbox.addEventListener('click', () => {{ lightbox.style.display = 'none'; }});
+                        </script>
+                        """,
+                        height=preview_height,
+                        scrolling=False,
+                    )
+                with action_col:
+                    st.markdown("<div style='height: 1.75rem'></div>", unsafe_allow_html=True)
+                    if st.button(
+                        "⬆️ 向上移动",
+                        key=f"sqlite_entry_clipboard_up_{index}",
+                        disabled=index == 0,
+                        use_container_width=True,
+                    ):
+                        images = st.session_state["sqlite_entry_clipboard_images"]
+                        images[index - 1], images[index] = images[index], images[index - 1]
+                        st.rerun()
+                    if st.button(
+                        "⬇️ 向下移动",
+                        key=f"sqlite_entry_clipboard_down_{index}",
+                        disabled=index >= len(clipboard_images) - 1,
+                        use_container_width=True,
+                    ):
+                        images = st.session_state["sqlite_entry_clipboard_images"]
+                        images[index + 1], images[index] = images[index], images[index + 1]
+                        st.rerun()
+                    if st.button(
+                        "❌ 删除本图",
+                        key=f"sqlite_entry_clipboard_delete_{index}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["sqlite_entry_clipboard_images"].pop(index)
+                        st.rerun()
+                st.markdown("<hr style='margin: 0.35rem 0 0.55rem; border: 0; border-top: 1px solid rgba(100, 116, 139, 0.28);'>", unsafe_allow_html=True)
+        for uploaded_image in image_uploads:
+            try:
+                from PIL import Image
+                image = Image.open(io.BytesIO(uploaded_image.getvalue()))
+                image.load()
+                st.image(image.convert("RGB"), caption=uploaded_image.name, width=260)
+            except Exception:
+                continue
+    if entry_mode != "单题录入":
+        from services.document_parser_service import preferred_document_parser
+        from services.pdf_import_service import DEFAULT_JOBS_ROOT, list_pdf_import_jobs, load_pdf_import_job
+
+        parser_name = preferred_document_parser()
+        st.caption(
+            "整份文档解析器：PyMuPDF（无需额外安装）"
+            if parser_name == "pymupdf"
+            else "整份文档解析器：MinerU"
+        )
+        compatible_source_type = "pdf_paper" if entry_mode == "同卷试题录入" else "pdf_book" if entry_mode == "同书试题录入" else "pdf_misc"
+        recent_jobs = [job for job in list_pdf_import_jobs(DEFAULT_JOBS_ROOT) if job.get("source_type") == compatible_source_type][:5]
+        if recent_jobs:
+            st.markdown("**恢复最近解析任务**")
+            restore_col, restore_action_col = st.columns([1.45, 0.55], gap="small")
+            with restore_col:
+                restore_job_id = st.selectbox(
+                    "恢复最近解析任务",
+                    [str(job["job_id"]) for job in recent_jobs],
+                    key=f"sqlite_restore_document_job_{entry_mode}",
+                    format_func=lambda value: next(
+                        (
+                            f"{job.get('original_name')} · {job.get('question_candidate_count')} 题 · {job.get('created_at')}"
+                            for job in recent_jobs
+                            if job.get("job_id") == value
+                        ),
+                        value,
+                    ),
+                )
+            with restore_action_col:
+                st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+                if st.button("恢复", key=f"sqlite_restore_document_job_action_{entry_mode}", use_container_width=True):
+                    restored = load_pdf_import_job(restore_job_id, jobs_root=DEFAULT_JOBS_ROOT)
+                    _sqlite_apply_document_job_to_batch(
+                        {"job_id": restore_job_id, "job_dir": str(restored["job_dir"])},
+                        entry_mode,
+                    )
+                    st.toast("已恢复解析任务及页面识别进度", icon="✅")
+                    st.rerun()
+            if st.session_state.get("sqlite_draft_batch_document_job"):
+                if st.button(
+                    "退出当前解析任务",
+                    key=f"sqlite_exit_document_job_{entry_mode}",
+                    use_container_width=True,
+                    help="退出当前恢复的解析任务并返回普通批量录入，不会修改正式题库。",
+                ):
+                    _sqlite_exit_document_job(entry_mode)
+                    st.rerun()
+        st.markdown(
+            """
+            <style>
+            div[class*="st-key-sqlite_entry_parse_full_document"] button {
+                background: #6d28d9 !important;
+                border-color: #6d28d9 !important;
+                color: #ffffff !important;
+                font-weight: 750 !important;
+            }
+            div[class*="st-key-sqlite_entry_parse_full_document"] button:hover {
+                background: #5b21b6 !important;
+                border-color: #5b21b6 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        has_image_source = bool(clipboard_images or image_uploads)
+        has_supported_source = len(pdf_uploads) == 1 or has_image_source
+        if len(pdf_uploads) > 1:
+            st.warning("整份文档解析一次只能选择一个 PDF；图片可以和一个 PDF 一起识别。")
+        if st.button(
+            "🚀 解析整份文档并生成逐题草稿",
+            key="sqlite_entry_parse_full_document",
+            type="primary",
+            use_container_width=True,
+            disabled=not has_supported_source or len(pdf_uploads) > 1,
+            help="支持 PDF、上传图片和剪贴板图片；图片识别结果会追加到下方逐题草稿。",
+        ):
+            from services.pdf_import_service import create_pdf_import_job
+
+            image_result_text = ""
+            if has_image_source:
+                try:
+                    from PIL import Image
+
+                    recognition_images = clipboard_images[:5]
+                    for uploaded_image in image_uploads:
+                        if len(recognition_images) >= 5:
+                            break
+                        image = Image.open(io.BytesIO(uploaded_image.getvalue()))
+                        image.load()
+                        recognition_images.append(image.convert("RGB"))
+                    image_result = ocr_image_to_latex(
+                        images=recognition_images,
+                        max_image_size=2200,
+                        max_tokens=8192,
+                        spinner_text=f"🤖 AI 正在识别 {len(recognition_images)} 张图片...",
+                    )
+                    if image_result.startswith("❌"):
+                        st.error(f"图片识别失败：{image_result}")
+                        st.stop()
+                    image_result_text = image_result.strip()
+                    image_fields, _, _, _, _ = _sqlite_draft_strip_problem_body(image_result_text)
+                    if not _sqlite_draft_has_explicit_source_fields(image_fields):
+                        st.session_state["sqlite_draft_batch_source_kind"] = "未标记来源"
+                        st.session_state["sqlite_draft_batch_year"] = ""
+                        st.session_state["sqlite_draft_batch_paper_series"] = ""
+                        st.session_state["sqlite_draft_batch_source_name"] = ""
+                        st.session_state["sqlite_draft_batch_track"] = "不区分"
+                    history = [
+                        item
+                        for item in (st.session_state.get("sqlite_entry_ocr_history") or [])
+                        if isinstance(item, dict) and str(item.get("text") or "").strip()
+                    ]
+                    history.insert(
+                        0,
+                        {
+                            "text": image_result.strip(),
+                            "entry_mode": entry_mode,
+                            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        },
+                    )
+                    st.session_state["sqlite_entry_ocr_history"] = history[:5]
+                except Exception as exc:
+                    st.error(f"图片识别失败：{exc}")
+                    st.stop()
+
+            if not pdf_uploads:
+                stamp = datetime.datetime.now().strftime("%H%M%S")
+                _sqlite_draft_append_batch_text(image_result_text, label=f"图片识别-{stamp}")
+                st.session_state["sqlite_entry_clipboard_images"] = []
+                st.toast("图片识别结果已生成逐题草稿", icon="✅")
+                st.rerun()
+
+            temporary_path = ""
+            try:
+                uploaded_pdf = pdf_uploads[0]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temporary_file:
+                    temporary_file.write(uploaded_pdf.getvalue())
+                    temporary_path = temporary_file.name
+                source_type = (
+                    "pdf_paper"
+                    if entry_mode == "同卷试题录入"
+                    else "pdf_book"
+                    if entry_mode == "同书试题录入"
+                    else "pdf_misc"
+                )
+                metadata = {
+                    "entry_mode": entry_mode,
+                    "source_name": st.session_state.get("sqlite_draft_batch_source_name", ""),
+                    "year_or_volume": st.session_state.get("sqlite_draft_batch_year", ""),
+                }
+                with st.spinner("正在解析全部页面、题号和图片区域..."):
+                    job_result = create_pdf_import_job(
+                        temporary_path,
+                        jobs_root=DEFAULT_JOBS_ROOT,
+                        source_type=source_type,
+                        source_metadata=metadata,
+                        render_dpi=180,
+                        original_name=uploaded_pdf.name,
+                    )
+                    _sqlite_apply_document_job_to_batch(job_result, entry_mode)
+                    refine_result = _sqlite_refine_document_pages(
+                        str(job_result.get("job_id") or ""),
+                        Path(str(job_result.get("job_dir") or "")).parent,
+                    )
+                    _sqlite_apply_document_job_to_batch(job_result, entry_mode)
+                    if image_result_text:
+                        stamp = datetime.datetime.now().strftime("%H%M%S")
+                        _sqlite_draft_append_batch_text(image_result_text, label=f"图片识别-{stamp}")
+                if refine_result.get("unavailable"):
+                    st.warning("AI 配置未完成，已保留本地解析草稿；配置 AI 后可重新执行页面识别。")
+                elif refine_result.get("failed"):
+                    st.warning(f"已完成本地解析和页面识别：成功 {refine_result['succeeded']} 题，失败 {refine_result['failed']} 题，可在下方按页重试。")
+                else:
+                    st.toast(f"已完成 {job_result['question_candidate_count']} 道题的页面解析与识别", icon="✅")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"整份文档解析失败：{exc}")
+            finally:
+                if temporary_path and os.path.exists(temporary_path):
+                    try:
+                        os.unlink(temporary_path)
+                    except OSError:
+                        pass
+
+    if False:
         try:
             from PIL import Image
         except ImportError:
@@ -4392,18 +5942,1255 @@ def _render_sqlite_entry_ai_recognition_panel(entry_mode: str):
         if result.startswith("❌"):
             st.error(result)
             return
-        st.session_state["sqlite_entry_ocr_last_text"] = result.strip()
+        recognized_text = result.strip()
+        history = [
+            item
+            for item in (st.session_state.get("sqlite_entry_ocr_history") or [])
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        history.insert(
+            0,
+            {
+                "text": recognized_text,
+                "entry_mode": entry_mode,
+                "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
+        st.session_state["sqlite_entry_ocr_history"] = history[:5]
+        st.session_state["sqlite_entry_ocr_last_text"] = recognized_text
         if entry_mode == "单题录入":
-            _sqlite_draft_apply_tex_to_single_state(result)
+            _sqlite_draft_apply_tex_to_single_state(recognized_text)
             st.toast("识别结果已填入单题字段", icon="✅")
         else:
             stamp = datetime.datetime.now().strftime("%H%M%S")
-            _sqlite_draft_append_batch_text(result, label=f"{entry_mode}-{stamp}")
+            _sqlite_draft_append_batch_text(recognized_text, label=f"{entry_mode}-{stamp}")
             st.toast("识别结果已追加到批量 TeX", icon="✅")
         st.rerun()
-    if st.session_state.get("sqlite_entry_ocr_last_text"):
-        with st.expander("查看最近识别原文", expanded=False):
-            st.code(st.session_state.get("sqlite_entry_ocr_last_text", ""), language="latex")
+    history = [
+        item
+        for item in (st.session_state.get("sqlite_entry_ocr_history") or [])
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    ][:5]
+    if history:
+        with st.expander("查看并恢复最近 5 次识别原文", expanded=False):
+            history_options = list(range(len(history)))
+            selected_history_index = st.selectbox(
+                "选择识别记录",
+                history_options,
+                key="sqlite_entry_ocr_history_selected",
+                format_func=lambda index: (
+                    f"{history[index].get('created_at') or '未记录时间'} · "
+                    f"{history[index].get('entry_mode') or entry_mode} · "
+                    f"{len(str(history[index].get('text') or ''))} 字符"
+                ),
+            )
+            selected_history = history[selected_history_index]
+            st.code(str(selected_history.get("text") or ""), language="latex")
+            if st.button(
+                "✕ 删除这条记录",
+                key="sqlite_entry_ocr_delete_selected",
+                use_container_width=True,
+            ):
+                _sqlite_remove_ocr_history(selected_history_index)
+                st.rerun()
+            if st.button(
+                "恢复到当前录入",
+                key="sqlite_entry_ocr_restore_selected",
+                type="primary",
+                use_container_width=True,
+            ):
+                restored_text = str(selected_history.get("text") or "").strip()
+                if entry_mode == "单题录入":
+                    _sqlite_draft_apply_tex_to_single_state(restored_text)
+                else:
+                    stamp = datetime.datetime.now().strftime("%H%M%S")
+                    _sqlite_draft_append_batch_text(restored_text, label=f"恢复识别-{stamp}")
+                st.toast("已恢复识别原文到当前录入", icon="✅")
+                st.rerun()
+
+
+def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_options, type_name_by_id):
+    from services.database_service import DEFAULT_DATABASE_PATH
+    from services.document_parser_service import available_document_parsers
+    from services.pdf_import_service import (
+        DEFAULT_JOBS_ROOT,
+        bulk_mark_pdf_candidates_ready,
+        commit_pdf_import_candidates,
+        create_pdf_import_job,
+        list_pdf_import_failed_candidates,
+        list_pdf_import_jobs,
+        load_pdf_import_job,
+        merge_pdf_question_assets,
+        refresh_pdf_import_source_metadata,
+        retry_failed_pdf_import_candidates,
+        update_pdf_question_asset_crop,
+        update_pdf_question_candidate,
+    )
+
+    source_type_labels = {
+        "pdf_paper": "试卷",
+        "pdf_book": "教材",
+        "pdf_topic": "专题",
+        "pdf_misc": "其他",
+    }
+    with left_col:
+        st.divider()
+        st.markdown("##### 新建 PDF 任务")
+        uploaded_pdf = st.file_uploader(
+            "选择 PDF",
+            type=["pdf"],
+            key="sqlite_pdf_import_uploader",
+            label_visibility="collapsed",
+        )
+        source_type = st.selectbox(
+            "来源类型",
+            list(source_type_labels),
+            key="sqlite_pdf_import_source_type",
+            format_func=lambda value: source_type_labels[value],
+        )
+        source_name = st.text_input("来源名称", key="sqlite_pdf_import_source_name", placeholder="试卷名、教材名或专题名")
+        source_year = st.text_input("年份 / 册次", key="sqlite_pdf_import_source_year", placeholder="可选")
+        render_dpi = st.select_slider(
+            "页面清晰度",
+            options=[120, 144, 180, 216],
+            value=144,
+            key="sqlite_pdf_import_dpi",
+            format_func=lambda value: f"{value} DPI",
+        )
+        parser_choices = ["auto", "cloud", "local"]
+        parser_labels = {
+            "auto": "自动：MinerU 云端失败后使用本地",
+            "cloud": "仅 MinerU 云端",
+            "local": "仅本地 PyMuPDF",
+        }
+        parser_mode = st.selectbox(
+            "解析方式",
+            parser_choices,
+            key="sqlite_pdf_import_parser_mode",
+            format_func=lambda value: parser_labels[value],
+            help="自动模式会把云端失败、超时或结果不完整统一交给本地 PyMuPDF接力。",
+        )
+        parser_status = next(
+            (item for item in available_document_parsers() if item.get("name") == "mineru_cloud"),
+            {},
+        )
+        if parser_mode in {"auto", "cloud"} and not parser_status.get("available"):
+            st.caption("当前未配置 MinerU 云端 Token，自动模式将使用本地 PyMuPDF。")
+        create_job = st.button(
+            "创建解析任务",
+            key="sqlite_pdf_import_create",
+            type="primary",
+            use_container_width=True,
+            disabled=uploaded_pdf is None,
+        )
+        if create_job and uploaded_pdf is not None:
+            temporary_path = ""
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temporary_file:
+                    temporary_file.write(uploaded_pdf.getvalue())
+                    temporary_path = temporary_file.name
+                metadata = {
+                    key: value
+                    for key, value in {
+                        "source_name": source_name.strip(),
+                        "year_or_volume": source_year.strip(),
+                        "upload_filename": uploaded_pdf.name,
+                    }.items()
+                    if value
+                }
+                with st.spinner("正在渲染页面并生成题目候选..."):
+                    result = create_pdf_import_job(
+                        temporary_path,
+                        source_type=source_type,
+                        source_metadata=metadata,
+                        render_dpi=render_dpi,
+                        original_name=uploaded_pdf.name,
+                        parser_mode=parser_mode,
+                    )
+                st.session_state["sqlite_pdf_import_selected_job"] = result["job_id"]
+                st.toast(f"已生成 {result['question_candidate_count']} 个候选", icon="✅")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"PDF 任务创建失败：{exc}")
+            finally:
+                if temporary_path and os.path.exists(temporary_path):
+                    try:
+                        os.unlink(temporary_path)
+                    except OSError:
+                        pass
+
+        jobs = list_pdf_import_jobs(DEFAULT_JOBS_ROOT)
+        st.divider()
+        st.markdown("##### 本地任务")
+        if not jobs:
+            st.info("上传 PDF 后，解析任务会显示在这里。")
+            return
+        jobs_by_id = {item["job_id"]: item for item in jobs}
+        if st.session_state.get("sqlite_pdf_import_selected_job") not in jobs_by_id:
+            st.session_state["sqlite_pdf_import_selected_job"] = jobs[0]["job_id"]
+        selected_job = st.selectbox(
+            "选择任务",
+            list(jobs_by_id),
+            key="sqlite_pdf_import_selected_job",
+            label_visibility="collapsed",
+            format_func=lambda value: (
+                f"{jobs_by_id[value]['original_name']} · "
+                f"{jobs_by_id[value]['question_candidate_count']} 题"
+            ),
+        )
+        job_summary = jobs_by_id[selected_job]
+        status_counts = job_summary.get("review_status_counts") or {}
+        status_text = " · ".join(f"{key} {value}" for key, value in sorted(status_counts.items()))
+        st.caption(f"{job_summary['page_count']} 页 · {status_text or '待审核'}")
+
+        try:
+            loaded = load_pdf_import_job(selected_job, DEFAULT_JOBS_ROOT)
+        except Exception as exc:
+            st.error(f"任务读取失败：{exc}")
+            return
+        draft_payload = loaded["draft_payload"]
+        source_info = loaded["manifest"].get("source") if isinstance(loaded["manifest"].get("source"), dict) else {}
+        source_metadata = source_info.get("metadata") if isinstance(source_info.get("metadata"), dict) else {}
+        st.markdown("##### 修正来源并重新匹配")
+        source_edit_col, year_edit_col = st.columns([1.35, 0.75], gap="small")
+        with source_edit_col:
+            edited_source_name = st.text_input(
+                "试卷名称",
+                value=str(source_metadata.get("source_name") or draft_payload.get("source_metadata", {}).get("source_name") or ""),
+                key=f"sqlite_pdf_source_edit_name_{selected_job}",
+            )
+        with year_edit_col:
+            edited_year = st.text_input(
+                "年份",
+                value=str(source_metadata.get("year") or source_metadata.get("year_or_volume") or draft_payload.get("source_metadata", {}).get("year_or_volume") or ""),
+                key=f"sqlite_pdf_source_edit_year_{selected_job}",
+            )
+        source_edit_col_2, track_edit_col = st.columns([1.35, 0.75], gap="small")
+        with source_edit_col_2:
+            edited_series = st.text_input(
+                "卷别代码",
+                value=str(source_metadata.get("paper_series") or "G"),
+                key=f"sqlite_pdf_source_edit_series_{selected_job}",
+            )
+        with track_edit_col:
+            edited_track = st.text_input(
+                "文理 / 新高考",
+                value=str(source_metadata.get("track") or ""),
+                key=f"sqlite_pdf_source_edit_track_{selected_job}",
+            )
+        last_match = source_info.get("last_match") if isinstance(source_info.get("last_match"), dict) else {}
+        match_candidates = [item for item in last_match.get("candidates") or [] if isinstance(item, dict) and item.get("paper_standard_id")]
+        selected_candidate_id = ""
+        if match_candidates:
+            candidate_by_id = {str(item["paper_standard_id"]): item for item in match_candidates}
+            candidate_options = list(candidate_by_id)
+            selected_candidate_id = st.selectbox(
+                "候选标准试卷",
+                candidate_options,
+                key=f"sqlite_pdf_source_candidate_{selected_job}",
+                format_func=lambda value: (
+                    f"{candidate_by_id[value].get('year') or ''} · "
+                    f"{candidate_by_id[value].get('paper_name') or ''} · "
+                    f"{candidate_by_id[value].get('track') or '不区分'} · "
+                    f"匹配度 {float(candidate_by_id[value].get('score') or 0):.0%}"
+                ),
+            )
+        if st.button("保存来源并重新匹配", key=f"sqlite_pdf_source_refresh_{selected_job}", use_container_width=True):
+            try:
+                refresh_result = refresh_pdf_import_source_metadata(
+                    selected_job,
+                    {
+                        "source_name": edited_source_name.strip(),
+                        "year": edited_year.strip(),
+                        "paper_series": edited_series.strip(),
+                        "track": edited_track.strip(),
+                        "paper_standard_id": selected_candidate_id,
+                    },
+                    db_path=DEFAULT_DATABASE_PATH,
+                    jobs_root=DEFAULT_JOBS_ROOT,
+                )
+                if refresh_result.get("match_status") == "exact":
+                    st.success(f"已重新匹配标准试卷，并更新 {refresh_result['question_count']} 道候选题。")
+                elif refresh_result.get("candidates"):
+                    st.warning("来源已更新，但仍需从候选标准试卷中人工确认。")
+                else:
+                    st.info("来源已更新，暂未找到匹配的标准试卷。")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"来源重新匹配失败：{exc}")
+        questions = [item for item in draft_payload.get("questions", []) if isinstance(item, dict)]
+        if not questions:
+            st.warning("当前任务没有可审核的题目候选。")
+            return
+        questions_by_id = {str(item.get("source_item_id")): item for item in questions}
+        question_state_key = f"sqlite_pdf_import_question_{selected_job}"
+        if st.session_state.get(question_state_key) not in questions_by_id:
+            st.session_state[question_state_key] = next(iter(questions_by_id))
+        selected_question_id = st.selectbox(
+            "题目候选",
+            list(questions_by_id),
+            key=question_state_key,
+            format_func=lambda value: (
+                f"{questions_by_id[value].get('source_label') or value} · "
+                f"{questions_by_id[value].get('review_status') or 'needs_review'}"
+            ),
+        )
+        st.download_button(
+            "下载草稿 JSON",
+            data=json.dumps(draft_payload, ensure_ascii=False, indent=2),
+            file_name=f"{selected_job}_draft_payload.json",
+            mime="application/json",
+            key=f"sqlite_pdf_import_download_{selected_job}",
+            use_container_width=True,
+        )
+        if st.button(
+            "完整候选批量标记 ready",
+            key=f"sqlite_pdf_import_bulk_ready_{selected_job}",
+            use_container_width=True,
+        ):
+            try:
+                result = bulk_mark_pdf_candidates_ready(selected_job, jobs_root=DEFAULT_JOBS_ROOT)
+                if result["skipped_count"]:
+                    st.warning(f"已标记 {result['ready_count']} 题；另有 {result['skipped_count']} 题字段不完整。")
+                else:
+                    st.success(f"已标记 {result['ready_count']} 题为 ready。")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"批量校验失败：{exc}")
+
+    ready_candidate_ids = [
+        str(item.get("source_item_id") or "")
+        for item in questions
+        if str(item.get("review_status") or "") in {"ready", "approved"}
+    ]
+    if st.button(
+        f"录入其余已审核题（{len(ready_candidate_ids)}）",
+        key=f"sqlite_pdf_import_commit_ready_{selected_job}",
+        type="primary",
+        use_container_width=True,
+        disabled=not ready_candidate_ids,
+        help="只提交 ready/approved 候选；缺答案或解析属于提醒，不会阻断入库。",
+    ):
+        try:
+            result = commit_pdf_import_candidates(
+                selected_job,
+                ready_candidate_ids,
+                db_path=DEFAULT_DATABASE_PATH,
+                jobs_root=DEFAULT_JOBS_ROOT,
+            )
+            if result.get("failed"):
+                st.warning(f"已录入 {len(result.get('committed') or [])} 道，失败 {len(result['failed'])} 道，请单独处理。")
+            else:
+                st.success(f"已录入 {len(result.get('committed') or [])} 道题目。")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"批量录入失败：{exc}")
+
+    failed_candidates = list_pdf_import_failed_candidates(selected_job, jobs_root=DEFAULT_JOBS_ROOT)
+    if failed_candidates:
+        st.warning(f"当前任务有 {len(failed_candidates)} 道题录入失败，需要单独处理或重试。")
+        with st.expander("查看失败项与失败原因", expanded=True):
+            for failed_item in failed_candidates:
+                failed_id = str(failed_item.get("source_item_id") or "")
+                st.markdown(f"**{failed_item.get('source_label') or failed_id}** `{failed_id}`")
+                st.caption(str(failed_item.get("commit_error") or "正式入库时发生错误"))
+            retry_all_col, retry_one_col = st.columns(2)
+            with retry_all_col:
+                if st.button("仅重试全部失败项", key=f"pdf_retry_failed_{selected_job}", use_container_width=True):
+                    try:
+                        retry_result = retry_failed_pdf_import_candidates(selected_job, db_path=DEFAULT_DATABASE_PATH, jobs_root=DEFAULT_JOBS_ROOT)
+                        st.success(f"重试完成：成功 {len(retry_result.get('committed') or [])}，仍失败 {len(retry_result.get('failed') or [])}。")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"失败项重试失败：{exc}")
+            with retry_one_col:
+                retry_options = [str(item.get("source_item_id") or "") for item in failed_candidates]
+                retry_id = st.selectbox("选择单个失败项", retry_options, key=f"pdf_retry_one_select_{selected_job}")
+                if st.button("重试当前失败项", key=f"pdf_retry_one_{selected_job}", use_container_width=True):
+                    try:
+                        retry_result = retry_failed_pdf_import_candidates(selected_job, [retry_id], db_path=DEFAULT_DATABASE_PATH, jobs_root=DEFAULT_JOBS_ROOT)
+                        if retry_result.get("failed"):
+                            st.error(str(retry_result["failed"][0].get("error") or "重试仍然失败"))
+                        else:
+                            st.success("失败项重试成功。")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"失败项重试失败：{exc}")
+
+    audit_events = [item for item in draft_payload.get("audit_events", []) if isinstance(item, dict)]
+    if audit_events:
+        with st.expander(f"查看审核与操作记录（{len(audit_events)} 条）", expanded=False):
+            for event in reversed(audit_events[-100:]):
+                source_item_id = str(event.get("source_item_id") or "任务级")
+                timestamp = str(event.get("created_at") or "")
+                message = str(event.get("message") or "")
+                st.caption(f"{timestamp} · {source_item_id} · {event.get('action')} · {event.get('status')}" + (f" · {message}" if message else ""))
+
+    candidate = questions_by_id[selected_question_id]
+    pages = [item for item in draft_payload.get("pages", []) if isinstance(item, dict)]
+    pages_by_number = {int(item.get("page_number") or 0): item for item in pages}
+    candidate_extra = candidate.get("extra") if isinstance(candidate.get("extra"), dict) else {}
+    page_start = int(candidate_extra.get("page_start") or 1)
+    page_end = int(candidate_extra.get("page_end") or page_start)
+    available_page_numbers = [number for number in range(page_start, page_end + 1) if number in pages_by_number]
+    if not available_page_numbers:
+        available_page_numbers = sorted(pages_by_number)
+
+    with page_col:
+        st.markdown("### PDF 页面")
+        source = loaded["manifest"].get("source") or {}
+        st.caption(
+            f"{source.get('original_name') or 'source.pdf'} · "
+            f"候选 {candidate.get('source_label') or selected_question_id}"
+        )
+        if available_page_numbers:
+            shown_page_number = st.selectbox(
+                "查看页面",
+                available_page_numbers,
+                key=f"sqlite_pdf_import_page_{selected_job}_{selected_question_id}",
+                format_func=lambda value: f"第 {value} 页",
+            )
+            page = pages_by_number[shown_page_number]
+            image_path = loaded["job_dir"] / str(page.get("image_path") or "")
+            if image_path.is_file():
+                st.image(str(image_path), caption=f"第 {shown_page_number} 页", use_column_width=True)
+            else:
+                st.warning(f"页面图片缺失：{image_path.name}")
+            with st.expander("查看该页提取文本", expanded=False):
+                st.text(str(page.get("raw_text") or "暂无文本"))
+        unassigned_blocks = draft_payload.get("unassigned_blocks") or []
+        if unassigned_blocks:
+            with st.expander(f"未归属文本 · {len(unassigned_blocks)} 块", expanded=False):
+                for block in unassigned_blocks:
+                    st.caption(f"第 {block.get('page_number')} 页")
+                    st.text(str(block.get("raw_text") or ""))
+
+    with editor_col:
+        st.markdown("### 候选校订")
+        validation = candidate.get("validation") if isinstance(candidate.get("validation"), dict) else {}
+        validation_messages = list(validation.get("errors") or []) + list(validation.get("warnings") or [])
+        if validation_messages:
+            st.caption("；".join(str(item) for item in validation_messages))
+        candidate_type = candidate.get("question_type_id")
+        if candidate_type not in type_options:
+            candidate_type = 5
+        candidate_difficulty = candidate.get("difficulty")
+        difficulty_options = [None, 1, 2, 3, 4, 5]
+        if candidate_difficulty not in difficulty_options:
+            candidate_difficulty = None
+        form_key = f"sqlite_pdf_candidate_form_{selected_job}_{selected_question_id}"
+        with st.form(form_key):
+            question_type_id = st.selectbox(
+                "题型",
+                type_options,
+                index=type_options.index(candidate_type),
+                format_func=lambda value: type_name_by_id.get(value, str(value)),
+            )
+            difficulty = st.selectbox(
+                "难度",
+                difficulty_options,
+                index=difficulty_options.index(candidate_difficulty),
+                format_func=lambda value: "未设置" if value is None else str(value),
+            )
+            stem_tex = st.text_area("题干 TeX", value=str(candidate.get("stem_tex") or ""), height=180)
+            choices_text = st.text_area(
+                "选项（每行一个）",
+                value="\n".join(str(item) for item in candidate.get("choices") or []),
+                height=105,
+            )
+            answer_tex = st.text_area("答案 TeX", value=str(candidate.get("answer_tex") or ""), height=68)
+            solution_tex = st.text_area("解析 TeX", value=str(candidate.get("solution_tex") or ""), height=120)
+            tags_text = st.text_input("标签", value="，".join(str(item) for item in candidate.get("tags") or []))
+            note = st.text_area("备注", value=str(candidate.get("note") or ""), height=68)
+            review_statuses = ["needs_review", "ready", "blocked", "rejected"]
+            current_status = candidate.get("review_status")
+            if current_status not in review_statuses:
+                current_status = "needs_review"
+            review_status = st.selectbox("审核状态", review_statuses, index=review_statuses.index(current_status))
+            save_candidate = st.form_submit_button("保存候选", type="primary", use_container_width=True)
+        if save_candidate:
+            try:
+                result = update_pdf_question_candidate(
+                    selected_job,
+                    selected_question_id,
+                    {
+                        "question_type_id": question_type_id,
+                        "stem_tex": stem_tex,
+                        "choices": [line.strip() for line in choices_text.splitlines() if line.strip()],
+                        "answer_tex": answer_tex,
+                        "solution_tex": solution_tex,
+                        "difficulty": difficulty,
+                        "tags": _sqlite_draft_split_text_list(tags_text),
+                        "note": note,
+                        "review_status": review_status,
+                    },
+                    jobs_root=DEFAULT_JOBS_ROOT,
+                )
+                st.toast(f"候选已保存：{result['review_status']}", icon="✅")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"候选保存失败：{exc}")
+
+        if st.button(
+            "确认录入当前题",
+            key=f"sqlite_pdf_import_commit_one_{selected_job}_{selected_question_id}",
+            use_container_width=True,
+            disabled=str(candidate.get("review_status") or "") not in {"ready", "approved"},
+            help="先保存候选并将审核状态设为 ready，再提交当前题。",
+        ):
+            try:
+                result = commit_pdf_import_candidates(
+                    selected_job,
+                    [selected_question_id],
+                    db_path=DEFAULT_DATABASE_PATH,
+                    jobs_root=DEFAULT_JOBS_ROOT,
+                )
+                if result.get("failed"):
+                    st.error(str(result["failed"][0].get("error") or result["failed"][0].get("errors") or "当前题录入失败"))
+                else:
+                    st.success("当前题已录入正式题库。")
+                    st.rerun()
+            except Exception as exc:
+                st.error(f"当前题录入失败：{exc}")
+
+        candidate_assets = [item for item in candidate.get("assets") or [] if isinstance(item, dict)]
+        if candidate_assets:
+            st.markdown("##### 图片裁剪校订")
+            st.caption("调整像素坐标后重新生成裁剪图；修改只保存到当前 PDF 草稿任务。")
+            merge_options = []
+            for asset_index, asset in enumerate(candidate_assets):
+                bbox = asset.get("pixel_bbox") or asset.get("bbox") or []
+                label = f"{asset.get('caption') or asset.get('alias') or f'区域 {asset_index + 1}'} · 第 {asset.get('page_number') or '?'} 页"
+                merge_options.append(label)
+                asset_path = loaded["job_dir"] / str(asset.get("source_path") or "")
+                if asset_path.is_file():
+                    st.image(str(asset_path), caption=f"裁剪预览 · {asset.get('alias') or asset_index + 1}", use_column_width=True)
+                if len(bbox) >= 4:
+                    crop_cols = st.columns([1, 1, 1, 1, 1.2], gap="small")
+                    values = []
+                    for column, name, value in zip(crop_cols[:4], ["左", "上", "右", "下"], bbox[:4]):
+                        with column:
+                            values.append(st.number_input(name, min_value=0, value=int(value), step=1, key=f"pdf_crop_{selected_job}_{selected_question_id}_{asset_index}_{name}"))
+                    with crop_cols[4]:
+                        if st.button("重新裁剪", key=f"pdf_recrop_{selected_job}_{selected_question_id}_{asset_index}", use_container_width=True):
+                            try:
+                                update_pdf_question_asset_crop(selected_job, selected_question_id, asset_index, values, jobs_root=DEFAULT_JOBS_ROOT)
+                                st.toast("裁剪图已重新生成", icon="✅")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"重新裁剪失败：{exc}")
+            if len(candidate_assets) >= 2:
+                selected_merge = st.multiselect(
+                    "选择同一页的区域进行合并",
+                    list(range(len(candidate_assets))),
+                    format_func=lambda value: merge_options[value],
+                    key=f"pdf_merge_assets_{selected_job}_{selected_question_id}",
+                )
+                if st.button("合并所选裁剪区域", key=f"pdf_merge_{selected_job}_{selected_question_id}", disabled=len(selected_merge) < 2, use_container_width=True):
+                    try:
+                        merge_pdf_question_assets(selected_job, selected_question_id, selected_merge, jobs_root=DEFAULT_JOBS_ROOT)
+                        st.toast("裁剪区域已合并", icon="✅")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"合并裁剪区域失败：{exc}")
+
+        try:
+            _render_sqlite_draft_preview_section(
+                "题干预览",
+                _sqlite_draft_preview_with_assets(_sqlite_draft_standard_preview_tex(candidate), candidate.get("assets") or []),
+            )
+            if str(candidate.get("answer_tex") or "").strip():
+                _render_sqlite_draft_preview_section(
+                    "答案",
+                    _sqlite_draft_preview_fragment_markdown(candidate.get("answer_tex", "")),
+                )
+        except Exception as exc:
+            st.warning(f"候选预览失败：{exc}")
+
+
+def _render_sqlite_batch_question_card(
+    item_payload: dict,
+    *,
+    index: int,
+    entry_mode: str,
+    type_options: list,
+    type_name_by_id: dict,
+    total_questions: int,
+    db_path: str,
+    batch_position_conflict: str = "",
+) -> list[str]:
+    duplicate_preview_ids: list[str] = []
+    item_prefix = lambda field: _sqlite_draft_batch_item_field_key(index, field)
+    item_extra = item_payload.get("extra") if isinstance(item_payload.get("extra"), dict) else {}
+    recognition_status = str(item_payload.get("recognition_status") or "pending_ai")
+    raw_topics = str(item_extra.get("detected_topic") or "").replace(",", "，").split("，")
+    default_topics = [topic.strip() for topic in raw_topics if topic.strip() in SUBJECTS] or ["未分类"]
+    item_defaults = {
+        "source_year": item_extra.get("detected_year") or "",
+        "source_series": (
+            "__UNMARKED_SOURCE__"
+            if item_extra.get("source_kind") == "未标记来源"
+            else item_extra.get("paper_series") or "G"
+        ),
+        "source_track": item_extra.get("track") or "不区分",
+        "source_name": item_extra.get("detected_source") or "",
+        "question_number": item_extra.get("detected_question_number") or str(index),
+        "topics": default_topics,
+        "question_type_id": item_payload.get("question_type_id") if item_payload.get("question_type_id") in type_options else type_options[0],
+        "difficulty": item_payload.get("difficulty") if item_payload.get("difficulty") is not None else "未设置",
+        "tags_text": "，".join(_sqlite_paper_match_text(value) for value in (item_payload.get("tags") or []) if _sqlite_paper_match_text(value)),
+        "note": item_payload.get("note") or "",
+        "stem_tex": item_payload.get("stem_tex") or "",
+        "choices_text": "\n".join(_sqlite_draft_normalize_choice_values(item_payload.get("choices") or [])),
+        "answer_tex": item_payload.get("answer_tex") or "",
+        "solution_tex": item_payload.get("solution_tex") or "",
+    }
+    if entry_mode == "同书试题录入":
+        item_defaults["book_page"] = item_extra.get("book_page_number") or ""
+        item_defaults["book_column"] = item_extra.get("book_column_name") or ""
+    for field, default_value in item_defaults.items():
+        st.session_state.setdefault(item_prefix(field), default_value)
+    if st.session_state.get(item_prefix("choices_normalization_version")) != 1:
+        st.session_state[item_prefix("choices_text")] = "\n".join(
+            _sqlite_draft_normalize_choice_values(
+                str(st.session_state.get(item_prefix("choices_text")) or "").splitlines()
+            )
+        )
+        st.session_state[item_prefix("choices_normalization_version")] = 1
+    inferred_type = _sqlite_draft_infer_question_type_id(
+        st.session_state.get(item_prefix("question_type_id")),
+        str(st.session_state.get(item_prefix("choices_text")) or "").splitlines(),
+        st.session_state.get(item_prefix("answer_tex"), ""),
+        st.session_state.get(item_prefix("stem_tex"), ""),
+    )
+    if inferred_type != st.session_state.get(item_prefix("question_type_id")):
+        st.session_state[item_prefix("question_type_id")] = inferred_type
+    if recognition_status == "ai_succeeded" and st.session_state.get(item_prefix("tex_normalization_version")) != 2:
+        from services.ai_service import normalize_question_structure_result
+
+        normalized_tex = normalize_question_structure_result(
+            {
+                "stem_tex": st.session_state.get(item_prefix("stem_tex"), ""),
+                "choices": _sqlite_draft_normalize_choice_values(
+                    str(st.session_state.get(item_prefix("choices_text")) or "").splitlines()
+                ),
+                "answer_tex": st.session_state.get(item_prefix("answer_tex"), ""),
+                "solution_tex": st.session_state.get(item_prefix("solution_tex"), ""),
+            },
+            question_number=str(st.session_state.get(item_prefix("question_number")) or index),
+        )
+        st.session_state[item_prefix("stem_tex")] = normalized_tex["stem_tex"]
+        st.session_state[item_prefix("choices_text")] = "\n".join(
+            _sqlite_draft_normalize_choice_values(normalized_tex["choices"])
+        )
+        st.session_state[item_prefix("answer_tex")] = normalized_tex["answer_tex"]
+        st.session_state[item_prefix("solution_tex")] = normalized_tex["solution_tex"]
+        st.session_state[item_prefix("tex_normalization_version")] = 2
+
+    if recognition_status != "ai_succeeded":
+        st.info("本地解析已完成题号和图片裁剪，题干与公式等待 AI 视觉识别。", icon="ℹ️")
+
+    document_job_dir = Path(str((st.session_state.get("sqlite_draft_batch_document_job") or {}).get("job_dir") or ""))
+    question_crop_paths = []
+    for raw_path in item_extra.get("question_crop_paths") or []:
+        crop_path = Path(str(raw_path))
+        if not crop_path.is_absolute():
+            crop_path = document_job_dir / crop_path
+        if crop_path.is_file():
+            question_crop_paths.append(str(crop_path.resolve()))
+    selected_topics = st.session_state.get(item_prefix("topics")) or ["未分类"]
+    selected_type = st.session_state.get(item_prefix("question_type_id"))
+    title_text = f"第 {st.session_state.get(item_prefix('question_number')) or index} 题"
+    meta_text = " · ".join(
+        part for part in ["、".join(selected_topics), type_name_by_id.get(selected_type, "其他")] if part
+    )
+
+    with st.container(border=True):
+        title_col, ai_col = st.columns([1.45, 0.75], gap="small", vertical_alignment="center")
+        with title_col:
+            st.markdown(f"#### {html.escape(title_text)}")
+            st.caption(meta_text)
+        with ai_col:
+            ai_clicked = st.button(
+                "重新识别本题",
+                key=item_prefix("ai_refine"),
+                use_container_width=True,
+                disabled=not question_crop_paths,
+                help="只发送当前题裁剪图；该操作会再次调用 API。",
+            )
+        if ai_clicked:
+            from services.ai_service import recognize_question_structure
+            from services.document_ai_queue_service import create_or_refresh_queue, finish_queue_item
+
+            load_dotenv(_root_env_path(), override=True)
+            with st.spinner(f"正在重新识别第 {index} 题..."):
+                ai_result = recognize_question_structure(
+                    question_crop_paths,
+                    extracted_text=str(item_extra.get("stem_source_with_image_markers") or item_payload.get("raw_source_text") or item_payload.get("stem_tex") or ""),
+                    question_number=str(item_extra.get("detected_question_number") or index),
+                    allowed_topics=SUBJECTS,
+                    image_markers=[str(asset.get("alias") or asset.get("caption") or "") for asset in item_payload.get("assets") or []],
+                )
+            if ai_result.get("error"):
+                st.error(ai_result["error"])
+            else:
+                _sqlite_apply_ai_result_to_batch_item(index, ai_result)
+                document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+                document_questions = document_job.get("questions") or []
+                if index <= len(document_questions):
+                    queue_job_id = str(document_job.get("job_id") or "")
+                    queue_job_dir = Path(str(document_job.get("job_dir") or ""))
+                    if queue_job_id:
+                        create_or_refresh_queue(queue_job_id, jobs_root=queue_job_dir.parent)
+                        finish_queue_item(
+                            queue_job_id,
+                            str(document_questions[index - 1].get("source_item_id") or ""),
+                            result=ai_result,
+                            jobs_root=queue_job_dir.parent,
+                        )
+                st.toast(f"第 {index} 题已重新识别，请人工核对。", icon="✅")
+                st.rerun()
+
+        topic_state_key = item_prefix("topics")
+        current_topics = st.session_state.get(topic_state_key) or []
+        if isinstance(current_topics, list) and "未分类" in current_topics and any(
+            str(topic).strip() and str(topic).strip() != "未分类"
+            for topic in current_topics
+        ):
+            st.session_state[topic_state_key] = [
+                topic for topic in current_topics if str(topic).strip() != "未分类"
+            ]
+
+        first_row = st.columns([1.0, 1.65], gap="small")
+        with first_row[0]:
+            st.selectbox(
+                "题型",
+                type_options,
+                key=item_prefix("question_type_id"),
+                format_func=lambda value: type_name_by_id.get(value, str(value)),
+            )
+        with first_row[1]:
+            st.multiselect("知识板块", SUBJECTS, key=item_prefix("topics"))
+
+        if entry_mode == "批量试题录入":
+            st.markdown("**本题来源（留空则使用上方公共来源）**")
+            series_options = ["__UNMARKED_SOURCE__"] + _editable_paper_type_options()
+            series_labels = {"__UNMARKED_SOURCE__": "未标记来源", **PAPER_TYPES}
+            current_series = st.session_state.get(item_prefix("source_series"), "G")
+            if current_series not in series_options:
+                current_series = "G" if "G" in series_options else series_options[0]
+                st.session_state[item_prefix("source_series")] = current_series
+            is_unmarked_source = current_series == "__UNMARKED_SOURCE__"
+            if is_unmarked_source:
+                st.session_state[item_prefix("source_year")] = ""
+                st.session_state[item_prefix("source_name")] = ""
+                st.session_state[item_prefix("source_track")] = "不区分"
+                st.session_state[item_prefix("question_number")] = ""
+            show_track = (
+                current_series == "G"
+                and st.session_state.get("sqlite_draft_batch_source_kind", "试卷") == "试卷"
+            )
+            if not show_track:
+                st.session_state[item_prefix("source_track")] = "不区分"
+            source_row = st.columns(
+                [0.8, 0.9, 1.0, 1.05, 0.8] if show_track else [0.8, 0.9, 1.6, 0.8],
+                gap="small",
+            )
+            with source_row[0]:
+                st.text_input("年份", key=item_prefix("source_year"))
+            with source_row[1]:
+                st.selectbox(
+                    "卷别",
+                    series_options,
+                    key=item_prefix("source_series"),
+                    format_func=lambda value: (
+                        series_labels.get(value, value)
+                        if value == "__UNMARKED_SOURCE__"
+                        else f"{value} ({PAPER_TYPES.get(value, value)})"
+                    ),
+                )
+            source_name_col = 2
+            if show_track:
+                with source_row[2]:
+                    st.selectbox("文理 / 新高考", ["新高考", "文科", "理科", "不区分"], key=item_prefix("source_track"))
+                source_name_col = 3
+            with source_row[source_name_col]:
+                st.text_input("试卷 / 来源名称", key=item_prefix("source_name"))
+            with source_row[source_name_col + 1]:
+                st.text_input("题号", key=item_prefix("question_number"))
+            if st.session_state.get("sqlite_draft_batch_source_kind", "试卷") == "试卷":
+                _render_sqlite_paper_matcher(
+                    db_path,
+                    state_prefix=f"sqlite_draft_batch_item_paper_match_{index}",
+                    source_kind="试卷",
+                    year=st.session_state.get(item_prefix("source_year"), ""),
+                    paper_series=st.session_state.get(item_prefix("source_series"), ""),
+                    track=st.session_state.get(item_prefix("source_track"), ""),
+                    paper_name=st.session_state.get(item_prefix("source_name"), ""),
+                    field_keys={
+                        "year": item_prefix("source_year"),
+                        "paper_series": item_prefix("source_series"),
+                        "track": item_prefix("source_track"),
+                        "paper_name": item_prefix("source_name"),
+                    },
+                )
+
+        second_row = st.columns([0.68, 1.2, 1.25], gap="small")
+        with second_row[0]:
+            st.selectbox("难度", ["未设置", 1, 2, 3, 4, 5], key=item_prefix("difficulty"))
+        with second_row[1]:
+            st.text_input("标签", key=item_prefix("tags_text"))
+        with second_row[2]:
+            st.text_input("备注", key=item_prefix("note"))
+
+        if entry_mode == "同书试题录入":
+            book_row = st.columns(2, gap="small")
+            with book_row[0]:
+                st.text_input("页码", key=item_prefix("book_page"))
+            with book_row[1]:
+                st.text_input("栏目 / 小节", key=item_prefix("book_column"))
+
+        preview_payload = dict(item_payload)
+        preview_payload["stem_tex"] = st.session_state.get(item_prefix("stem_tex"), "")
+        preview_payload["choices"] = [
+            line.strip()
+            for line in str(st.session_state.get(item_prefix("choices_text")) or "").splitlines()
+            if line.strip()
+        ]
+        st.markdown("**完整 TeX 预览**")
+        preview_markdown = _sqlite_draft_preview_with_assets(
+            _sqlite_draft_standard_preview_tex(preview_payload), preview_payload.get("assets") or []
+        )
+        if preview_markdown.strip():
+            _render_preview_with_inline_assets(preview_markdown)
+        else:
+            st.caption("当前题干为空。")
+
+        with st.expander("**详细编辑** · 题目源码、答案、解析与图片"):
+            st.markdown('<span class="mc-sqlite-batch-detail-anchor"></span>', unsafe_allow_html=True)
+            st.caption(f"参考文件名：{_sqlite_draft_target_filename(item_payload)}")
+            st.text_area("题干 TeX", key=item_prefix("stem_tex"), height=130)
+            st.text_area("选项（每行一项）", key=item_prefix("choices_text"), height=100)
+            st.text_area("答案 TeX", key=item_prefix("answer_tex"), height=72)
+            st.text_area("解析 TeX", key=item_prefix("solution_tex"), height=110)
+            item_assets = [asset for asset in item_payload.get("assets") or [] if isinstance(asset, dict)]
+            if item_assets:
+                st.markdown("**绑定图片**")
+            for asset_index, asset in enumerate(item_assets, start=1):
+                asset_path = str(asset.get("source_path") or "").strip()
+                asset_extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+                page_number = asset.get("page_number") or asset_extra.get("page_number") or "?"
+                binding_confidence = asset.get("binding_confidence") or asset_extra.get("binding_confidence") or 0
+                if asset_path and os.path.isfile(asset_path):
+                    st.image(
+                        asset_path,
+                        caption=f"{asset.get('caption') or f'figure_{asset_index:02d}'} · 第 {page_number} 页 · 绑定置信度 {float(binding_confidence):.0%}",
+                    )
+                else:
+                    st.warning(f"图片文件不可用：{asset_path or '未设置路径'}")
+                asset_alias = str(asset.get("alias") or asset_extra.get("alias") or asset.get("caption") or "").strip()
+                current_stem = str(st.session_state.get(item_prefix("stem_tex")) or "")
+                has_asset_reference = bool(re.search(rf"\\questionasset\{{{re.escape(asset_alias)}\}}", current_stem)) if asset_alias else False
+                if float(binding_confidence) < 0.6:
+                    st.warning("图片归属置信度较低，请确认是否属于本题。")
+                if asset_alias and st.button(
+                    "从题干移除图片引用" if has_asset_reference else "插入图片到题干",
+                    key=item_prefix(f"asset_{asset_index}_stem_reference"),
+                    use_container_width=True,
+                ):
+                    _sqlite_toggle_document_asset_reference(index - 1, asset, item_prefix("stem_tex"))
+                    st.rerun()
+                asset_token = hashlib.md5(
+                    f"{asset_path}:{asset_extra.get('source_block_id') or asset_index}".encode("utf-8")
+                ).hexdigest()[:10]
+                control_col, target_col, action_col = st.columns([1, 1.1, 0.72], gap="small")
+                role_key = item_prefix(f"asset_{asset_token}_role")
+                target_key = item_prefix(f"asset_{asset_token}_target")
+                role_options = ["problem", "answer", "solution", "source"]
+                current_role = str(asset.get("role") or "problem")
+                with control_col:
+                    st.selectbox(
+                        "图片用途",
+                        role_options,
+                        index=role_options.index(current_role) if current_role in role_options else 0,
+                        key=role_key,
+                        format_func=lambda value: {"problem": "题干图片", "answer": "答案图片", "solution": "解析图片", "source": "来源页"}.get(value, value),
+                    )
+                with target_col:
+                    st.selectbox(
+                        "归属题目",
+                        list(range(1, total_questions + 1)),
+                        index=index - 1,
+                        key=target_key,
+                        format_func=lambda value: f"第 {value} 题",
+                    )
+                with action_col:
+                    st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+                    if st.button("应用", key=item_prefix(f"asset_{asset_token}_apply"), use_container_width=True):
+                        _sqlite_move_document_asset(index - 1, asset_index - 1, int(st.session_state[target_key]) - 1, str(st.session_state[role_key]))
+                        st.rerun()
+                if st.button("移除此图", key=item_prefix(f"asset_{asset_token}_remove"), use_container_width=True):
+                    _sqlite_remove_document_asset(index - 1, asset_index - 1)
+                    st.rerun()
+
+        decision_key = item_prefix("import_decision")
+        decision = st.session_state.get(decision_key, "pending")
+        current_question_number = str(st.session_state.get(item_prefix("question_number")) or index).strip()
+        current_extra = dict(item_extra)
+        current_extra["detected_question_number"] = current_question_number
+        current_extra["detected_topic"] = "，".join(
+            _sqlite_paper_match_text(value)
+            for value in (st.session_state.get(item_prefix("topics")) or [])
+            if _sqlite_paper_match_text(value)
+        )
+        if entry_mode == "同书试题录入":
+            current_extra["book_page_number"] = st.session_state.get(item_prefix("book_page"), "")
+            current_extra["book_column_name"] = st.session_state.get(item_prefix("book_column"), "")
+            current_extra["book_title"] = current_extra.get("book_title") or current_extra.get("detected_source") or ""
+            current_extra["book_exercise_number"] = current_question_number
+        current_payload = dict(item_payload)
+        current_payload.update(
+            {
+                "stem_tex": st.session_state.get(item_prefix("stem_tex"), ""),
+                "choices": [line.strip() for line in str(st.session_state.get(item_prefix("choices_text")) or "").splitlines() if line.strip()],
+                "answer_tex": st.session_state.get(item_prefix("answer_tex"), ""),
+                "solution_tex": st.session_state.get(item_prefix("solution_tex"), ""),
+                "question_type_id": st.session_state.get(item_prefix("question_type_id")),
+                "difficulty": None if st.session_state.get(item_prefix("difficulty")) == "未设置" else st.session_state.get(item_prefix("difficulty")),
+                "tags": _sqlite_draft_split_text_list(st.session_state.get(item_prefix("tags_text"), "")),
+                "note": st.session_state.get(item_prefix("note"), ""),
+                "extra": current_extra,
+            }
+        )
+        from services.import_service import (
+            commit_draft_to_question,
+            create_manual_entry_draft,
+            find_paper_position_conflict,
+            find_question_content_matches,
+            link_draft_to_existing_question,
+            record_draft_review_event,
+            update_draft_review_status,
+        )
+
+        source_conflicts = find_paper_position_conflict(db_path, current_extra)
+        content_matches = find_question_content_matches(
+            db_path, str(current_payload.get("stem_tex") or ""), max_results=3
+        )
+        if source_conflicts:
+            conflict_text = "、".join(str(item.get("question_id") or "") for item in source_conflicts)
+            st.warning(f"发现同一试卷同一位置已存在题目：{conflict_text}。这是来源位置重复，不是题干查重。")
+        if batch_position_conflict:
+            st.warning(f"本批内试卷位置冲突：与第 {batch_position_conflict} 题使用相同题号。请修改题号或跳过其中一题。")
+        exact_matches = [item for item in content_matches if item.get("kind") == "exact"]
+        similar_matches = [item for item in content_matches if item.get("kind") == "similar"]
+        if exact_matches:
+            links = " ".join(
+                f"<a href='#duplicate-preview-{html.escape(str(item.get('question_id') or ''))}' data-duplicate-preview-id='{html.escape(str(item.get('question_id') or ''))}'>{html.escape(str(item.get('question_id') or '未分配 ID'))}</a>"
+                for item in exact_matches
+            )
+            st.markdown(
+                f"<div style='margin-bottom:.35rem;padding:.7rem .9rem;border:1px solid #f3b4b4;border-radius:8px;background:#fff0f0;color:#7f1d1d;'>"
+                f"题干完全相同（内容提示，不代表来源位置重复）：{links}</div>",
+                unsafe_allow_html=True,
+            )
+        elif similar_matches:
+            links = " ".join(
+                f"<a href='#duplicate-preview-{html.escape(str(item.get('question_id') or ''))}' data-duplicate-preview-id='{html.escape(str(item.get('question_id') or ''))}'>{html.escape(str(item.get('question_id') or '未分配 ID'))} ({float(item.get('score') or 0):.0%}相似度)</a>"
+                for item in similar_matches
+            )
+            st.markdown(
+                f"<div style='margin-bottom:.35rem;padding:.7rem .9rem;border:1px solid #f0cf83;border-radius:8px;background:#fff8df;color:#744210;'>"
+                f"题干高度相似（内容提示，请人工判断）：{links}</div>",
+                unsafe_allow_html=True,
+            )
+        if decision == "committed":
+            st.success("本题已单独录入")
+        elif decision == "linked":
+            st.success(f"已关联到已有题目：{st.session_state.get(item_prefix('linked_question_id'), '')}")
+        elif decision == "skipped":
+            st.info("本题已选择不录入")
+        else:
+            action_col, link_col, skip_col = st.columns([1.2, 1.2, 0.8], gap="small")
+            with action_col:
+                if st.button(
+                    "单独录入本题" if not source_conflicts else "仍然录入本题",
+                    key=item_prefix("commit_one"),
+                    use_container_width=True,
+                    disabled=bool(source_conflicts),
+                    help="同一试卷、年份、题号和小题已存在时，建议跳过本题。",
+                ):
+                    try:
+                        result = create_manual_entry_draft(
+                            db_path,
+                            {
+                                **current_payload,
+                                "source_item_id": f"batch-item-{index}",
+                                "source_label": f"批量第 {index} 题",
+                                "review_status": "ready",
+                            },
+                            source_path=f"streamlit/manual-entry/{entry_mode}/single",
+                        )
+                        commit_draft_to_question(
+                            db_path, result["draft_id"], operator="streamlit_batch_single_import", require_ready=False
+                        )
+                        st.session_state[decision_key] = "committed"
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"单题录入失败：{exc}")
+            with link_col:
+                link_target = str(source_conflicts[0].get("question_id") or "") if source_conflicts else ""
+                if st.button(
+                    "关联已有题目",
+                    key=item_prefix("link_one"),
+                    use_container_width=True,
+                    disabled=not link_target,
+                    help="只新增当前来源关系，不复制题干、答案或图片。",
+                ):
+                    try:
+                        draft_result = create_manual_entry_draft(
+                            db_path,
+                            {
+                                **current_payload,
+                                "source_item_id": f"batch-item-{index}",
+                                "source_label": f"批量第 {index} 题",
+                                "review_status": "ready",
+                            },
+                            source_path=f"streamlit/manual-entry/{entry_mode}/linked",
+                        )
+                        link_draft_to_existing_question(
+                            db_path, draft_result["draft_id"], link_target,
+                            operator="streamlit_batch_single_link",
+                        )
+                        st.session_state[item_prefix("linked_question_id")] = link_target
+                        st.session_state[decision_key] = "linked"
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"关联已有题目失败：{exc}")
+            with skip_col:
+                if st.button("确认不录入", key=item_prefix("skip_one"), use_container_width=True):
+                    try:
+                        skipped = create_manual_entry_draft(
+                            db_path,
+                            {
+                                **current_payload,
+                                "source_item_id": f"batch-item-{index}",
+                                "source_label": f"批量第 {index} 题",
+                                "review_status": "rejected",
+                                "review_reason": "用户在批量录入时确认不录入",
+                            },
+                            source_path=f"streamlit/manual-entry/{entry_mode}/skipped",
+                        )
+                        update_draft_review_status(
+                            db_path,
+                            skipped["draft_id"],
+                            "rejected",
+                            "用户在批量录入时确认不录入",
+                        )
+                        record_draft_review_event(
+                            db_path,
+                            skipped["draft_id"],
+                            status="rejected",
+                            reason="用户在批量录入时确认不录入",
+                            operator="streamlit_batch_review",
+                        )
+                        st.session_state[decision_key] = "skipped"
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"记录跳过决定失败：{exc}")
+        duplicate_preview_ids = [
+            str(match.get("question_id") or "").strip()
+            for match in [*exact_matches, *similar_matches]
+            if str(match.get("question_id") or "").strip()
+        ]
+    return duplicate_preview_ids
+
+
+def _install_duplicate_preview_client_script() -> None:
+    """Install one delegated client handler for all duplicate preview panels."""
+    components.html(
+        """
+        <script>
+        (() => {
+            const win = window.parent;
+            const doc = win.document;
+            if (win.__mcDuplicatePreviewGlobalBound) return;
+            win.__mcDuplicatePreviewGlobalBound = true;
+            const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
+            const panelForId = (id) => {
+                const escaped = win.CSS && win.CSS.escape ? win.CSS.escape(id) : id.replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
+                const marker = doc.querySelector('.mc-duplicate-preview-anchor[data-question-id="' + escaped + '"]');
+                return marker ? marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
+            };
+            const setupPanels = () => {
+                doc.querySelectorAll('.mc-duplicate-preview-anchor').forEach((marker) => {
+                    const panel = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                    if (!panel || panel.dataset.duplicatePanelBound === '1') return;
+                    panel.dataset.duplicatePanelBound = '1';
+                    panel.classList.add('mc-duplicate-preview-panel');
+                    const grip = doc.createElement('div');
+                    grip.className = 'mc-duplicate-preview-resize-grip';
+                    panel.appendChild(grip);
+                    const header = panel.querySelector('.mc-duplicate-preview-header');
+                    const key = marker.dataset.questionId || 'unknown';
+                    const storageKey = (name) => 'mcDuplicate_' + key + '_' + name;
+                    const saved = (name, fallback) => Number(win.localStorage.getItem(storageKey(name)) || fallback);
+                    panel.style.setProperty('width', clamp(saved('width', 620), 420, win.innerWidth - 84) + 'px', 'important');
+                    panel.style.setProperty('height', clamp(saved('height', 620), 280, win.innerHeight - 116) + 'px', 'important');
+                    let moving = false, resizing = false, ox = 0, oy = 0, sx = 0, sy = 0, sw = 0, sh = 0;
+                    panel.addEventListener('pointerdown', (event) => {
+                        const rect = panel.getBoundingClientRect();
+                        if (event.target.closest('.mc-duplicate-preview-resize-grip') || (rect.right - event.clientX <= 34 && rect.bottom - event.clientY <= 34)) {
+                            resizing = true; sx = event.clientX; sy = event.clientY; sw = rect.width; sh = rect.height;
+                            panel.setPointerCapture(event.pointerId); event.preventDefault(); return;
+                        }
+                        if (!header || !event.target.closest('.mc-duplicate-preview-header')) return;
+                        moving = true; ox = event.clientX - rect.left; oy = event.clientY - rect.top;
+                        panel.setPointerCapture(event.pointerId); event.preventDefault();
+                    });
+                    panel.addEventListener('pointermove', (event) => {
+                        if (resizing) {
+                            const rect = panel.getBoundingClientRect();
+                            const width = clamp(sw + event.clientX - sx, 420, win.innerWidth - rect.left - 12);
+                            const height = clamp(sh + event.clientY - sy, 280, win.innerHeight - rect.top - 12);
+                            panel.style.setProperty('width', width + 'px', 'important');
+                            panel.style.setProperty('height', height + 'px', 'important');
+                            win.localStorage.setItem(storageKey('width'), width);
+                            win.localStorage.setItem(storageKey('height'), height);
+                        } else if (moving) {
+                            const rect = panel.getBoundingClientRect();
+                            const x = clamp(event.clientX - ox, 72, win.innerWidth - rect.width - 12);
+                            const y = clamp(event.clientY - oy, 12, win.innerHeight - 90);
+                            panel.style.setProperty('left', x + 'px', 'important');
+                            panel.style.setProperty('top', y + 'px', 'important');
+                            panel.style.setProperty('right', 'auto', 'important');
+                        }
+                    });
+                    const stop = () => { moving = false; resizing = false; };
+                    panel.addEventListener('pointerup', stop);
+                    panel.addEventListener('pointercancel', stop);
+                });
+            };
+            win.__mcDuplicatePreviewClickHandler = (event) => {
+                const link = event.target && event.target.closest ? event.target.closest('a[data-duplicate-preview-id]') : null;
+                if (!link) return;
+                event.preventDefault(); event.stopPropagation();
+                const panel = panelForId(link.dataset.duplicatePreviewId || '');
+                if (panel) panel.classList.add('mc-duplicate-preview-open');
+            };
+            win.__mcDuplicatePreviewCloseHandler = (event) => {
+                const close = event.target && event.target.closest ? event.target.closest('.mc-duplicate-preview-close') : null;
+                if (!close) return;
+                const panel = close.closest('.mc-duplicate-preview-panel');
+                if (panel) { event.preventDefault(); event.stopImmediatePropagation(); panel.classList.remove('mc-duplicate-preview-open'); }
+            };
+            doc.addEventListener('click', win.__mcDuplicatePreviewClickHandler, true);
+            doc.addEventListener('pointerdown', win.__mcDuplicatePreviewCloseHandler, true);
+            setupPanels();
+            if (win.__mcDuplicatePreviewObserver) win.__mcDuplicatePreviewObserver.disconnect();
+            win.__mcDuplicatePreviewObserver = new win.MutationObserver(setupPanels);
+            win.__mcDuplicatePreviewObserver.observe(doc.body, {childList: true, subtree: true});
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
+def _render_sqlite_batch_question_grid(
+    preview_payloads: list[dict],
+    *,
+    entry_mode: str,
+    type_options: list,
+    type_name_by_id: dict,
+    db_path: str,
+) -> None:
+    _install_duplicate_preview_client_script()
+    st.divider()
+    title_col, count_col = st.columns([1, 0.3], vertical_alignment="bottom")
+    with title_col:
+        st.markdown("### 逐题预览与校订")
+    with count_col:
+        st.caption(f"共 {len(preview_payloads)} 题")
+    position_seen: dict[tuple[str, str, str], int] = {}
+    position_conflicts: dict[int, str] = {}
+    for position_index, payload in enumerate(preview_payloads, start=1):
+        extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+        if str(extra.get("source_kind") or "") != "试卷":
+            continue
+        identity = str(extra.get("paper_standard_id") or "") or "|".join(
+            str(extra.get(key) or "").strip()
+            for key in ("detected_year", "paper_series", "track", "detected_source")
+        )
+        number = str(extra.get("detected_question_number") or position_index).strip()
+        sub_number = str(extra.get("sub_number") or "").strip()
+        key = (identity, number, sub_number)
+        if identity and key in position_seen:
+            position_conflicts[position_index] = str(position_seen[key])
+        elif identity:
+            position_seen[key] = position_index
+    duplicate_preview_ids: list[str] = []
+    for row_start in range(0, len(preview_payloads), 2):
+        row_columns = st.columns(2, gap="medium")
+        for column_offset, item_payload in enumerate(preview_payloads[row_start : row_start + 2]):
+            index = row_start + column_offset + 1
+            with row_columns[column_offset]:
+                duplicate_preview_ids.extend(_render_sqlite_batch_question_card(
+                    item_payload,
+                    index=index,
+                    entry_mode=entry_mode,
+                    type_options=type_options,
+                    type_name_by_id=type_name_by_id,
+                    total_questions=len(preview_payloads),
+                    db_path=db_path,
+                    batch_position_conflict=position_conflicts.get(index, ""),
+                ))
+    for question_id in dict.fromkeys(duplicate_preview_ids):
+        render_duplicate_question_preview_panel(question_id)
+
+
+def _commit_sqlite_batch_entry_payloads(
+    payloads: list[dict],
+    *,
+    entry_mode: str,
+    db_path: str,
+    question_to_legacy_tex,
+) -> dict:
+    """Create and commit the selected batch drafts from the review workspace."""
+    from services.import_service import create_manual_entry_drafts, commit_drafts_to_questions
+
+    if not payloads:
+        return {"status": "empty", "committed": [], "message": "没有符合条件的待录入题目。"}
+    if len(payloads) > 60:
+        return {"status": "error", "message": "一次最多录入 60 道题，请分批处理。"}
+    if any(item.get("extra", {}).get("source_kind") == "试卷" for item in payloads):
+        from services.paper_catalog_service import catalog_schema_available
+
+        if catalog_schema_available(db_path) and any(
+            item.get("extra", {}).get("source_kind") == "试卷"
+            and not item.get("extra", {}).get("paper_standard_id")
+            for item in payloads
+        ):
+            return {"status": "error", "message": "请先完成全部试卷的标准名称确认，再批量录入。"}
+    result = create_manual_entry_drafts(
+        db_path,
+        payloads,
+        source_path=f"streamlit/manual-entry/{entry_mode}",
+        mode=entry_mode,
+        summary=f"{entry_mode} · {len(payloads)} 题",
+    )
+    blocked = [
+        item for item in result.get("results") or []
+        if (item.get("validation") or {}).get("errors")
+    ]
+    if blocked:
+        return {"status": "error", "message": f"有 {len(blocked)} 道题存在硬错误，未执行批量录入。"}
+    commit_result = commit_drafts_to_questions(
+        db_path,
+        [str(item.get("draft_id") or "") for item in result.get("results") or []],
+        operator="streamlit_batch_direct_import",
+        require_ready=False,
+    )
+    return commit_result
 
 
 def render_sqlite_manual_draft_entry():
@@ -4487,6 +7274,16 @@ def render_sqlite_manual_draft_entry():
             font-size: 1rem;
             line-height: 1.35;
             font-weight: 820;
+        }
+        body:has(.mc-sqlite-draft-entry-anchor) div[data-testid="stExpander"]:has(.mc-sqlite-batch-detail-anchor) summary {
+            background: #f5f3ff !important;
+        }
+        body:has(.mc-sqlite-draft-entry-anchor) div[data-testid="column"]:has(.mc-sqlite-batch-tex-anchor) div[data-testid="stTextArea"] textarea {
+            background: transparent !important;
+        }
+        body:has(.mc-sqlite-draft-entry-anchor) div[data-testid="stExpander"]:has(.mc-sqlite-batch-detail-anchor) summary strong {
+            color: #6d28d9 !important;
+            font-weight: 800 !important;
         }
         .mc-sqlite-entry-help {
             margin: 0.35rem 0 0.68rem;
@@ -4630,7 +7427,7 @@ def render_sqlite_manual_draft_entry():
         st.error(f"读取 SQLite 选项失败：{exc}")
         return
 
-    question_types = options.get("question_types", [])
+    question_types = options.get("all_question_types") or options.get("question_types", [])
     type_options = [item.get("question_type_id") for item in question_types]
     if 5 not in type_options:
         type_options.append(5)
@@ -4638,12 +7435,15 @@ def render_sqlite_manual_draft_entry():
     type_name_by_id.setdefault(5, "其他")
 
     defaults = {
-        "sqlite_draft_entry_mode": "单题录入",
+        "sqlite_draft_entry_mode": "批量试题录入",
         "sqlite_draft_source_kind": "试卷",
         "sqlite_draft_year": str(datetime.datetime.now().year),
         "sqlite_draft_paper_series": "G",
         "sqlite_draft_track": "新高考",
         "sqlite_draft_source_name": "",
+        "sqlite_draft_topic_module": "",
+        "sqlite_draft_topic_group": "",
+        "sqlite_draft_topic_note": "",
         "sqlite_draft_question_number": "",
         "sqlite_draft_sub_number": "",
         "sqlite_draft_show_sub_number": False,
@@ -4669,7 +7469,11 @@ def render_sqlite_manual_draft_entry():
         "sqlite_draft_batch_paper_series": "G",
         "sqlite_draft_batch_track": "新高考",
         "sqlite_draft_batch_source_name": "",
+        "sqlite_draft_batch_topic_module": "",
+        "sqlite_draft_batch_topic_group": "",
+        "sqlite_draft_batch_topic_note": "",
         "sqlite_draft_batch_topic": "",
+        "sqlite_draft_batch_topics": [],
         "sqlite_draft_batch_book_page": "",
         "sqlite_draft_batch_book_column": "",
         "sqlite_draft_batch_book_exercise": "",
@@ -4693,36 +7497,46 @@ def render_sqlite_manual_draft_entry():
         if topic_items:
             st.session_state["sqlite_draft_topic_multi"] = topic_items
     if st.session_state.get("sqlite_draft_entry_mode") not in SQLITE_DRAFT_ENTRY_MODES:
-        st.session_state["sqlite_draft_entry_mode"] = "单题录入"
+        st.session_state["sqlite_draft_entry_mode"] = "批量试题录入"
 
-    left_col, form_col, preview_col = st.columns([1.08, 1.56, 0.96], gap="medium")
+    current_entry_mode = st.session_state.get("sqlite_draft_entry_mode", "批量试题录入")
+    entry_columns = [1.0, 1.15, 1.35]
+    left_col, form_col, preview_col = st.columns(entry_columns, gap="medium")
     with left_col:
         st.markdown('<span class="mc-sqlite-entry-rail-anchor"></span>', unsafe_allow_html=True)
         st.markdown("##### 录入方式")
-        entry_mode = st.radio(
-            "录入方式",
-            SQLITE_DRAFT_ENTRY_MODES,
-            key="sqlite_draft_entry_mode",
-            label_visibility="collapsed",
-        )
+        mode_button_cols = st.columns(3, gap="small")
+        for mode_col, mode_value in zip(mode_button_cols, SQLITE_DRAFT_ENTRY_MODES):
+            with mode_col:
+                if st.button(
+                    mode_value,
+                    key=f"sqlite_entry_mode_button_{mode_value}",
+                    type="primary" if current_entry_mode == mode_value else "secondary",
+                    use_container_width=True,
+                ):
+                    st.session_state["sqlite_draft_entry_mode"] = mode_value
+                    st.rerun()
+        entry_mode = st.session_state.get("sqlite_draft_entry_mode", "批量试题录入")
         mode_help = {
-            "单题录入": "适合人工校订一题，字段最完整，右侧实时预览。",
             "批量试题录入": "适合粘贴多题 TeX；优先识别分隔符或 problem 环境。",
             "同卷试题录入": "多题共享同一试卷来源，题号优先从 problem 头读取。",
             "同书试题录入": "多题共享同一教材、页码和栏目，后续可转为教材来源关系。",
+            "PDF 导入草稿": "上传 PDF，核对页面切分结果并逐题校订；所有内容只保存在本地任务目录。",
         }
         st.caption(mode_help.get(entry_mode, ""))
-        st.divider()
-        _render_sqlite_entry_ai_recognition_panel(entry_mode)
-        if entry_mode == "单题录入":
-            st.divider()
-            st.toggle(
-                "显示草稿审核与入库",
-                key="sqlite_draft_show_review_workspace",
-                help="单题保存后可在这里打开审核区，确认 ready/approved 后再写入正式 SQLite。",
-            )
-        else:
-            st.caption("批量、同卷、同书模式会在下方显示草稿审核区。")
+        if entry_mode != "PDF 导入草稿":
+            _render_sqlite_entry_ai_recognition_panel(entry_mode)
+            if entry_mode == "单题录入":
+                st.divider()
+                st.toggle(
+                    "显示草稿审核与入库",
+                    key="sqlite_draft_show_review_workspace",
+                    help="单题保存后可在这里打开审核区，确认 ready/approved 后再写入正式 SQLite。",
+                )
+
+    if entry_mode == "PDF 导入草稿":
+        _render_sqlite_pdf_import_workspace(left_col, form_col, preview_col, type_options, type_name_by_id)
+        return
 
     submitted = False
     batch_submitted = False
@@ -4757,7 +7571,7 @@ def render_sqlite_manual_draft_entry():
 
             extra_col_1, extra_col_2, extra_col_3, extra_col_4 = st.columns([1.05, 1.05, 1.18, 0.88], gap="small")
             with extra_col_1:
-                st.selectbox("来源类型", ["试卷", "教材", "专题", "其他"], key="sqlite_draft_source_kind")
+                st.selectbox("来源类型", ["试卷", "教材", "专题", "未标记来源", "其他"], key="sqlite_draft_source_kind")
             with extra_col_2:
                 st.selectbox("文理 / 新高考", ["新高考", "文科", "理科", "不区分"], key="sqlite_draft_track")
             with extra_col_3:
@@ -4769,6 +7583,31 @@ def render_sqlite_manual_draft_entry():
                 )
             with extra_col_4:
                 st.selectbox("难度", ["未设置", 1, 2, 3, 4, 5], key="sqlite_draft_difficulty")
+
+            if st.session_state.get("sqlite_draft_source_kind") == "专题":
+                topic_meta_col_1, topic_meta_col_2, topic_meta_col_3 = st.columns([1.1, 1.1, 1.6], gap="small")
+                with topic_meta_col_1:
+                    st.text_input("专题模块", key="sqlite_draft_topic_module")
+                with topic_meta_col_2:
+                    st.text_input("专题分组", key="sqlite_draft_topic_group")
+                with topic_meta_col_3:
+                    st.text_input("专题备注", key="sqlite_draft_topic_note")
+
+            _render_sqlite_paper_matcher(
+                db_path,
+                state_prefix="sqlite_draft_single_paper_match",
+                source_kind=st.session_state.get("sqlite_draft_source_kind", ""),
+                year=st.session_state.get("sqlite_draft_year", ""),
+                paper_series=st.session_state.get("sqlite_draft_paper_series", ""),
+                track=st.session_state.get("sqlite_draft_track", ""),
+                paper_name=st.session_state.get("sqlite_draft_source_name", ""),
+                field_keys={
+                    "year": "sqlite_draft_year",
+                    "paper_series": "sqlite_draft_paper_series",
+                    "track": "sqlite_draft_track",
+                    "paper_name": "sqlite_draft_source_name",
+                },
+            )
 
             st.markdown("##### 🏷️ 附加属性")
             tag_col, remark_col, ai_col = st.columns([1.35, 1.35, 0.9], gap="small")
@@ -4832,7 +7671,7 @@ def render_sqlite_manual_draft_entry():
             if entry_mode == "批量试题录入":
                 source_kind_col, batch_year_col = st.columns([1.1, 1.0], gap="small")
                 with source_kind_col:
-                    st.selectbox("来源类型", ["试卷", "教材", "专题", "其他"], key="sqlite_draft_batch_source_kind")
+                    st.selectbox("来源类型", ["试卷", "教材", "专题", "未标记来源", "其他"], key="sqlite_draft_batch_source_kind")
                 with batch_year_col:
                     st.text_input("年份 / 册次", key="sqlite_draft_batch_year")
             else:
@@ -4859,62 +7698,90 @@ def render_sqlite_manual_draft_entry():
                     st.selectbox("文理 / 新高考", ["新高考", "文科", "理科", "不区分"], key="sqlite_draft_batch_track")
                 with source_row_3:
                     st.text_input("试卷 / 来源名称", key="sqlite_draft_batch_source_name")
-                st.text_input("知识板块", key="sqlite_draft_batch_topic")
+                batch_source_kind = (
+                    st.session_state.get("sqlite_draft_batch_source_kind", "")
+                    if entry_mode == "批量试题录入"
+                    else "试卷"
+                )
+                _render_sqlite_paper_matcher(
+                    db_path,
+                    state_prefix="sqlite_draft_batch_paper_match",
+                    source_kind=batch_source_kind,
+                    year=st.session_state.get("sqlite_draft_batch_year", ""),
+                    paper_series=st.session_state.get("sqlite_draft_batch_paper_series", ""),
+                    track=st.session_state.get("sqlite_draft_batch_track", ""),
+                    paper_name=st.session_state.get("sqlite_draft_batch_source_name", ""),
+                    field_keys={
+                        "year": "sqlite_draft_batch_year",
+                        "paper_series": "sqlite_draft_batch_paper_series",
+                        "track": "sqlite_draft_batch_track",
+                        "paper_name": "sqlite_draft_batch_source_name",
+                    },
+                )
+                st.multiselect("共同知识板块（可选）", SUBJECTS, key="sqlite_draft_batch_topics")
+                if st.session_state.get("sqlite_draft_batch_source_kind") == "专题":
+                    topic_meta_col_1, topic_meta_col_2, topic_meta_col_3 = st.columns([1.1, 1.1, 1.6], gap="small")
+                    with topic_meta_col_1:
+                        st.text_input("专题模块", key="sqlite_draft_batch_topic_module")
+                    with topic_meta_col_2:
+                        st.text_input("专题分组", key="sqlite_draft_batch_topic_group")
+                    with topic_meta_col_3:
+                        st.text_input("专题备注", key="sqlite_draft_batch_topic_note")
+                _render_sqlite_batch_paper_matchers(db_path, entry_mode)
             else:
-                book_name_col, book_page_col = st.columns([1.45, 0.7], gap="small")
-                with book_name_col:
-                    st.text_input("教材名称", key="sqlite_draft_batch_source_name")
-                with book_page_col:
-                    st.text_input("页码", key="sqlite_draft_batch_book_page")
-                book_column_col, book_exercise_col = st.columns([1.2, 0.95], gap="small")
-                with book_column_col:
-                    st.text_input("栏目", key="sqlite_draft_batch_book_column", placeholder="例如：习题、例题、复习题")
-                with book_exercise_col:
-                    st.text_input("起始题号", key="sqlite_draft_batch_book_exercise", placeholder="可选")
+                st.text_input("教材名称", key="sqlite_draft_batch_source_name")
+                st.caption("页码、栏目和题号在右侧逐题设置，不会错误地套用到整本书。")
 
-            st.markdown('<div class="mc-sqlite-entry-section">批量字段</div>', unsafe_allow_html=True)
-            default_type_col, default_diff_col = st.columns([1.25, 0.9], gap="small")
-            with default_type_col:
-                st.selectbox(
-                    "默认题型",
-                    type_options,
-                    key="sqlite_draft_batch_question_type_id",
-                    format_func=lambda value: type_name_by_id.get(value, str(value)),
+            if entry_mode == "批量试题录入":
+                st.markdown('<div class="mc-sqlite-entry-section">批量默认字段</div>', unsafe_allow_html=True)
+                default_type_col, default_diff_col = st.columns([1.25, 0.9], gap="small")
+                with default_type_col:
+                    st.selectbox(
+                        "默认题型",
+                        type_options,
+                        key="sqlite_draft_batch_question_type_id",
+                        format_func=lambda value: type_name_by_id.get(value, str(value)),
+                    )
+                with default_diff_col:
+                    st.selectbox("默认难度", ["未设置", 1, 2, 3, 4, 5], key="sqlite_draft_batch_difficulty")
+                st.text_input("默认标签（逗号或换行分隔）", key="sqlite_draft_batch_tags_text")
+                st.text_area("默认备注", key="sqlite_draft_batch_note", height=62)
+                show_batch_asset_panel = st.toggle("添加图片 / 附件草稿路径", key="sqlite_draft_batch_show_assets_panel")
+                if show_batch_asset_panel:
+                    st.markdown(
+                        "<div class='mc-sqlite-entry-asset-toggle-note'>批量模式下这里作为共同附件草稿；逐题图片建议后续在审核区补录。每行同样支持 <code>role | 文件路径 | 命名 | 说明</code>。</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.text_area("资源路径", key="sqlite_draft_batch_asset_lines", height=82, label_visibility="collapsed")
+            else:
+                st.caption("右侧每道题分别设置题号、知识板块、题型、难度、标签、备注和题目内容。")
+            with preview_col:
+                st.markdown('<span class="mc-sqlite-batch-tex-anchor"></span>', unsafe_allow_html=True)
+                st.markdown("### TeX 内容")
+                st.text_area(
+                    "批量 TeX 内容",
+                    key="sqlite_draft_batch_text",
+                    height=430,
+                    placeholder="可粘贴多个完整 problem；也支持 ---xxx.tex--- 分隔格式。",
                 )
-            with default_diff_col:
-                st.selectbox("默认难度", ["未设置", 1, 2, 3, 4, 5], key="sqlite_draft_batch_difficulty")
-            st.text_input("默认标签（逗号或换行分隔）", key="sqlite_draft_batch_tags_text")
-            st.text_area("默认备注", key="sqlite_draft_batch_note", height=62)
-            show_batch_asset_panel = st.toggle("添加图片 / 附件草稿路径", key="sqlite_draft_batch_show_assets_panel")
-            if show_batch_asset_panel:
-                st.markdown(
-                    "<div class='mc-sqlite-entry-asset-toggle-note'>批量模式下这里作为共同附件草稿；逐题图片建议后续在审核区补录。每行同样支持 <code>role | 文件路径 | 命名 | 说明</code>。</div>",
-                    unsafe_allow_html=True,
-                )
-                st.text_area("资源路径", key="sqlite_draft_batch_asset_lines", height=82, label_visibility="collapsed")
-            st.markdown('<div class="mc-sqlite-entry-section">TeX 内容</div>', unsafe_allow_html=True)
-            st.text_area(
-                "批量 TeX 内容",
-                key="sqlite_draft_batch_text",
-                height=320,
-                placeholder="可粘贴多个完整 problem；也支持 ---xxx.tex--- 分隔格式。",
-            )
-            ready_col, save_col = st.columns([1.25, 1.0], gap="small")
-            with ready_col:
-                st.checkbox("字段完整且无警告时标记为 ready", key="sqlite_draft_batch_allow_ready")
-            with save_col:
-                st.markdown('<div class="mc-sqlite-entry-batch-actions"></div>', unsafe_allow_html=True)
-                batch_submitted = st.button("批量保存为 SQLite 待审核草稿", key="sqlite_draft_batch_submit", type="primary", use_container_width=True)
+                batch_submitted = False
 
     if submitted:
         try:
             payload = _sqlite_draft_payload_from_state(question_to_legacy_tex)
+            if payload.get("extra", {}).get("source_kind") == "试卷":
+                from services.paper_catalog_service import catalog_schema_available
+
+                if catalog_schema_available(db_path) and not payload.get("extra", {}).get("paper_standard_id"):
+                    raise ValueError("请先完成试卷标准名确认，再保存草稿")
             result = create_manual_entry_draft(
                 db_path,
                 payload,
                 source_path=f"streamlit/manual-entry/{payload.get('extra', {}).get('source_kind', 'manual')}",
             )
             st.session_state["sqlite_draft_last_result"] = result
+            if payload.get("extra", {}).get("source_kind") == "试卷":
+                _sqlite_attach_paper_review_context(db_path, "sqlite_draft_single_paper_match", result)
             if result.get("draft_id"):
                 st.session_state["sqlite_draft_selected_id"] = result["draft_id"]
             st.toast(f"草稿已保存：{result['draft_id']}", icon="✅")
@@ -4923,11 +7790,34 @@ def render_sqlite_manual_draft_entry():
     if batch_submitted:
         try:
             payloads = _sqlite_draft_batch_payloads_from_state(entry_mode, question_to_legacy_tex)
+            handled_decisions = {
+                index: st.session_state.get(_sqlite_draft_batch_item_field_key(index, "import_decision"), "pending")
+                for index in range(1, len(payloads) + 1)
+            }
+            pending_payloads = [
+                payload
+                for index, payload in enumerate(payloads, start=1)
+                if handled_decisions.get(index) not in {"committed", "linked", "skipped"}
+            ]
+            skipped_count = sum(value == "skipped" for value in handled_decisions.values())
+            committed_count = sum(value in {"committed", "linked"} for value in handled_decisions.values())
+            payloads = pending_payloads
             if not payloads:
-                st.warning("没有解析到可保存的题目。")
+                st.info(f"没有待录入题目。此前已单独录入 {committed_count} 题、跳过 {skipped_count} 题。")
             elif len(payloads) > 60:
                 st.warning("一次最多建议保存 60 题；请拆分后再保存。")
             else:
+                if any(item.get("extra", {}).get("source_kind") == "试卷" for item in payloads):
+                    from services.paper_catalog_service import catalog_schema_available
+
+                    if catalog_schema_available(db_path) and any(
+                        item.get("extra", {}).get("source_kind") == "试卷"
+                        and not item.get("extra", {}).get("paper_standard_id")
+                        for item in payloads
+                    ):
+                        raise ValueError("请先完成全部试卷分组的标准名确认，再批量保存草稿")
+                from services.import_service import commit_drafts_to_questions
+
                 result = create_manual_entry_drafts(
                     db_path,
                     payloads,
@@ -4936,9 +7826,141 @@ def render_sqlite_manual_draft_entry():
                     summary=f"{entry_mode} · {len(payloads)} 题",
                 )
                 st.session_state["sqlite_draft_last_result"] = result
-                st.toast(f"已保存 {result['draft_count']} 条草稿", icon="✅")
+                if any(item.get("extra", {}).get("source_kind") == "试卷" for item in payloads):
+                    _sqlite_attach_batch_paper_review_contexts(db_path, result)
+                blocked = [
+                    item
+                    for item in result.get("results") or []
+                    if (item.get("validation") or {}).get("errors")
+                ]
+                if blocked:
+                    details = "；".join(
+                        f"第 {item.get('index')} 题：{'、'.join(str(error) for error in (item.get('validation') or {}).get('errors') or [])}"
+                        for item in blocked[:5]
+                    )
+                    st.error(f"本批暂未录入，发现 {len(blocked)} 道题存在硬错误：{details}")
+                else:
+                    commit_result = commit_drafts_to_questions(
+                        db_path,
+                        [str(item.get("draft_id") or "") for item in result.get("results") or []],
+                        operator="streamlit_batch_direct_import",
+                        require_ready=False,
+                    )
+                    st.session_state["sqlite_draft_last_result"] = {
+                        "draft_count": len(result.get("results") or []),
+                        "batch_id": result.get("batch_id") or "",
+                        "status_counts": {"committed": len(commit_result.get("committed") or [])},
+                        "direct_import": True,
+                        "results": commit_result.get("results") or [],
+                        "batch_commit": commit_result,
+                    }
+                    if commit_result.get("status") == "committed":
+                        warning_count = len(commit_result.get("warnings") or [])
+                        warning_text = f"，有 {warning_count} 题提醒请后续补充" if warning_count else ""
+                        st.toast(f"已直接录入 {len(commit_result.get('committed') or [])} 道正式题{warning_text}", icon="✅")
+                    else:
+                        st.error(commit_result.get("message") or "整批提交失败，已回滚")
         except Exception as exc:
             st.error(f"批量保存草稿失败：{exc}")
+
+    if entry_mode != "单题录入":
+        try:
+            batch_preview_cache_key = _sqlite_draft_batch_preview_state_key(entry_mode)
+            batch_preview_cache = st.session_state.get("sqlite_draft_batch_preview_cache") or {}
+            if batch_preview_cache.get("key") == batch_preview_cache_key:
+                preview_payloads = batch_preview_cache.get("payloads") or []
+            else:
+                preview_payloads = _sqlite_draft_batch_payloads_from_state(
+                    entry_mode,
+                    question_to_legacy_tex,
+                    include_normalized_tex=False,
+                )
+                st.session_state["sqlite_draft_batch_preview_cache"] = {
+                    "key": batch_preview_cache_key,
+                    "payloads": preview_payloads,
+                }
+            # Keep the page-level AI status visible even when a restored job has
+            # no currently populated preview items (for example after a failed
+            # page response). The review grid is a separate concern.
+            if st.session_state.get("sqlite_draft_batch_document_job"):
+                _render_sqlite_document_ai_queue(entry_mode)
+            if preview_payloads:
+                st.markdown("### 草稿审核与逐题确认")
+                st.caption("以下内容仍是本地导入草稿；逐题核对、标记跳过或单独录入后，再点击下方按钮写入正式题库。")
+                batch_action_col, clean_action_col, similar_action_col = st.columns(3, gap="small")
+                with batch_action_col:
+                    import_all_pending = st.button(
+                        "录入所有未处理问题",
+                        key=f"sqlite_batch_import_all_pending_{entry_mode}",
+                        type="primary",
+                        use_container_width=True,
+                    )
+                with clean_action_col:
+                    import_non_duplicate = st.button(
+                        "录入所有非重复问题",
+                        key=f"sqlite_batch_import_non_duplicate_{entry_mode}",
+                        use_container_width=True,
+                        help="排除题干完全相同和高度相似的题目。",
+                    )
+                with similar_action_col:
+                    import_non_exact = st.button(
+                        "录入所有非重复与相似问题",
+                        key=f"sqlite_batch_import_non_exact_{entry_mode}",
+                        use_container_width=True,
+                        help="排除题干完全相同的题目，但保留高度相似题供后续人工处理。",
+                    )
+                selected_action = (
+                    "all" if import_all_pending else
+                    "non_duplicate" if import_non_duplicate else
+                    "non_exact" if import_non_exact else ""
+                )
+                if selected_action:
+                    from services.import_service import find_question_content_matches
+
+                    pending_payloads = []
+                    for item_index, payload in enumerate(preview_payloads, start=1):
+                        decision = st.session_state.get(
+                            _sqlite_draft_batch_item_field_key(item_index, "import_decision"),
+                            "pending",
+                        )
+                        if decision in {"committed", "linked", "skipped"}:
+                            continue
+                        matches = find_question_content_matches(
+                            db_path,
+                            str(payload.get("stem_tex") or ""),
+                            max_results=3,
+                        )
+                        kinds = {str(item.get("kind") or "") for item in matches}
+                        if selected_action == "non_duplicate" and kinds.intersection({"exact", "similar"}):
+                            continue
+                        if selected_action == "non_exact" and "exact" in kinds:
+                            continue
+                        pending_payloads.append(payload)
+                    result = _commit_sqlite_batch_entry_payloads(
+                        pending_payloads,
+                        entry_mode=entry_mode,
+                        db_path=db_path,
+                        question_to_legacy_tex=question_to_legacy_tex,
+                    )
+                    if result.get("status") == "committed":
+                        st.toast(f"已录入 {len(result.get('committed') or [])} 道题", icon="✅")
+                        st.rerun()
+                    elif result.get("status") == "empty":
+                        st.info(result.get("message") or "没有符合条件的待录入题目。")
+                    else:
+                        st.error(result.get("message") or "批量录入失败。")
+                _render_sqlite_batch_question_grid(
+                    preview_payloads,
+                    entry_mode=entry_mode,
+                    type_options=type_options,
+                    type_name_by_id=type_name_by_id,
+                    db_path=db_path,
+                )
+            else:
+                st.info("录入或解析题目后，这里会显示两列逐题校订区。")
+        except Exception as exc:
+            st.warning(f"逐题校订区加载失败：{exc}")
+        return
 
     with preview_col:
         st.markdown('<span class="mc-sqlite-entry-preview-anchor"></span>', unsafe_allow_html=True)
@@ -4963,6 +7985,40 @@ def render_sqlite_manual_draft_entry():
                 """,
                 unsafe_allow_html=True,
             )
+            batch_commit = last_result.get("batch_commit") or {}
+            if batch_commit:
+                committed_items = batch_commit.get("committed") or []
+                skipped_items = batch_commit.get("skipped") or []
+                failed_items = batch_commit.get("failed") or []
+                validation_items = batch_commit.get("validation_errors") or []
+                st.markdown(
+                    f"**整批结果：** 成功 {len(committed_items)} · 跳过 {len(skipped_items)} · "
+                    f"失败 {len(failed_items)} · 预检阻断 {len(validation_items)}"
+                )
+                if committed_items:
+                    st.caption("正式题号：" + "、".join(str(item.get("question_id")) for item in committed_items if item.get("question_id")))
+                for item in validation_items[:8]:
+                    st.warning(f"第 {item.get('index', '?')} 题：{'；'.join(str(error) for error in item.get('errors') or [])}")
+                for item in failed_items[:8]:
+                    st.error(str(item.get("error") or "提交失败"))
+                if batch_commit.get("warnings"):
+                    st.caption(f"另有 {len(batch_commit['warnings'])} 题存在提醒，可在草稿审核区继续处理。")
+                retry_ids = [
+                    str(item.get("draft_id") or "")
+                    for item in validation_items + failed_items
+                    if item.get("draft_id")
+                ]
+                if retry_ids and st.button(
+                    f"进入失败项审核并重试（{len(retry_ids)}）",
+                    key="sqlite_draft_open_batch_retry",
+                    use_container_width=True,
+                ):
+                    st.session_state["sqlite_draft_show_review_workspace"] = True
+                    st.session_state["sqlite_draft_selected_id"] = retry_ids[0]
+                    st.session_state["sqlite_draft_review_status_filter"] = "全部状态"
+                    if last_result.get("batch_id"):
+                        st.session_state["sqlite_draft_review_batch_filter"] = str(last_result.get("batch_id"))
+                    st.rerun()
             if not last_result.get("draft_count") and last_result.get("draft_id"):
                 if st.button("打开草稿审核与入库", key="sqlite_draft_open_review_after_save", use_container_width=True):
                     st.session_state["sqlite_draft_show_review_workspace"] = True
@@ -5029,46 +8085,289 @@ def render_sqlite_manual_draft_entry():
                         mime="image/png",
                         use_container_width=True,
                     )
-                if entry_mode == "单题录入" and preview_payload:
-                    _render_sqlite_draft_preview_section(
-                        "题干",
-                        _sqlite_draft_preview_fragment_markdown(
-                            _sqlite_draft_problem_body_preview_tex(preview_payload)
-                        ),
-                    )
-                    _render_sqlite_draft_preview_section(
-                        "答案",
-                        _sqlite_draft_preview_fragment_markdown(preview_payload.get("answer_tex", "")),
-                    )
-                    _render_sqlite_draft_preview_section(
-                        "解答",
-                        _sqlite_draft_preview_fragment_markdown(preview_payload.get("solution_tex", "")),
-                    )
-                else:
-                    if preview_payloads:
+            if entry_mode == "单题录入" and preview_payload:
+                _render_sqlite_draft_preview_section(
+                    "题干",
+                    _sqlite_draft_preview_with_assets(_sqlite_draft_problem_body_preview_tex(preview_payload), preview_payload.get("assets") or []),
+                )
+                _render_sqlite_draft_preview_section(
+                    "答案",
+                    _sqlite_draft_preview_fragment_markdown(preview_payload.get("answer_tex", "")),
+                )
+                _render_sqlite_draft_preview_section(
+                    "解答",
+                    _sqlite_draft_preview_fragment_markdown(preview_payload.get("solution_tex", "")),
+                )
+            elif preview_payloads:
+                st.markdown(
+                    f"<div class='mc-sqlite-entry-preview-file'><strong>逐题预览与校订</strong>共 {len(preview_payloads)} 题</div>",
+                    unsafe_allow_html=True,
+                )
+                for index, item_payload in enumerate(preview_payloads, start=1):
+                    with st.expander(
+                        f"第 {index} 题 · {item_payload.get('extra', {}).get('detected_question_number') or index}",
+                        expanded=index == 1,
+                    ):
                         st.markdown(
-                            f"<div class='mc-sqlite-entry-preview-file'><strong>批量统一预览</strong>共 {len(preview_payloads)} 题</div>",
+                            f"<div class='mc-sqlite-entry-preview-file'><strong>参考文件名</strong><code>{html.escape(_sqlite_draft_target_filename(item_payload))}</code></div>",
                             unsafe_allow_html=True,
                         )
-                        for index, item_payload in enumerate(preview_payloads, start=1):
-                            st.markdown(
-                                f"<div class='mc-sqlite-entry-preview-file'><strong>第 {index} 题</strong><code>{html.escape(_sqlite_draft_target_filename(item_payload))}</code></div>",
-                                unsafe_allow_html=True,
+                        item_prefix = lambda field: _sqlite_draft_batch_item_field_key(index, field)
+                        item_extra = item_payload.get("extra") or {}
+                        item_defaults = {
+                            "question_number": item_extra.get("detected_question_number") or str(index),
+                            "topic": item_extra.get("detected_topic") or "",
+                            "question_type_id": _sqlite_draft_infer_question_type_id(
+                                item_payload.get("question_type_id") if item_payload.get("question_type_id") in type_options else type_options[0],
+                                item_payload.get("choices") or [],
+                                item_payload.get("answer_tex") or "",
+                            ),
+                            "difficulty": item_payload.get("difficulty") if item_payload.get("difficulty") is not None else "未设置",
+                            "tags_text": "，".join(item_payload.get("tags") or []),
+                            "note": item_payload.get("note") or "",
+                            "stem_tex": item_payload.get("stem_tex") or "",
+                            "choices_text": "\n".join(_sqlite_draft_normalize_choice_values(item_payload.get("choices") or [])),
+                            "answer_tex": item_payload.get("answer_tex") or "",
+                            "solution_tex": item_payload.get("solution_tex") or "",
+                        }
+                        if entry_mode == "同书试题录入":
+                            item_defaults["book_page"] = item_extra.get("book_page_number") or ""
+                            item_defaults["book_column"] = item_extra.get("book_column_name") or ""
+                        for field, default_value in item_defaults.items():
+                            st.session_state.setdefault(item_prefix(field), default_value)
+                        if st.session_state.get(item_prefix("choices_normalization_version")) != 1:
+                            st.session_state[item_prefix("choices_text")] = "\n".join(
+                                _sqlite_draft_normalize_choice_values(
+                                    str(st.session_state.get(item_prefix("choices_text")) or "").splitlines()
+                                )
                             )
-                            _render_sqlite_draft_preview_section(
-                                "题干",
-                                _sqlite_draft_preview_fragment_markdown(
-                                    _sqlite_draft_problem_body_preview_tex(item_payload)
-                                ),
-                            )
-                            _render_sqlite_draft_preview_section(
-                                "答案",
-                                _sqlite_draft_preview_fragment_markdown(item_payload.get("answer_tex", "")),
-                            )
-                            _render_sqlite_draft_preview_section(
-                                "解答",
-                                _sqlite_draft_preview_fragment_markdown(item_payload.get("solution_tex", "")),
-                            )
+                            st.session_state[item_prefix("choices_normalization_version")] = 1
+                        inferred_type = _sqlite_draft_infer_question_type_id(
+                            st.session_state.get(item_prefix("question_type_id")),
+                            str(st.session_state.get(item_prefix("choices_text")) or "").splitlines(),
+                            st.session_state.get(item_prefix("answer_tex"), ""),
+                            st.session_state.get(item_prefix("stem_tex"), ""),
+                        )
+                        if inferred_type != st.session_state.get(item_prefix("question_type_id")):
+                            st.session_state[item_prefix("question_type_id")] = inferred_type
+                        document_job_dir = Path(str((st.session_state.get("sqlite_draft_batch_document_job") or {}).get("job_dir") or ""))
+                        question_crop_paths = []
+                        for raw_path in item_extra.get("question_crop_paths") or []:
+                            crop_path = Path(str(raw_path))
+                            if not crop_path.is_absolute():
+                                crop_path = document_job_dir / crop_path
+                            if crop_path.is_file():
+                                question_crop_paths.append(str(crop_path.resolve()))
+                        if question_crop_paths and st.button(
+                            "AI 精修本题",
+                            key=item_prefix("ai_refine"),
+                            use_container_width=True,
+                            help="只发送当前题的裁剪图和提取文本，不发送整份 PDF。",
+                        ):
+                            from services.ai_service import recognize_question_structure
+
+                            load_dotenv(_root_env_path(), override=True)
+                            with st.spinner(f"正在精修第 {index} 题..."):
+                                ai_result = recognize_question_structure(
+                                    question_crop_paths,
+                                    extracted_text=str(item_extra.get("stem_source_with_image_markers") or item_payload.get("raw_source_text") or item_payload.get("stem_tex") or ""),
+                                    question_number=str(item_extra.get("detected_question_number") or index),
+                                    image_markers=[str(asset.get("alias") or asset.get("caption") or "") for asset in item_payload.get("assets") or []],
+                                )
+                            if ai_result.get("error"):
+                                st.error(ai_result["error"])
+                            else:
+                                from services.document_ai_queue_service import create_or_refresh_queue, finish_queue_item
+
+                                st.session_state[item_prefix("question_type_id")] = ai_result["question_type_id"]
+                                from services.ai_service import ensure_question_asset_placeholders
+                                st.session_state[item_prefix("stem_tex")], _ = ensure_question_asset_placeholders(
+                                    ai_result["stem_tex"], item_payload.get("assets") or []
+                                )
+                                st.session_state[item_prefix("choices_text")] = "\n".join(ai_result["choices"])
+                                st.session_state[item_prefix("answer_tex")] = ai_result["answer_tex"]
+                                st.session_state[item_prefix("solution_tex")] = ai_result["solution_tex"]
+                                if ai_result.get("topic"):
+                                    st.session_state[item_prefix("topic")] = ai_result["topic"]
+                                if ai_result.get("difficulty") is not None:
+                                    st.session_state[item_prefix("difficulty")] = ai_result["difficulty"]
+                                if ai_result.get("tags"):
+                                    st.session_state[item_prefix("tags_text")] = "，".join(ai_result["tags"])
+                                document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+                                document_questions = document_job.get("questions") or []
+                                if index <= len(document_questions):
+                                    queue_job_id = str(document_job.get("job_id") or "")
+                                    if queue_job_id:
+                                        queue_job_dir = Path(str(document_job.get("job_dir") or ""))
+                                        queue_jobs_root = queue_job_dir.parent
+                                        create_or_refresh_queue(queue_job_id, jobs_root=queue_jobs_root)
+                                        finish_queue_item(
+                                            queue_job_id,
+                                            str(document_questions[index - 1].get("source_item_id") or ""),
+                                            result=ai_result,
+                                            jobs_root=queue_jobs_root,
+                                        )
+                                st.session_state.pop("sqlite_draft_batch_preview_cache", None)
+                                st.toast(f"第 {index} 题已由 AI 精修，请继续人工核对。", icon="✅")
+                                st.rerun()
+                        st.text_input("题号", key=item_prefix("question_number"))
+                        if entry_mode == "同书试题录入":
+                            st.text_input("页码", key=item_prefix("book_page"))
+                            st.text_input("栏目 / 小节", key=item_prefix("book_column"))
+                        st.text_input("知识板块", key=item_prefix("topic"))
+                        st.selectbox(
+                            "题型",
+                            type_options,
+                            key=item_prefix("question_type_id"),
+                            format_func=lambda value: type_name_by_id.get(value, str(value)),
+                        )
+                        st.selectbox("难度", ["未设置", 1, 2, 3, 4, 5], key=item_prefix("difficulty"))
+                        st.text_input("标签", key=item_prefix("tags_text"))
+                        st.text_area("备注", key=item_prefix("note"), height=68)
+                        st.text_area("题干 TeX", key=item_prefix("stem_tex"), height=130)
+                        st.text_area("选项（每行一项）", key=item_prefix("choices_text"), height=100)
+                        st.text_area("答案 TeX", key=item_prefix("answer_tex"), height=72)
+                        st.text_area("解析 TeX", key=item_prefix("solution_tex"), height=110)
+                        item_assets = [asset for asset in item_payload.get("assets") or [] if isinstance(asset, dict)]
+                        if item_assets:
+                            st.markdown("**自动绑定图片**")
+                            for asset_index, asset in enumerate(item_assets, start=1):
+                                asset_path = str(asset.get("source_path") or "").strip()
+                                asset_extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+                                page_number = asset.get("page_number") or asset_extra.get("page_number") or "?"
+                                binding_confidence = asset.get("binding_confidence") or asset_extra.get("binding_confidence") or 0
+                                if asset_path and os.path.isfile(asset_path):
+                                    st.image(
+                                        asset_path,
+                                        caption=(
+                                            f"{asset.get('caption') or f'figure_{asset_index:02d}'} · "
+                                            f"第 {page_number} 页 · "
+                                            f"绑定置信度 {float(binding_confidence):.0%}"
+                                        ),
+                                    )
+                                else:
+                                    st.warning(f"图片文件不可用：{asset_path or '未设置路径'}")
+                                if st.session_state.get("sqlite_draft_batch_document_job"):
+                                    document_job = st.session_state.get("sqlite_draft_batch_document_job") or {}
+                                    document_job_id = str(document_job.get("job_id") or "")
+                                    document_job_dir = Path(str(document_job.get("job_dir") or ""))
+                                    document_questions = document_job.get("questions") or []
+                                    document_source_item_id = (
+                                        str(document_questions[index - 1].get("source_item_id") or "")
+                                        if 0 < index <= len(document_questions)
+                                        else ""
+                                    )
+                                    asset_token = hashlib.md5(
+                                        f"{asset_path}:{asset_extra.get('source_block_id') or asset_index}".encode("utf-8")
+                                    ).hexdigest()[:10]
+                                    with st.expander("在原图上调整裁剪框", expanded=False):
+                                        st.caption("修改原始页面上的像素坐标后重新生成这张题目图片。")
+                                        current_bbox = asset.get("pixel_bbox") or asset.get("bbox") or []
+                                        if len(current_bbox) >= 4 and document_job_id:
+                                            page_number_value = int(asset.get("page_number") or page_number or 1)
+                                            try:
+                                                from services.pdf_import_service import load_pdf_import_job, update_pdf_question_asset_crop
+
+                                                loaded_document = load_pdf_import_job(
+                                                    document_job_id,
+                                                    jobs_root=document_job_dir.parent,
+                                                )
+                                                source_page = next(
+                                                    (
+                                                        item
+                                                        for item in loaded_document.get("draft_payload", {}).get("pages", [])
+                                                        if int(item.get("page_number") or 0) == page_number_value
+                                                    ),
+                                                    {},
+                                                )
+                                                source_page_path = document_job_dir / str(source_page.get("image_path") or "")
+                                                if source_page_path.is_file():
+                                                    st.image(str(source_page_path), caption=f"原始第 {page_number_value} 页", use_container_width=True)
+                                                coord_cols = st.columns(4, gap="small")
+                                                coord_values = []
+                                                for coord_col, coord_name, coord_value in zip(
+                                                    coord_cols,
+                                                    ["左", "上", "右", "下"],
+                                                    current_bbox[:4],
+                                                ):
+                                                    with coord_col:
+                                                        coord_values.append(
+                                                            st.number_input(
+                                                                coord_name,
+                                                                min_value=0,
+                                                                value=int(coord_value),
+                                                                step=1,
+                                                                key=f"sqlite_batch_crop_{document_job_id}_{index}_{asset_index}_{coord_name}",
+                                                            )
+                                                        )
+                                                if st.button(
+                                                    "重新生成这张图片",
+                                                    key=f"sqlite_batch_recrop_{document_job_id}_{index}_{asset_index}",
+                                                    use_container_width=True,
+                                                ):
+                                                    update_pdf_question_asset_crop(
+                                                        document_job_id,
+                                                        document_source_item_id,
+                                                        asset_index - 1,
+                                                        coord_values,
+                                                        jobs_root=document_job_dir.parent,
+                                                    )
+                                                    _sqlite_apply_document_job_to_batch(
+                                                        {"job_id": document_job_id, "job_dir": str(document_job_dir)},
+                                                        entry_mode,
+                                                    )
+                                                    st.toast("图片已按新裁剪框重新生成", icon="✅")
+                                                    st.rerun()
+                                            except Exception as exc:
+                                                st.warning(f"原图裁剪编辑器加载失败：{exc}")
+                                    control_col, target_col, action_col = st.columns([1, 1.15, 0.85], gap="small")
+                                    role_key = item_prefix(f"asset_{asset_token}_role")
+                                    target_key = item_prefix(f"asset_{asset_token}_target")
+                                    current_role = str(asset.get("role") or "problem")
+                                    role_options = ["problem", "answer", "solution", "source"]
+                                    with control_col:
+                                        st.selectbox(
+                                            "图片用途",
+                                            role_options,
+                                            index=role_options.index(current_role) if current_role in role_options else 0,
+                                            key=role_key,
+                                            format_func=lambda value: {
+                                                "problem": "题干图片",
+                                                "answer": "答案图片",
+                                                "solution": "解析图片",
+                                                "source": "来源页",
+                                            }.get(value, value),
+                                        )
+                                    with target_col:
+                                        st.selectbox(
+                                            "归属题目",
+                                            list(range(1, len(preview_payloads) + 1)),
+                                            index=index - 1,
+                                            key=target_key,
+                                            format_func=lambda value: f"第 {value} 题",
+                                        )
+                                    with action_col:
+                                        st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+                                        if st.button("应用", key=item_prefix(f"asset_{asset_token}_apply"), use_container_width=True):
+                                            _sqlite_move_document_asset(
+                                                index - 1,
+                                                asset_index - 1,
+                                                int(st.session_state[target_key]) - 1,
+                                                str(st.session_state[role_key]),
+                                            )
+                                            st.rerun()
+                                    if st.button(
+                                        "移除此图",
+                                        key=item_prefix(f"asset_{asset_token}_remove"),
+                                        use_container_width=True,
+                                        help="只取消本批次中的图片绑定，不删除原始 PDF 或裁剪文件。",
+                                    ):
+                                        _sqlite_remove_document_asset(index - 1, asset_index - 1)
+                                        st.rerun()
+                        _render_sqlite_draft_preview_section(
+                            "题干",
+                            _sqlite_draft_preview_with_assets(_sqlite_draft_standard_preview_tex(item_payload), item_payload.get("assets") or []),
+                        )
             else:
                 st.info("填写或粘贴 TeX 后，这里会显示当前草稿预览。")
         except Exception as exc:
@@ -5088,6 +8387,7 @@ def render_sqlite_draft_review_workspace(db_path: str):
         delete_draft_asset,
         draft_to_preview_question,
         get_draft_question,
+        list_import_report_items,
         list_draft_questions,
         list_import_batches,
         update_draft_asset_fields,
@@ -5227,9 +8527,9 @@ def render_sqlite_draft_review_workspace(db_path: str):
         unsafe_allow_html=True,
     )
 
-    status_options = ["全部状态", "needs_review", "ready", "blocked", "approved", "committed", "rejected", "sample"]
+    status_options = ["全部状态", "needs_review", "ready", "blocked", "approved", "committed", "rejected"]
     for key, value in [
-        ("sqlite_draft_review_status_filter", "全部状态"),
+        ("sqlite_draft_review_status_filter", "needs_review"),
         ("sqlite_draft_review_batch_filter", "全部批次"),
         ("sqlite_draft_review_page_size", 5),
         ("sqlite_draft_review_page", 1),
@@ -5238,17 +8538,30 @@ def render_sqlite_draft_review_workspace(db_path: str):
     ]:
         st.session_state.setdefault(key, value)
 
-    batches = list_import_batches(db_path, limit=50)
+    batches = [
+        item
+        for item in list_import_batches(db_path, limit=50)
+        if not str(item.get("source_path") or "").lower().startswith("manual-example/")
+    ]
     batch_options = ["全部批次"] + [str(item.get("batch_id") or "") for item in batches if item.get("batch_id")]
     batch_labels = {"全部批次": "全部批次"}
     for item in batches:
         batch_id = str(item.get("batch_id") or "")
         if batch_id:
             batch_labels[batch_id] = f"{item.get('import_type') or 'batch'} · {item.get('draft_count') or 0} 条 · {batch_id}"
+    selected_batch_id = str(st.session_state.get("sqlite_draft_review_batch_filter") or "")
+    selected_batch = next((item for item in batches if str(item.get("batch_id") or "") == selected_batch_id), None)
+    selected_batch_source = str((selected_batch or {}).get("source_path") or "").lower()
+    if selected_batch_source.startswith("manual-example/") or st.session_state.get("sqlite_draft_review_status_filter") == "sample":
+        st.session_state["sqlite_draft_review_batch_filter"] = "全部批次"
+        st.session_state["sqlite_draft_review_status_filter"] = "needs_review"
+        st.session_state["sqlite_draft_review_page"] = 1
+        st.session_state["sqlite_draft_review_page_select"] = 1
+        st.session_state["sqlite_draft_selected_id"] = ""
     if st.session_state.get("sqlite_draft_review_batch_filter") not in batch_options:
         st.session_state["sqlite_draft_review_batch_filter"] = "全部批次"
     if st.session_state.get("sqlite_draft_review_status_filter") not in status_options:
-        st.session_state["sqlite_draft_review_status_filter"] = "全部状态"
+        st.session_state["sqlite_draft_review_status_filter"] = "needs_review"
     if st.session_state.get("sqlite_draft_review_page_size") not in [5, 10, 15, 20]:
         st.session_state["sqlite_draft_review_page_size"] = 5
 
@@ -5278,8 +8591,25 @@ def render_sqlite_draft_review_workspace(db_path: str):
 
     batch_id = "" if batch_filter == "全部批次" else batch_filter
     review_status = "" if status_filter == "全部状态" else status_filter
+    report_items = list_import_report_items(db_path, batch_id=batch_id, limit=100)
+    if report_items:
+        with st.expander("批次审核记录", expanded=False):
+            st.dataframe(
+                [
+                    {
+                        "时间": item.get("created_at") or "",
+                        "状态": item.get("status") or "",
+                        "草稿": item.get("source_file") or "",
+                        "题目": item.get("question_id") or "",
+                        "原因": item.get("reason") or "",
+                    }
+                    for item in report_items
+                ],
+                hide_index=True,
+                use_container_width=True,
+            )
     page_size_int = int(page_size or 5)
-    total = count_draft_questions(db_path, batch_id=batch_id, review_status=review_status)
+    total = count_draft_questions(db_path, batch_id=batch_id, review_status=review_status, exclude_sample=True)
     page_count = (total + page_size_int - 1) // page_size_int if total else 0
     current_page = max(1, min(int(st.session_state.get("sqlite_draft_review_page", 1) or 1), max(1, page_count)))
     if current_page != st.session_state.get("sqlite_draft_review_page"):
@@ -5291,6 +8621,7 @@ def render_sqlite_draft_review_workspace(db_path: str):
         review_status=review_status,
         limit=page_size_int,
         offset=(current_page - 1) * page_size_int,
+        exclude_sample=True,
     )
 
     with left_col:
@@ -5438,7 +8769,7 @@ def render_sqlite_draft_review_workspace(db_path: str):
         type_labels.setdefault(current_type, "未设置" if current_type is None else str(current_type))
 
         extra = _sqlite_draft_extra_dict(draft.get("extra_json"))
-        source_kind_options = ["试卷", "教材", "专题", "其他"]
+        source_kind_options = ["试卷", "教材", "专题", "未标记来源", "其他"]
         current_source_kind = extra.get("source_kind") or "其他"
         if current_source_kind not in source_kind_options:
             source_kind_options.append(current_source_kind)
@@ -5489,17 +8820,10 @@ def render_sqlite_draft_review_workspace(db_path: str):
                     with meta_edit_col:
                         st.markdown("<div class='mc-sqlite-review-edit-subtitle'>来源与入库动作</div>", unsafe_allow_html=True)
                         st.text_input("来源标签", key=_sqlite_draft_edit_field_key(selected_draft_id, "source_label"))
-                        action_col, target_col = st.columns([0.74, 1.08], gap="small")
-                        with action_col:
-                            st.selectbox("动作", ["insert", "update", "skip"], key=_sqlite_draft_edit_field_key(selected_draft_id, "proposed_action"))
-                        with target_col:
-                            st.text_input("目标题号", key=_sqlite_draft_edit_field_key(selected_draft_id, "target_question_id"), placeholder="update 时填写")
-
-                        source_col, year_col = st.columns([1.1, 0.8], gap="small")
-                        with source_col:
-                            st.selectbox("来源类型", source_kind_options, key=_sqlite_draft_edit_field_key(selected_draft_id, "source_kind"))
-                        with year_col:
-                            st.text_input("年份/册次", key=_sqlite_draft_edit_field_key(selected_draft_id, "detected_year"))
+                        st.selectbox("动作", ["insert", "update", "skip"], key=_sqlite_draft_edit_field_key(selected_draft_id, "proposed_action"))
+                        st.text_input("目标题号", key=_sqlite_draft_edit_field_key(selected_draft_id, "target_question_id"), placeholder="update 时填写")
+                        st.selectbox("来源类型", source_kind_options, key=_sqlite_draft_edit_field_key(selected_draft_id, "source_kind"))
+                        st.text_input("年份/册次", key=_sqlite_draft_edit_field_key(selected_draft_id, "detected_year"))
                         st.selectbox(
                             "卷别代码",
                             paper_series_options,
@@ -5508,23 +8832,17 @@ def render_sqlite_draft_review_workspace(db_path: str):
                         )
 
                         st.text_input("试卷/教材/专题名称", key=_sqlite_draft_edit_field_key(selected_draft_id, "detected_source"))
-                        number_col, sub_col = st.columns([1, 0.78], gap="small")
-                        with number_col:
-                            st.text_input("题号/页码", key=_sqlite_draft_edit_field_key(selected_draft_id, "detected_question_number"))
-                        with sub_col:
-                            st.text_input("小题", key=_sqlite_draft_edit_field_key(selected_draft_id, "sub_number"))
+                        st.text_input("题号/页码", key=_sqlite_draft_edit_field_key(selected_draft_id, "detected_question_number"))
+                        st.text_input("小题", key=_sqlite_draft_edit_field_key(selected_draft_id, "sub_number"))
                         st.text_input("知识板块/栏目", key=_sqlite_draft_edit_field_key(selected_draft_id, "detected_topic"))
 
-                        type_col, diff_col = st.columns([1.18, 0.82], gap="small")
-                        with type_col:
-                            st.selectbox(
-                                "题型",
-                                type_options,
-                                format_func=lambda value: type_labels.get(value, "未设置"),
-                                key=_sqlite_draft_edit_field_key(selected_draft_id, "question_type_id"),
-                            )
-                        with diff_col:
-                            st.selectbox("难度", difficulty_options, key=_sqlite_draft_edit_field_key(selected_draft_id, "difficulty"))
+                        st.selectbox(
+                            "题型",
+                            type_options,
+                            format_func=lambda value: type_labels.get(value, "未设置"),
+                            key=_sqlite_draft_edit_field_key(selected_draft_id, "question_type_id"),
+                        )
+                        st.selectbox("难度", difficulty_options, key=_sqlite_draft_edit_field_key(selected_draft_id, "difficulty"))
                         st.checkbox("官方来源", key=_sqlite_draft_edit_field_key(selected_draft_id, "official_flag"))
                         st.text_input("标签", key=_sqlite_draft_edit_field_key(selected_draft_id, "tags_text"), help="支持逗号或换行分隔。")
                         st.text_area("备注", key=_sqlite_draft_edit_field_key(selected_draft_id, "note"), height=78)
@@ -5536,12 +8854,10 @@ def render_sqlite_draft_review_workspace(db_path: str):
                             _sqlite_draft_review_choice_editor_scope_key(selected_draft_id),
                             draft_edit_values.get("choices_text", ""),
                             show_step_buttons=False,
+                            allow_columns=False,
                         )
-                        answer_col, solution_col = st.columns([0.78, 1.22], gap="small")
-                        with answer_col:
-                            st.text_area("答案 TeX", key=_sqlite_draft_edit_field_key(selected_draft_id, "answer_tex"), height=118)
-                        with solution_col:
-                            st.text_area("解析 TeX", key=_sqlite_draft_edit_field_key(selected_draft_id, "solution_tex"), height=118)
+                        st.text_area("答案 TeX", key=_sqlite_draft_edit_field_key(selected_draft_id, "answer_tex"), height=92)
+                        st.text_area("解析 TeX", key=_sqlite_draft_edit_field_key(selected_draft_id, "solution_tex"), height=118)
                         draft_edit_submitted = st.form_submit_button("保存草稿字段", type="primary", use_container_width=True)
 
                 if draft_edit_submitted:
@@ -6838,7 +10154,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                         st.markdown(f"### 📄 {fname}")
                         try:
                             preview_src = st.session_state.get(f"batch_item_text_{idx}", "") or ""
-                            st.markdown(latex_to_markdown(preview_src, show_title=False), unsafe_allow_html=True)
+                            _render_preview_with_inline_assets(latex_to_markdown(preview_src, show_title=False))
                         except Exception as e:
                             st.error(f"预览渲染出错: {e}")
 
@@ -7276,7 +10592,7 @@ button[kind="secondary"][data-testid="stBaseButton-secondary"][aria-label="放�
                 st.markdown("---")
                 try:
                     md_preview = latex_to_markdown(content, show_title=True)
-                    st.markdown(md_preview, unsafe_allow_html=True)
+                    _render_preview_with_inline_assets(md_preview)
                 except Exception as e:
                     st.error(f"预览渲染出错: {e}")
         else:
@@ -7573,11 +10889,11 @@ def _topic_collection_render_css():
             z-index: 8 !important;
         }
         div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-topic-sidebar-anchor) {
-            padding: 0.95rem !important;
-            border: 1px solid rgba(109, 40, 217, 0.14) !important;
-            border-radius: 16px !important;
-            background: #ffffff !important;
-            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.055) !important;
+            padding: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
             max-height: calc(100vh - 1.45rem) !important;
             overflow-y: auto !important;
             overflow-x: hidden !important;
@@ -8287,7 +11603,7 @@ def render_exam_question_card(q_label, content, fpath, action_key):
         )
         st.markdown('<div class="mc-exam-card-preview-label">问题预览</div>', unsafe_allow_html=True)
         try:
-            st.markdown(_cached_latex_to_markdown(content), unsafe_allow_html=True)
+            _render_preview_with_inline_assets(_cached_latex_to_markdown(content))
         except Exception as e:
             st.error(f"渲染错误: {e}")
 
@@ -8571,8 +11887,14 @@ def render_exam_floating_basket():
         .mc-exam-floating-basket-collapsed-panel {
             position: fixed !important;
             right: 18px !important;
-            top: 42vh !important;
-            width: 142px !important;
+            top: 50vh !important;
+            transform: translateY(-50%) !important;
+            width: 58px !important;
+            min-width: 58px !important;
+            max-width: 58px !important;
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
             z-index: 1001 !important;
             padding: 0 !important;
             border: 0 !important;
@@ -8610,6 +11932,16 @@ def render_exam_floating_basket():
             color: #4c1d95 !important;
             box-shadow: 0 12px 30px rgba(80, 60, 110, 0.18) !important;
             font-weight: 750 !important;
+            width: 58px !important;
+            min-width: 58px !important;
+            max-width: 58px !important;
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+            padding: 0 !important;
+            white-space: pre-line !important;
+            overflow: hidden !important;
+            box-sizing: border-box !important;
         }
         @media (max-width: 980px) {
             .mc-exam-floating-basket-panel {
@@ -8646,10 +11978,27 @@ def render_exam_floating_basket():
                     }
                 });
                 const panel = findPanel();
-                if (panel) panel.classList.add('mc-exam-floating-basket-panel');
+                if (panel) {
+                    panel.classList.add('mc-exam-floating-basket-panel');
+                    panel.classList.remove('mc-exam-floating-basket-collapsed-panel');
+                    ['width', 'min-width', 'max-width', 'height', 'min-height', 'max-height', 'left', 'right', 'top', 'transform', 'overflow', 'margin', 'padding', 'box-sizing'].forEach((property) => panel.style.removeProperty(property));
+                }
                 const collapsedMarker = doc.querySelector('.mc-exam-floating-basket-collapsed-anchor');
                 const collapsedPanel = collapsedMarker ? collapsedMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
-                if (collapsedPanel) collapsedPanel.classList.add('mc-exam-floating-basket-collapsed-panel');
+                if (collapsedPanel) {
+                    collapsedPanel.classList.add('mc-exam-floating-basket-collapsed-panel');
+                    const collapsedStyles = {
+                        width: '58px', minWidth: '58px', maxWidth: '58px',
+                        height: '58px', minHeight: '58px', maxHeight: '58px',
+                        left: 'auto', right: '18px', top: '50vh',
+                        transform: 'translateY(-50%)', overflow: 'visible',
+                        margin: '0', padding: '0', boxSizing: 'border-box'
+                    };
+                    Object.entries(collapsedStyles).forEach(([key, value]) => {
+                        const cssKey = key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+                        collapsedPanel.style.setProperty(cssKey, value, 'important');
+                    });
+                }
                 return panel;
             }
 
@@ -8677,6 +12026,13 @@ def render_exam_floating_basket():
             }
 
             function applyPosition(panel) {
+                const positionVersion = 'right-center-v2';
+                if (window.parent.localStorage.getItem('mcExamBasketPositionVersion') !== positionVersion) {
+                    window.parent.localStorage.removeItem('mcExamBasketX');
+                    window.parent.localStorage.removeItem('mcExamBasketY');
+                    window.parent.localStorage.removeItem('mcExamBasketPositionReady');
+                    window.parent.localStorage.setItem('mcExamBasketPositionVersion', positionVersion);
+                }
                 const savedX = Number(window.parent.localStorage.getItem('mcExamBasketX'));
                 const savedY = Number(window.parent.localStorage.getItem('mcExamBasketY'));
                 const hasSavedPosition = window.parent.localStorage.getItem('mcExamBasketPositionReady') === '1';
@@ -8687,10 +12043,12 @@ def render_exam_floating_basket():
                     panel.style.setProperty('left', `${clamp(savedX, 72, maxX)}px`, 'important');
                     panel.style.setProperty('top', `${clamp(savedY, 12, maxY)}px`, 'important');
                     panel.style.setProperty('right', 'auto', 'important');
+                    panel.style.setProperty('transform', 'none', 'important');
                 } else {
                     panel.style.setProperty('left', 'auto', 'important');
-                    panel.style.setProperty('right', '16px', 'important');
-                    panel.style.setProperty('top', '104px', 'important');
+                    panel.style.setProperty('right', '22px', 'important');
+                    panel.style.setProperty('top', '50vh', 'important');
+                    panel.style.setProperty('transform', 'translateY(-50%)', 'important');
                 }
             }
 
@@ -8782,7 +12140,7 @@ def render_exam_floating_basket():
     if not st.session_state["exam_basket_open"]:
         with st.container(border=True):
             st.markdown('<span class="mc-exam-floating-basket-collapsed-anchor"></span>', unsafe_allow_html=True)
-            if st.button(f"🧺 试题篮 · {selected_count}", key="mc_exam_basket_open", use_container_width=True):
+            if st.button(f"🧺\n{selected_count}", key="mc_exam_basket_open", use_container_width=True, help=f"展开试题篮（{selected_count} 题）"):
                 st.session_state["exam_basket_open"] = True
                 st.rerun(scope="fragment")
         return
@@ -8815,7 +12173,7 @@ def render_exam_floating_basket():
                 try:
                     with open(expanded_q, "r", encoding="utf-8") as f:
                         expanded_content = f.read()
-                    st.markdown(latex_to_markdown(expanded_content), unsafe_allow_html=True)
+                    _render_preview_with_inline_assets(latex_to_markdown(expanded_content))
                 except Exception as e:
                     st.error(f"无法读取文件: {e}")
             else:
@@ -9531,9 +12889,38 @@ def _render_structured_choice_editor(
     *,
     show_step_buttons: bool,
     use_grid_layout: bool = True,
+    allow_columns: bool = True,
 ):
     _structured_choice_editor_prepare_state(scope_key, choices_text)
     count_key = _structured_choice_editor_key(scope_key, "choice_count")
+    if not allow_columns:
+        st.markdown("**选项**")
+        st.caption("填写内部 TeX；保存和导出时自动生成 `\\choice{...}`。")
+        st.number_input(
+            "选项数量",
+            min_value=0,
+            max_value=8,
+            step=1,
+            key=count_key,
+            help="选择题通常为 4；非选择题可保持 0。",
+        )
+        try:
+            choice_count = int(st.session_state.get(count_key, 0) or 0)
+        except (TypeError, ValueError):
+            choice_count = 0
+        choice_count = max(0, min(choice_count, 8))
+        choice_labels = "ABCDEFGH"
+        if choice_count <= 0:
+            st.caption("当前没有选项；如需选择题选项，把数量改为 2-8。")
+            return
+        for index in range(choice_count):
+            st.text_area(
+                f"{choice_labels[index]} 选项内部 TeX",
+                key=_structured_choice_editor_key(scope_key, f"choice_item_{index}"),
+                height=72,
+                placeholder=r"例如：$\dfrac{\pi}{4}$",
+            )
+        return
     if not use_grid_layout:
         st.markdown(
             """
@@ -9676,9 +13063,14 @@ def _db_preview_asset_upload_item_key(question_id: str, upload_name: str, index:
 def _db_preview_default_asset_alias(upload_name: str, role: str, index: int) -> str:
     from services.asset_service import normalize_asset_alias
 
-    safe_name = _db_preview_safe_upload_name(upload_name)
-    stem = os.path.splitext(safe_name)[0]
-    return normalize_asset_alias(stem, fallback=f"{role}_{index:02d}")
+    role_prefix = {
+        "problem": "figure",
+        "answer": "answer_figure",
+        "solution": "solution_figure",
+        "source": "source",
+        "thumbnail": "thumbnail",
+    }.get(str(role or "problem"), "figure")
+    return normalize_asset_alias(f"{role_prefix}_{index:02d}", fallback=f"figure_{index:02d}")
 
 
 def _db_preview_render_asset_upload_panel(db_path: str, question_id: str, *, compact_layout: bool = False):
@@ -10828,6 +14220,8 @@ def _db_preview_question_payload(db_path: str, question_id: str, db_mtime: float
 def _db_preview_resolve_project_file(relative_path: str) -> str:
     if not relative_path:
         return ""
+    if os.path.isabs(str(relative_path)) and os.path.isfile(str(relative_path)):
+        return os.path.abspath(str(relative_path))
     root = os.path.abspath(APP_ROOT)
     candidate = os.path.abspath(os.path.join(root, relative_path))
     try:
@@ -10851,33 +14245,33 @@ def _db_preview_asset_data_uri(abs_path: str, mime_type: str, file_size: int, fi
 
 
 def _db_preview_inline_asset_html(asset: dict, alias: str) -> str:
-    file_path = str(asset.get("file_path") or "")
+    file_path = str(asset.get("file_path") or asset.get("source_path") or "")
     abs_path = _db_preview_resolve_project_file(file_path)
     exists = bool(abs_path and os.path.exists(abs_path))
-    mime_type = str(asset.get("mime_type") or "")
+    mime_type = str(asset.get("mime_type") or mimetypes.guess_type(file_path)[0] or "")
     caption = str(asset.get("caption") or asset.get("original_file_name") or alias)
     if exists and mime_type.startswith("image/"):
         file_size = os.path.getsize(abs_path)
         file_mtime = os.path.getmtime(abs_path)
         data_uri = _db_preview_asset_data_uri(abs_path, mime_type, file_size, file_mtime)
         if data_uri:
-            return f"""
+            return textwrap.dedent(f"""
             <figure class="mc-db-inline-asset">
                 <img src="{data_uri}" alt="{html.escape(caption)}" loading="lazy" />
                 <figcaption>{html.escape(caption)} · {html.escape(alias)}</figcaption>
             </figure>
-            """
+            """).strip()
     if exists:
-        return f"""
+        return textwrap.dedent(f"""
         <span class="mc-db-inline-asset-file">
             附件：{html.escape(caption)} · {html.escape(file_path)}
         </span>
-        """
-    return f"""
+        """).strip()
+    return textwrap.dedent(f"""
     <span class="mc-db-inline-asset-missing">
         未找到图片资源：{html.escape(alias)}
     </span>
-    """
+    """).strip()
 
 
 def _db_preview_inline_file_html(abs_path: str, ref: str) -> str:
@@ -10890,17 +14284,17 @@ def _db_preview_inline_file_html(abs_path: str, ref: str) -> str:
         file_mtime = os.path.getmtime(abs_path)
         data_uri = _db_preview_asset_data_uri(abs_path, mime_type, file_size, file_mtime)
         if data_uri:
-            return f"""
+            return textwrap.dedent(f"""
             <figure class="mc-db-inline-asset">
                 <img src="{data_uri}" alt="{html.escape(file_name)}" loading="lazy" />
                 <figcaption>{html.escape(file_name)} · {html.escape(ref)}</figcaption>
             </figure>
-            """
-    return f"""
+            """).strip()
+    return textwrap.dedent(f"""
     <span class="mc-db-inline-asset-file">
         附件：{html.escape(file_name)} · {html.escape(ref)}
     </span>
-    """
+    """).strip()
 
 
 def _db_preview_apply_includegraphics_previews(markdown_text: str, question: dict) -> str:
@@ -10926,6 +14320,7 @@ def _db_preview_apply_questionasset_previews(markdown_text: str, assets: list[di
         return markdown_text
 
     from services.export_service import QUESTION_ASSET_PATTERN, find_asset_by_alias
+    from services.asset_service import is_tikz_derived_asset
 
     safe_assets = assets or []
 
@@ -10934,6 +14329,8 @@ def _db_preview_apply_questionasset_previews(markdown_text: str, assets: list[di
         asset = find_asset_by_alias(safe_assets, alias)
         if not asset:
             return f"<span class='mc-db-inline-asset-missing'>未登记图片资源：{html.escape(alias)}</span>"
+        if is_tikz_derived_asset(asset):
+            return ""
         return _db_preview_inline_asset_html(asset, alias)
 
     return QUESTION_ASSET_PATTERN.sub(replace, markdown_text)
@@ -11123,11 +14520,11 @@ def render_sqlite_readonly_browse_preview(
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) {
         gap: 0.42rem !important;
-        padding: 0.95rem 0.95rem 1.05rem !important;
-        border: 1px solid rgba(109, 40, 217, 0.14) !important;
-        border-radius: 14px !important;
-        background: #ffffff !important;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
         box-sizing: border-box !important;
         width: 100% !important;
         max-width: 100% !important;
@@ -11677,6 +15074,12 @@ def render_sqlite_readonly_browse_preview(
         color: #9f1239 !important;
         box-shadow: none !important;
     }
+    body:has(.mc-db-edit-workspace-anchor) div[class*="st-key-db_browse_exit_edit_"] {
+        position: relative !important;
+        z-index: 1 !important;
+        margin-top: 0.7rem !important;
+        margin-bottom: 0.35rem !important;
+    }
     body:has(.mc-db-edit-workspace-anchor) div[class*="st-key-db_browse_exit_edit_"] button:hover {
         background: #ffe4e6 !important;
         border-color: rgba(225, 29, 72, 0.48) !important;
@@ -11990,6 +15393,13 @@ def render_sqlite_readonly_browse_preview(
     year_options = ["全部年份"] + [str(year) for year in base_options.get("years", [])]
     chapter_options = ["全部板块"] + base_options.get("chapters", [])
     page_size_options = list(base_options.get("page_size_options") or [5, 10, 15, 20])
+    source_kind_options = ["\u5168\u90e8\u6765\u6e90\u7c7b\u578b"] + [str(item) for item in base_options.get("source_kinds", [])]
+    paper_series_values = ["__UNMARKED_SOURCE__"] + [str(item) for item in base_options.get("paper_series", [])]
+    paper_series_options = ["\u5168\u90e8\u5377\u522b", *dict.fromkeys(paper_series_values)]
+    paper_series_labels = {
+        "__UNMARKED_SOURCE__": "\u672a\u6807\u8bb0\u6765\u6e90",
+        **{code: f"{code} ({PAPER_TYPES.get(code, code)})" for code in paper_series_values if code != "__UNMARKED_SOURCE__"},
+    }
 
     for state_key, fallback in [
         ("db_browse_chapter", "全部板块"),
@@ -12017,6 +15427,8 @@ def render_sqlite_readonly_browse_preview(
     _db_preview_ensure_option("db_browse_chapter", chapter_options, "全部板块")
     _db_preview_ensure_option("db_browse_year", year_options, "全部年份")
     _db_preview_ensure_option("db_browse_page_size", page_size_options, 10)
+    _db_preview_ensure_option("db_browse_source_kind", source_kind_options, "\u5168\u90e8\u6765\u6e90\u7c7b\u578b")
+    _db_preview_ensure_option("db_browse_paper_series", paper_series_options, "\u5168\u90e8\u5377\u522b")
 
     search_active = bool(st.session_state.get("db_browse_search_active") and st.session_state.get("db_browse_keyword"))
     keyword = st.session_state.get("db_browse_keyword", "") if search_active else ""
@@ -12024,9 +15436,13 @@ def render_sqlite_readonly_browse_preview(
     current_year = st.session_state.get("db_browse_year", "全部年份")
     context_chapter = "" if current_chapter == "全部板块" else current_chapter
     context_year = None if current_year == "全部年份" else int(current_year)
+    current_source_kind = st.session_state.get("db_browse_source_kind", "\u5168\u90e8\u6765\u6e90\u7c7b\u578b")
+    current_paper_series = st.session_state.get("db_browse_paper_series", "\u5168\u90e8\u5377\u522b")
     range_context = QuestionListFilters(
         chapter=context_chapter,
         year=context_year,
+        source_kind="" if current_source_kind == "\u5168\u90e8\u6765\u6e90\u7c7b\u578b" else current_source_kind,
+        paper_series="" if current_paper_series == "\u5168\u90e8\u5377\u522b" else current_paper_series,
         limit=1,
     )
     try:
@@ -12041,6 +15457,8 @@ def render_sqlite_readonly_browse_preview(
     type_context = QuestionListFilters(
         chapter=context_chapter,
         year=context_year,
+        source_kind="" if current_source_kind == "\u5168\u90e8\u6765\u6e90\u7c7b\u578b" else current_source_kind,
+        paper_series="" if current_paper_series == "\u5168\u90e8\u5377\u522b" else current_paper_series,
         source="" if current_source == "全部来源" else current_source,
         limit=1,
     )
@@ -12063,6 +15481,8 @@ def render_sqlite_readonly_browse_preview(
     difficulty_context = QuestionListFilters(
         chapter=context_chapter,
         year=context_year,
+        source_kind="" if current_source_kind == "\u5168\u90e8\u6765\u6e90\u7c7b\u578b" else current_source_kind,
+        paper_series="" if current_paper_series == "\u5168\u90e8\u5377\u522b" else current_paper_series,
         source="" if current_source == "全部来源" else current_source,
         question_type_id=None if current_type == "__all__" else current_type,
         limit=1,
@@ -12094,11 +15514,17 @@ def render_sqlite_readonly_browse_preview(
                 pass
 
         st.markdown('<div class="mc-db-sidebar-section-label">精确搜索</div>', unsafe_allow_html=True)
-        st.markdown('<div class="mc-db-sidebar-caption">支持用 <code>/</code> 分隔多个关键词，例如 <code>函数/导数</code>；多个词会同时命中才算结果。</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="mc-db-sidebar-caption">'
+            '可搜题干、SQLite ID、旧ID、标签、备注、知识点、试卷来源和题型；'
+            '支持用 <code>/</code> 分隔多个关键词，例如 <code>ID:Q000765/标签:导数</code>。'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         st.text_input(
             "关键词",
             key="db_browse_keyword_input",
-            placeholder="例如：函数/导数、sin x",
+            placeholder="例如：Q000765、旧ID:834、标签:导数",
             label_visibility="collapsed",
         )
         st.button(
@@ -12110,19 +15536,36 @@ def render_sqlite_readonly_browse_preview(
         )
 
         st.markdown('<div class="mc-db-sidebar-section-label">范围筛选</div>', unsafe_allow_html=True)
-        range_chapter_col, range_year_col = st.columns([1.15, 0.85], gap="small")
-        with range_chapter_col:
-            selected_chapter = st.selectbox(
-                "知识板块",
-                chapter_options,
-                key="db_browse_chapter",
+        source_kind_col, paper_series_col = st.columns(2, gap="small")
+        with source_kind_col:
+            selected_source_kind = st.selectbox(
+                "来源类型",
+                source_kind_options,
+                key="db_browse_source_kind",
                 on_change=_db_preview_reset_page,
             )
+        with paper_series_col:
+            selected_paper_series = st.selectbox(
+                "卷别代码",
+                paper_series_options,
+                format_func=lambda value: paper_series_labels.get(value, value),
+                key="db_browse_paper_series",
+                on_change=_db_preview_reset_page,
+            )
+
+        range_year_col, range_chapter_col = st.columns([0.85, 1.15], gap="small")
         with range_year_col:
             selected_year = st.selectbox(
                 "年份",
                 year_options,
                 key="db_browse_year",
+                on_change=_db_preview_reset_page,
+            )
+        with range_chapter_col:
+            selected_chapter = st.selectbox(
+                "知识板块",
+                chapter_options,
+                key="db_browse_chapter",
                 on_change=_db_preview_reset_page,
             )
 
@@ -12139,10 +15582,16 @@ def render_sqlite_readonly_browse_preview(
         selected_difficulty = st.selectbox("难度", difficulty_options, key="db_browse_difficulty", on_change=_db_preview_reset_page)
         page_size = int(st.session_state.get("db_browse_page_size", 10) or 10)
 
+    if selected_source_kind == source_kind_options[0]:
+        selected_source_kind = ""
+    if selected_paper_series == paper_series_options[0]:
+        selected_paper_series = ""
     filters = QuestionListFilters(
         keyword=(keyword or "").strip(),
         year=None if selected_year == "全部年份" else int(selected_year),
         chapter="" if selected_chapter == "全部板块" else selected_chapter,
+        source_kind="" if selected_source_kind == "全部来源类型" else selected_source_kind,
+        paper_series="" if selected_paper_series == "全部卷别" else selected_paper_series,
         source="" if selected_source == "全部来源" else selected_source,
         question_type_id=None if selected_type == "__all__" else selected_type,
         difficulty=None if selected_difficulty == "全部难度" else int(selected_difficulty),
@@ -12292,6 +15741,8 @@ def render_sqlite_readonly_browse_preview(
                             keyword=filters.keyword,
                             year=filters.year,
                             chapter=filters.chapter,
+                            source_kind=filters.source_kind,
+                            paper_series=filters.paper_series,
                             source=filters.source,
                             question_number=filters.question_number,
                             question_type_id=filters.question_type_id,
@@ -12692,7 +16143,7 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
             with exit_btn_col:
                 st.markdown('<span class="delete-exit-btn-hook"></span>', unsafe_allow_html=True)
                 if st.button("退出\n删除模式", key="delete_mode_exit_btn", type="secondary", use_container_width=True):
-                    st.session_state["tools_subpage"] = None
+                    st.session_state["tools_subpage"] = st.session_state.pop("delete_mode_return_subpage", None)
                     st.session_state["adv_search_active"] = False
                     _clear_advanced_search_result_cache()
                     st.rerun()
@@ -13714,7 +17165,7 @@ def page_exam_paper_generation():
                                     st.markdown(f"##### 📝 {b['content']}")
                                 elif b["type"] == "question":
                                     st.markdown(f'<div class="mc-history-question-number">第 {q_count} 题</div>', unsafe_allow_html=True)
-                                    st.markdown(latex_to_markdown(b["content"]), unsafe_allow_html=True)
+                                    _render_preview_with_inline_assets(latex_to_markdown(b["content"]))
                                     q_count += 1
                                 st.markdown('<div class="mc-history-divider"></div>', unsafe_allow_html=True)
         return
@@ -13776,32 +17227,15 @@ def page_exam_paper_generation():
         st.toast("当前新增问题数已超过预设定数，已为您新增题数上限", icon="⚠️")
     render_exam_floating_basket()
     from services.database_service import DEFAULT_DATABASE_PATH
-    from services.local_preferences_service import QUESTION_SOURCE_LEGACY, QUESTION_SOURCE_SQLITE, get_exam_default_source, source_label
+    from services.local_preferences_service import QUESTION_SOURCE_LEGACY, QUESTION_SOURCE_SQLITE, get_browse_default_source, source_label
     from services.question_db_service import get_question_bank_availability
 
-    exam_source_options = ["旧 TeX 题库", "SQLite 试用题库"]
-    preferred_exam_source = get_exam_default_source()
+    preferred_exam_source = get_browse_default_source()
     sqlite_availability = get_question_bank_availability(DEFAULT_DATABASE_PATH)
     if preferred_exam_source == QUESTION_SOURCE_SQLITE and not sqlite_availability.get("ready_for_browse"):
         preferred_exam_source = QUESTION_SOURCE_LEGACY
-    default_exam_source_label = source_label(preferred_exam_source, surface="exam")
-    if not st.session_state.get("exam_selection_source_bootstrapped_v3"):
-        st.session_state.setdefault("exam_selection_source", default_exam_source_label)
-        st.session_state["exam_selection_source_bootstrapped_v3"] = True
-    if st.session_state.get("exam_selection_source") not in exam_source_options:
-        st.session_state["exam_selection_source"] = default_exam_source_label
-
-    source_label_col, source_control_col = st.columns([0.72, 3.4], gap="small", vertical_alignment="center")
-    with source_label_col:
-        st.markdown("##### 选题来源")
-    with source_control_col:
-        selection_source = st.radio(
-            "选题来源",
-            exam_source_options,
-            key="exam_selection_source",
-            horizontal=True,
-            label_visibility="collapsed",
-        )
+    selection_source = source_label(preferred_exam_source, surface="exam")
+    st.session_state["exam_selection_source"] = selection_source
 
     # Sync state before widget to preserve value
     current_count = st.session_state.get("exam_q_count_input", 10)
@@ -15018,6 +18452,7 @@ def render_local_maintenance_tool():
 
     from services.local_preferences_service import (
         BROWSE_SOURCE_LABELS,
+        ENTRY_SOURCE_LABELS,
         EXAM_SOURCE_LABELS,
         QUESTION_SOURCE_LEGACY,
         QUESTION_SOURCE_SQLITE,
@@ -15029,25 +18464,37 @@ def render_local_maintenance_tool():
 
     preferences = load_local_preferences()
     with st.expander("本地使用偏好", expanded=False):
-        st.caption("只写入本机 `data/local_preferences.json`，不提交 GitHub；用于控制打开页面时默认使用 SQLite 还是旧 TeX。")
+        st.caption("只写入本机 `data/local_preferences.json`，不提交 GitHub；用于控制旧名称入口打开旧 TeX 页面还是 SQLite 新页面。")
+        entry_labels = [
+            ENTRY_SOURCE_LABELS[QUESTION_SOURCE_LEGACY],
+            ENTRY_SOURCE_LABELS[QUESTION_SOURCE_SQLITE],
+        ]
         browse_labels = [
-            BROWSE_SOURCE_LABELS[QUESTION_SOURCE_SQLITE],
             BROWSE_SOURCE_LABELS[QUESTION_SOURCE_LEGACY],
+            BROWSE_SOURCE_LABELS[QUESTION_SOURCE_SQLITE],
         ]
         exam_labels = [
             EXAM_SOURCE_LABELS[QUESTION_SOURCE_SQLITE],
             EXAM_SOURCE_LABELS[QUESTION_SOURCE_LEGACY],
         ]
-        pref_col1, pref_col2, pref_col3 = st.columns([1.25, 1.25, 0.75], gap="small", vertical_alignment="bottom")
+        pref_col1, pref_col2, pref_col3, pref_col4 = st.columns([1.15, 1.15, 1.15, 0.75], gap="small", vertical_alignment="bottom")
         with pref_col1:
+            entry_label = source_label(preferences.get("entry_default_source"), surface="entry")
+            entry_default_label = st.selectbox(
+                "录入新题入口",
+                entry_labels,
+                index=entry_labels.index(entry_label) if entry_label in entry_labels else 0,
+                key="local_pref_entry_default_source",
+            )
+        with pref_col2:
             browse_label = source_label(preferences.get("browse_default_source"), surface="browse")
             browse_default_label = st.selectbox(
-                "全局浏览默认来源",
+                "全局浏览入口",
                 browse_labels,
                 index=browse_labels.index(browse_label) if browse_label in browse_labels else 0,
                 key="local_pref_browse_default_source",
             )
-        with pref_col2:
+        with pref_col3:
             exam_label = source_label(preferences.get("exam_default_source"), surface="exam")
             exam_default_label = st.selectbox(
                 "组卷选题默认来源",
@@ -15055,10 +18502,11 @@ def render_local_maintenance_tool():
                 index=exam_labels.index(exam_label) if exam_label in exam_labels else 0,
                 key="local_pref_exam_default_source",
             )
-        with pref_col3:
+        with pref_col4:
             if st.button("保存偏好", key="local_pref_save", type="primary", use_container_width=True):
                 saved_preferences = save_local_preferences(
                     {
+                        "entry_default_source": source_from_label(entry_default_label),
                         "browse_default_source": source_from_label(browse_default_label),
                         "exam_default_source": source_from_label(exam_default_label),
                     }
@@ -15295,249 +18743,959 @@ def render_local_maintenance_tool():
 
 
 def render_legacy_tex_migration_tool():
+    """Guide old TeX users through a safe, deliberately small migration flow."""
     st.markdown("### 🧱 旧 TeX 题库迁移到 SQLite")
-    st.caption("用于早期本地 TeX 题库存储方案升级。当前页面只做预览迁移和提升检查，不直接覆盖正式数据库。")
-
-    st.markdown(
-        """
-        <style>
-        .legacy-migration-note {
-            border: 1px solid rgba(109, 40, 217, 0.14);
-            border-radius: 14px;
-            padding: 14px 16px;
-            background: rgba(255, 255, 255, 0.78);
-            color: #3f4150;
-            line-height: 1.65;
-            margin: 4px 0 14px 0;
-        }
-        .legacy-migration-note strong {
-            color: #342255;
-        }
-        .legacy-migration-result {
-            border: 1px solid rgba(0, 122, 255, 0.16);
-            border-radius: 12px;
-            padding: 12px 14px;
-            background: rgba(237, 246, 255, 0.78);
-            margin: 10px 0;
-        }
-        .legacy-migration-result code {
-            color: #2f2360;
-            word-break: break-all;
-        }
-        </style>
-        <div class="legacy-migration-note">
-            <strong>安全边界：</strong>第一步只生成 <code>data/mathcyclus_preview_*.sqlite3</code> 和
-            <code>reports/tex_to_db_dry_run_*.md</code>，不会修改旧 <code>.tex</code>，也不会写入正式
-            <code>data/mathcyclus.sqlite3</code>。
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.caption("只需选择旧题库的 chapters 文件夹；转换完成后，再由你确认是否写入新版数据库。")
+    st.info(
+        "新版数据统一保存在 `data/mathcyclus.sqlite3`。旧 `.tex` 文件只读扫描，不会被删除或改写。"
     )
 
     migrate_script = os.path.join(BASE_DIR, "scripts", "migrate_tex_to_db_dry_run.py")
     promote_script = os.path.join(BASE_DIR, "scripts", "promote_preview_to_database.py")
-
     st.session_state.setdefault("legacy_migration_root", "chapters")
     st.session_state.setdefault("legacy_migration_stamp", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
     st.session_state.setdefault("legacy_migration_limit", 0)
-    st.session_state.setdefault("legacy_migration_promote_stamp", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
 
-    root_col, limit_col, stamp_col = st.columns([2.2, 0.8, 1.2])
-    with root_col:
-        source_root = st.text_input(
-            "旧 TeX 题库目录",
-            key="legacy_migration_root",
-            help="默认读取当前项目的 chapters。也可以填写另一个旧版本题库的 chapters 目录。",
-        )
-    with limit_col:
+    source_root = st.text_input(
+        "旧题库 chapters 路径",
+        key="legacy_migration_root",
+        help="可以填写当前项目的 chapters，也可以填写另一份旧题库的绝对路径。",
+    )
+    source_abs = _legacy_migration_abs_path(source_root)
+    if not os.path.isdir(source_abs):
+        st.warning("请先填写一个存在的 chapters 文件夹路径。")
+
+    with st.expander("高级选项（通常不需要修改）", expanded=False):
         limit = st.number_input(
-            "最多迁移",
+            "最多转换题目",
             min_value=0,
             max_value=20000,
             step=20,
             key="legacy_migration_limit",
-            help="0 表示全量；排查格式问题时建议先填 20 或 100。",
+            help="0 表示转换全部题目；排查格式时可先填 20。",
         )
-    with stamp_col:
-        stamp = st.text_input("输出标记", key="legacy_migration_stamp")
+        st.text_input("本次转换标记", key="legacy_migration_stamp")
 
-    source_abs = _legacy_migration_abs_path(source_root)
-    if not os.path.exists(migrate_script):
-        st.error("找不到迁移脚本：scripts/migrate_tex_to_db_dry_run.py")
-    elif not source_abs or not os.path.isdir(source_abs):
-        st.warning("请填写有效的旧 TeX 题库目录。")
-    else:
-        st.caption(f"将读取：{_db_preview_relative_path(source_abs)}")
-
-    dry_run_disabled = not os.path.exists(migrate_script) or not source_abs or not os.path.isdir(source_abs)
-    if st.button("生成 SQLite 预览库（安全 dry-run）", type="primary", disabled=dry_run_disabled, use_container_width=True):
-        command = [sys.executable, migrate_script, "--root", source_root, "--stamp", stamp.strip() or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")]
+    can_convert = os.path.exists(migrate_script) and os.path.isdir(source_abs)
+    if st.button("开始转换旧 TeX 题库", type="primary", disabled=not can_convert, use_container_width=True):
+        stamp = st.session_state.get("legacy_migration_stamp", "").strip() or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        command = [sys.executable, migrate_script, "--root", source_root, "--stamp", stamp]
         if int(limit or 0) > 0:
             command.extend(["--limit", str(int(limit))])
-        with st.spinner("正在扫描旧 TeX 题库并生成 SQLite 预览库..."):
+        with st.spinner("正在扫描 chapters 并生成 SQLite 预览库，请稍候..."):
             result = _legacy_migration_run_command(command)
         st.session_state["legacy_migration_last_run"] = result
         if result["ok"]:
             record_operation("legacy_tex_migration_dry_run", details=result["command"])
-            st.success("预览迁移完成。请先检查报告，再决定是否进入正式库提升流程。")
+            st.success("转换完成。请检查结果后，再确认写入正式库。")
         else:
-            st.error("预览迁移失败。请根据 stderr 修复旧 TeX 格式或路径问题。")
+            st.error("转换失败，请检查路径和下方输出。")
 
     last_run = st.session_state.get("legacy_migration_last_run")
-    if last_run:
-        parsed = _legacy_migration_parse_stdout(last_run.get("stdout", ""))
-        if parsed:
-            q_col, eq_col, db_col = st.columns([0.8, 0.8, 2.4])
-            q_col.metric("预览题目", parsed.get("questions", "0"))
-            eq_col.metric("疑似同题", parsed.get("equivalence_candidates", "0"))
-            db_col.markdown(
-                f"""
-                <div class="legacy-migration-result">
-                    预览库：<code>{html.escape(parsed.get("database", ""))}</code><br>
-                    报告：<code>{html.escape(parsed.get("report", ""))}</code>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with st.expander("查看脚本输出", expanded=not last_run.get("ok")):
-            st.code(last_run.get("command", ""), language="powershell")
+    parsed = _legacy_migration_parse_stdout(last_run.get("stdout", "")) if last_run else {}
+    if parsed:
+        st.markdown("#### 本次转换结果")
+        q_col, duplicate_col, location_col = st.columns([1, 1, 2.2])
+        q_col.metric("转换题目", parsed.get("questions", "0"))
+        duplicate_col.metric("疑似同题", parsed.get("equivalence_candidates", "0"))
+        location_col.markdown(
+            f"预览库：`{parsed.get('database', '')}`\n\n报告：`{parsed.get('report', '')}`"
+        )
+        st.session_state["legacy_migration_preview_source"] = parsed.get("database", "")
+    if last_run and (not last_run.get("ok") or last_run.get("stderr")):
+        with st.expander("查看转换输出", expanded=not last_run.get("ok")):
             if last_run.get("stdout"):
                 st.code(last_run["stdout"], language="text")
             if last_run.get("stderr"):
                 st.code(last_run["stderr"], language="text")
-        report_preview = _legacy_migration_read_report(parsed.get("report", "") if parsed else "")
-        if report_preview:
-            with st.expander("预览迁移报告", expanded=False):
-                st.code(report_preview, language="markdown")
 
-    st.divider()
-    st.markdown("#### 提升检查（仍然不写正式库）")
-    st.caption("这一步检查某个预览库如果提升为正式库，会产生哪些表级差异、阻塞项和 warning。")
-
-    preview_dbs = _legacy_migration_existing_preview_dbs()
-    preview_options = preview_dbs or [""]
-    selected_preview = st.selectbox(
-        "选择预览库",
-        options=preview_options,
-        format_func=lambda value: _db_preview_relative_path(value) if value else "暂无预览库，请先生成 dry-run",
-        key="legacy_migration_preview_db_select",
-    )
-    manual_preview = st.text_input("手动预览库路径（可选）", key="legacy_migration_manual_preview_db")
-    preview_source = manual_preview.strip() or selected_preview
-
-    promote_col_1, promote_col_2 = st.columns([1, 1])
-    with promote_col_1:
-        promote_stamp = st.text_input("提升检查标记", key="legacy_migration_promote_stamp")
-    with promote_col_2:
-        sample_limit = st.number_input("差异样例上限", min_value=10, max_value=500, value=50, step=10, key="legacy_migration_sample_limit")
-
+    preview_source = st.session_state.get("legacy_migration_preview_source", "")
     preview_abs = _legacy_migration_abs_path(preview_source)
-    promote_disabled = (
-        not os.path.exists(promote_script)
-        or not preview_source
-        or not os.path.isfile(preview_abs)
-    )
-    if st.button("生成提升检查报告（dry-run）", disabled=promote_disabled, use_container_width=True):
-        command = [
-            sys.executable,
-            promote_script,
-            "--source-db",
-            preview_source,
-            "--stamp",
-            promote_stamp.strip() or datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
-            "--sample-limit",
-            str(int(sample_limit)),
-        ]
-        with st.spinner("正在检查预览库提升为正式库的差异..."):
-            result = _legacy_migration_run_command(command)
-        st.session_state["legacy_migration_last_promote_check"] = result
-        if result["ok"]:
-            record_operation("legacy_tex_migration_promote_check", details=result["command"])
-            st.success("提升检查报告已生成；当前仍未写入正式数据库。")
-        else:
-            st.error("提升检查失败。请确认预览库存在且结构完整。")
-
-    last_promote_check = st.session_state.get("legacy_migration_last_promote_check")
-    if last_promote_check:
-        parsed = _legacy_migration_parse_stdout(last_promote_check.get("stdout", ""))
-        with st.expander("查看提升检查输出", expanded=not last_promote_check.get("ok")):
-            st.code(last_promote_check.get("command", ""), language="powershell")
-            if last_promote_check.get("stdout"):
-                st.code(last_promote_check["stdout"], language="text")
-            if last_promote_check.get("stderr"):
-                st.code(last_promote_check["stderr"], language="text")
-        report_preview = _legacy_migration_read_report(parsed.get("report", "") if parsed else "")
-        if report_preview:
-            with st.expander("预览提升检查报告", expanded=False):
-                st.code(report_preview, language="markdown")
-
-    st.divider()
-    st.markdown("#### 正式提升到 SQLite（强确认）")
-    st.caption(
-        "确认预览库和提升检查报告无问题后，可以在这里把预览库提升为正式库。"
-        "执行前会自动备份现有 data/mathcyclus.sqlite3；不会删除旧 .tex 题源。"
-    )
-    apply_confirm = st.text_input(
-        "写入确认文本",
-        key="legacy_migration_apply_confirm",
-        placeholder="PROMOTE_SQLITE_PREVIEW",
-        help="必须完整输入 PROMOTE_SQLITE_PREVIEW 才会真正写入正式 SQLite。",
-    )
-    allow_promote_warnings = st.checkbox(
-        "允许带 warning 提升",
-        value=False,
-        key="legacy_migration_allow_warnings",
-        help="只允许非阻断 warning；如果审计存在 blocker，仍会拒绝写入。",
-    )
-    apply_disabled = promote_disabled or apply_confirm.strip() != "PROMOTE_SQLITE_PREVIEW"
-    if st.button("正式提升为 data/mathcyclus.sqlite3", disabled=apply_disabled, type="primary", use_container_width=True):
-        command = [
-            sys.executable,
-            promote_script,
-            "--source-db",
-            preview_source,
-            "--stamp",
-            promote_stamp.strip() or datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
-            "--sample-limit",
-            str(int(sample_limit)),
-            "--apply",
-            "--confirm",
-            "PROMOTE_SQLITE_PREVIEW",
-        ]
-        if allow_promote_warnings:
-            command.append("--allow-warnings")
-        with st.spinner("正在备份并提升正式 SQLite 数据库..."):
-            result = _legacy_migration_run_command(command)
-        st.session_state["legacy_migration_last_apply"] = result
-        if result["ok"]:
-            record_operation("legacy_tex_migration_promote_apply", details=result["command"])
-            clear_statistics_cache()
-            st.success("正式 SQLite 已更新；旧 .tex 文件未被修改。")
-        else:
-            st.error("正式提升失败。请查看 stderr 和提升报告后再处理。")
+    if preview_abs and os.path.isfile(preview_abs) and os.path.exists(promote_script):
+        st.divider()
+        st.markdown("#### 确认写入新版数据库")
+        st.caption("这一步会先备份现有数据库，再将预览库写入 `data/mathcyclus.sqlite3`；仍不会改动旧 TeX 文件。")
+        confirm = st.checkbox("我已检查转换报告，确认写入新版 SQLite", key="legacy_migration_confirm_write")
+        if st.button("确认写入 data/mathcyclus.sqlite3", type="primary", disabled=not confirm, use_container_width=True):
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            command = [
+                sys.executable, promote_script, "--source-db", preview_source,
+                "--stamp", stamp, "--sample-limit", "50", "--apply",
+                "--confirm", "PROMOTE_SQLITE_PREVIEW",
+            ]
+            with st.spinner("正在备份并写入新版 SQLite 数据库..."):
+                result = _legacy_migration_run_command(command)
+            st.session_state["legacy_migration_last_apply"] = result
+            if result["ok"]:
+                record_operation("legacy_tex_migration_promote_apply", details=result["command"])
+                clear_statistics_cache()
+                st.success("新版数据库已写入：data/mathcyclus.sqlite3")
+            else:
+                st.error("写入失败，请查看输出并保留备份后再处理。")
 
     last_apply = st.session_state.get("legacy_migration_last_apply")
     if last_apply:
-        with st.expander("查看正式提升输出", expanded=not last_apply.get("ok")):
-            st.code(last_apply.get("command", ""), language="powershell")
+        with st.expander("查看正式写入输出", expanded=not last_apply.get("ok")):
             if last_apply.get("stdout"):
                 st.code(last_apply["stdout"], language="text")
             if last_apply.get("stderr"):
                 st.code(last_apply["stderr"], language="text")
 
-    st.caption("数据统计页已改为 SQLite 优先读取；API 设置仍然只负责模型和提示词配置，不需要跟随数据库迁移。")
-
 
 # ================= 页面：工具箱 =================
+def _render_workflow_mode_switch_tool():
+    from services.local_preferences_service import (
+        BROWSE_SOURCE_LABELS,
+        ENTRY_SOURCE_LABELS,
+        QUESTION_SOURCE_LEGACY,
+        QUESTION_SOURCE_SQLITE,
+        load_local_preferences,
+        save_local_preferences,
+        source_from_label,
+        source_label,
+    )
+
+    preferences = load_local_preferences()
+    entry_labels = [
+        ENTRY_SOURCE_LABELS[QUESTION_SOURCE_LEGACY],
+        ENTRY_SOURCE_LABELS[QUESTION_SOURCE_SQLITE],
+    ]
+    browse_labels = [
+        BROWSE_SOURCE_LABELS[QUESTION_SOURCE_LEGACY],
+        BROWSE_SOURCE_LABELS[QUESTION_SOURCE_SQLITE],
+    ]
+    entry_label = source_label(preferences.get("entry_default_source"), surface="entry")
+    browse_label = source_label(preferences.get("browse_default_source"), surface="browse")
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stVerticalBlock"]:has(.mc-workflow-switch-anchor) {
+            gap: 0.62rem !important;
+        }
+        .mc-workflow-switch-panel {
+            margin: 0.3rem 0 1rem;
+            padding: 1rem 1.05rem;
+            border: 1px solid rgba(109, 40, 217, 0.16);
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.045);
+        }
+        .mc-workflow-switch-title {
+            color: #201532;
+            font-size: 1.02rem;
+            line-height: 1.35;
+            font-weight: 800;
+            margin: 0 0 0.2rem;
+        }
+        .mc-workflow-switch-caption {
+            color: #6b6680;
+            font-size: 0.86rem;
+            line-height: 1.55;
+            margin: 0;
+        }
+        .mc-workflow-choice-anchor {
+            display: none;
+        }
+        div[data-testid="column"]:has(.mc-workflow-choice-anchor) > div[data-testid="stVerticalBlock"] {
+            min-height: 7.1rem;
+            padding: 0.82rem 0.95rem 0.72rem !important;
+            border: 1px solid rgba(109, 40, 217, 0.16);
+            border-radius: 14px;
+            background: #f8f6ff;
+            box-shadow: 0 8px 20px rgba(76, 29, 149, 0.045);
+            box-sizing: border-box;
+        }
+        div[data-testid="column"]:has(.mc-workflow-entry-choice) > div[data-testid="stVerticalBlock"] {
+            background: #f7f4ff;
+        }
+        div[data-testid="column"]:has(.mc-workflow-browse-choice) > div[data-testid="stVerticalBlock"] {
+            background: #f3f7ff;
+            border-color: rgba(59, 130, 246, 0.16);
+        }
+        div[data-testid="column"]:has(.mc-workflow-choice-anchor) label[data-testid="stWidgetLabel"] p {
+            color: #2d2140 !important;
+            font-size: 0.96rem !important;
+            font-weight: 780 !important;
+        }
+        div[data-testid="column"]:has(.mc-workflow-choice-anchor) div[role="radiogroup"] {
+            margin-top: 0.22rem;
+            gap: 0.75rem !important;
+        }
+        div[data-testid="column"]:has(.mc-workflow-choice-anchor) div[role="radiogroup"] label {
+            padding: 0.28rem 0.42rem !important;
+            border-radius: 9px;
+        }
+        div[data-testid="column"]:has(.mc-workflow-choice-anchor) div[role="radiogroup"] label:hover {
+            background: rgba(255, 255, 255, 0.78);
+        }
+        </style>
+        <span class="mc-workflow-switch-anchor"></span>
+        <div class="mc-workflow-switch-panel">
+            <div class="mc-workflow-switch-title">🧭 新旧录入与预览入口切换</div>
+            <p class="mc-workflow-switch-caption">
+                左侧栏只保留旧名称入口；这里决定点击“录入新题”和“全局浏览与编辑”时打开旧 TeX 页面还是 SQLite 新页面。
+                设置只写入本机 <code>data/local_preferences.json</code>，不会提交 GitHub。
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    entry_col, browse_col, action_col = st.columns([1.15, 1.15, 0.85], gap="medium", vertical_alignment="bottom")
+    with entry_col:
+        st.markdown('<span class="mc-workflow-choice-anchor mc-workflow-entry-choice"></span>', unsafe_allow_html=True)
+        selected_entry_label = st.radio(
+            "录入新题按钮打开",
+            entry_labels,
+            index=entry_labels.index(entry_label) if entry_label in entry_labels else 0,
+            key="workflow_entry_default_source_label",
+            horizontal=True,
+        )
+    with browse_col:
+        st.markdown('<span class="mc-workflow-choice-anchor mc-workflow-browse-choice"></span>', unsafe_allow_html=True)
+        selected_browse_label = st.radio(
+            "全局浏览按钮打开",
+            browse_labels,
+            index=browse_labels.index(browse_label) if browse_label in browse_labels else 0,
+            key="workflow_browse_default_source_label",
+            horizontal=True,
+        )
+    with action_col:
+        if st.button("应用入口设置", key="workflow_mode_save", type="primary", use_container_width=True):
+            save_local_preferences(
+                {
+                    "entry_default_source": source_from_label(selected_entry_label),
+                    "browse_default_source": source_from_label(selected_browse_label),
+                }
+            )
+            st.toast("入口设置已保存", icon="✅")
+            st.rerun()
+
+@st.dialog("首次使用标准试卷名录", width="large")
+def show_paper_catalog_onboarding_dialog():
+    st.markdown("#### 这台电脑第一次打开标准试卷名录")
+    st.write("标准试卷名录是本机自己的配置，不会从 GitHub 自动同步，也不会上传你的题目数据。")
+    st.markdown(
+        "1. 先进入工具箱中的 **本地维护与升级**，应用当前数据库迁移。\n"
+        "2. 在本页面检查已有标准试卷名，并按你的题库情况补充或停用。\n"
+        "3. 以后录入试卷时，系统会推荐相似标准名；你可以确认沿用，也可以新增标准名。\n"
+        "4. Excel、CSV、SQLite、题目 TeX、图片和审核报告都保留在本地，不会上传 GitHub。"
+    )
+    st.info("不同用户可以维护不同的标准名录；这不会改变项目代码本身。")
+    if st.button("我知道了，开始维护", key="paper_catalog_onboarding_close", type="primary", use_container_width=True):
+        from services.local_preferences_service import load_local_preferences, save_local_preferences
+
+        preferences = load_local_preferences()
+        preferences["paper_catalog_onboarding_seen"] = True
+        save_local_preferences(preferences)
+        st.rerun()
+
+
+def render_paper_catalog_maintenance():
+    from services.paper_catalog_service import (
+        add_paper_alias,
+        add_standard_paper,
+        catalog_schema_available,
+        list_match_reviews,
+        list_standard_papers,
+        update_standard_paper_status,
+    )
+    from services.database_service import DEFAULT_DATABASE_PATH
+
+    st.markdown("### 🗂️ 标准试卷名录")
+    st.caption("维护年份、卷别、文理/新高考和标准试卷名；录入时的相似名称不会自动覆盖，必须人工确认。")
+    from services.local_preferences_service import load_local_preferences
+
+    if not load_local_preferences().get("paper_catalog_onboarding_seen"):
+        show_paper_catalog_onboarding_dialog()
+    if not catalog_schema_available(DEFAULT_DATABASE_PATH):
+        st.warning("当前数据库尚未应用 schema version 3。请先返回工具箱，进入“本地维护与升级”应用数据库迁移。")
+        return
+
+    try:
+        filter_source_rows = list_standard_papers(DEFAULT_DATABASE_PATH, status="", limit=2000)
+    except Exception as exc:
+        st.error(f"读取试卷筛选项失败：{exc}")
+        return
+    year_values = sorted(
+        {int(row["year"]) for row in filter_source_rows if row.get("year") is not None},
+        reverse=True,
+    )
+    series_values = sorted(
+        {str(row.get("paper_series") or "").strip() for row in filter_source_rows if str(row.get("paper_series") or "").strip()}
+    )
+    left_col, right_col = st.columns([0.92, 2.35], gap="large")
+    with left_col:
+        st.markdown("#### 筛选与新增")
+        filter_status_col, filter_year_col = st.columns(2, gap="small")
+        with filter_status_col:
+            status_filter = st.selectbox(
+                "名录状态",
+                ["confirmed", "active", "deprecated", "全部"],
+                format_func=lambda value: {"confirmed": "已确认", "active": "启用中", "deprecated": "已停用", "全部": "全部"}.get(value, value),
+                key="paper_catalog_status_filter",
+            )
+        with filter_year_col:
+            year_filter = st.selectbox(
+                "年份",
+                ["全部年份", *year_values],
+                key="paper_catalog_year_filter",
+            )
+        series_filter = st.selectbox(
+            "卷别代码",
+            ["全部卷别", *series_values],
+            key="paper_catalog_series_filter",
+        )
+        st.divider()
+        st.markdown("#### 新增标准试卷")
+        new_year = st.text_input("年份", key="paper_catalog_new_year")
+        new_series = st.text_input("卷别代码", value="G", key="paper_catalog_new_series")
+        new_track = st.selectbox("文理 / 新高考", ["新高考", "文科", "理科", "不区分"], key="paper_catalog_new_track")
+        new_name = st.text_input("标准试卷名", key="paper_catalog_new_name")
+        if st.button("新增并确认标准试卷", key="paper_catalog_new_submit", type="primary", use_container_width=True):
+            try:
+                added = add_standard_paper(
+                    DEFAULT_DATABASE_PATH,
+                    year=new_year,
+                    paper_series=new_series,
+                    track=new_track,
+                    paper_name=new_name,
+                    source_name=new_name,
+                )
+                st.toast(f"已保存：{added.get('paper_name')}", icon="✅")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"新增标准试卷失败：{exc}")
+        st.divider()
+        st.markdown("#### 最近审核记录")
+        try:
+            reviews = list_match_reviews(DEFAULT_DATABASE_PATH, limit=30)
+        except Exception as exc:
+            st.error(f"读取审核记录失败：{exc}")
+            reviews = []
+        if not reviews:
+            st.caption("暂无试卷匹配审核记录。")
+        else:
+            st.dataframe(
+                [
+                    {
+                        "识别名称": item.get("recognized_name") or "",
+                        "确认名称": item.get("confirmed_name") or "",
+                        "决策": item.get("decision") or "",
+                        "年份": item.get("recognized_year") or "",
+                        "时间": item.get("updated_at") or item.get("created_at") or "",
+                    }
+                    for item in reviews
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+    status_value = "" if status_filter == "全部" else status_filter
+    year_value = None if year_filter == "全部年份" else int(year_filter)
+    series_value = "" if series_filter == "全部卷别" else series_filter
+    try:
+        catalog_rows = list_standard_papers(
+            DEFAULT_DATABASE_PATH,
+            year=year_value,
+            paper_series=series_value,
+            status=status_value,
+            limit=1000,
+        )
+    except Exception as exc:
+        st.error(f"读取标准试卷名录失败：{exc}")
+        return
+
+    with right_col:
+        st.markdown(f"#### 当前名录 · {len(catalog_rows)} 张试卷")
+        if catalog_rows:
+            for row in catalog_rows:
+                paper_id = str(row.get("paper_standard_id") or "")
+                label = (
+                    f"{row.get('year') or '未设年份'} · {row.get('paper_series') or '未设卷别'} · "
+                    f"{row.get('paper_name') or '未命名'} · {row.get('track') or '未分科'}"
+                )
+                with st.expander(label, expanded=False):
+                    st.caption(f"标准 ID：{paper_id} · 原 paper ID：{row.get('paper_id') or '未绑定'}")
+                    action_col, alias_col = st.columns([1, 1], gap="small")
+                    with action_col:
+                        next_status = "deprecated" if row.get("status") != "deprecated" else "confirmed"
+                        action_label = "停用标准名" if next_status == "deprecated" else "恢复标准名"
+                        if st.button(action_label, key=f"paper_catalog_status_{paper_id}", use_container_width=True):
+                            try:
+                                update_standard_paper_status(DEFAULT_DATABASE_PATH, paper_id, next_status)
+                                st.toast(f"已{action_label}", icon="✅")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"更新名录状态失败：{exc}")
+                    with alias_col:
+                        alias_name = st.text_input("新增历史别名", key=f"paper_catalog_alias_{paper_id}", label_visibility="collapsed", placeholder="输入历史叫法")
+                        if st.button("保存别名", key=f"paper_catalog_alias_save_{paper_id}", use_container_width=True):
+                            if not alias_name.strip():
+                                st.warning("请先填写别名")
+                            else:
+                                try:
+                                    add_paper_alias(DEFAULT_DATABASE_PATH, paper_id, alias_name, source="catalog_maintenance")
+                                    st.toast("别名已保存", icon="✅")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"保存别名失败：{exc}")
+
+
+
+
+def render_legacy_tex_compatibility_tool():
+    st.markdown("### 🧰 旧 TeX 兼容工具")
+    st.caption("集中管理仍依赖 chapters、单题 .tex、CSV 缓存和 main.tex 的旧版功能；这些操作不会修改 SQLite 正式库。")
+    st.info("新版题目数据位于 `data/mathcyclus.sqlite3`。以下工具只维护旧 TeX 浏览、旧版编译与迁移前的数据一致性。")
+
+    with st.container(border=True):
+        st.markdown("#### 🔄 重建旧 TeX CSV 索引")
+        st.write("扫描 `chapters/` 中的题目文件，并重建 `utils/题库索引表.csv`。适合手动复制、删除或重命名旧 `.tex` 文件后使用。")
+        st.caption("只更新旧版页面使用的 CSV 缓存索引，不写入 SQLite，也不删除旧题目文件。")
+        if st.button("一键重建旧 TeX CSV 索引", key="btn_rebuild_db", type="primary", use_container_width=True):
+            with st.spinner("正在扫描 chapters 并重建旧 TeX CSV 索引..."):
+                try:
+                    init_script = os.path.join(BASE_DIR, "utils", "init_csv_index.py")
+                    subprocess.run([sys.executable, init_script], cwd=BASE_DIR, check=True, capture_output=True, text=True)
+                    clear_statistics_cache()
+                    record_operation("rebuild_csv_index", details="manual rebuild from chapters")
+                    st.success("旧 TeX CSV 索引已重建。")
+                except subprocess.CalledProcessError as exc:
+                    st.error(f"重建失败：\n{exc.stderr}")
+                except Exception as exc:
+                    st.error(f"重建失败：{exc}")
+
+    with st.container(border=True):
+        st.markdown("#### 📑 生成旧 TeX 章节汇总索引")
+        st.write("扫描旧 `chapters/` 题库，为每个知识板块生成或更新 `content_*.tex`，仅供兼容版 `main.tex` 汇总编译。")
+        st.caption("不会更新 SQLite。根目录 `main.tex` 当前只作为旧 TeX 兼容编译模板保留。")
+        if st.button("生成 / 更新 content_*.tex", key="btn_update_idx", use_container_width=True):
+            with st.spinner("正在生成旧 TeX 章节汇总索引..."):
+                try:
+                    if BASE_DIR not in sys.path:
+                        sys.path.append(BASE_DIR)
+                    import utils.batch_gen as batch_gen
+                    batch_gen.update_chapter_contents()
+                    record_operation("update_chapter_index", details="manual chapter index update")
+                    st.success("旧 TeX 章节汇总索引已更新。")
+                except Exception as exc:
+                    st.error(f"执行失败：{exc}")
+
+    with st.container(border=True):
+        st.markdown("#### 🎨 修复旧 TeX 的 TikZ 辅助副本")
+        st.write("扫描旧 `chapters/` 中的内联 TikZ，为题目旁的“相关图”目录生成或更新辅助 `.tex` 副本；题目中的内联 TikZ 仍会保留。")
+        st.warning("这是旧题库批量写入操作。仅在辅助副本缺失或历史 TikZ 目录需要修复时使用；执行前会由现有文件服务创建备份。")
+        confirm_tikz_repair = st.checkbox("我确认要扫描并修复旧 TeX 的 TikZ 辅助副本", key="legacy_tikz_repair_confirm")
+        if st.button("开始修复 TikZ 辅助副本", key="btn_extract_tikz", disabled=not confirm_tikz_repair, use_container_width=True):
+            with st.spinner("正在扫描旧 TeX 题库中的 TikZ..."):
+                updated_files = batch_extract_tikz_all()
+            if updated_files:
+                st.success(f"修复完成，共处理 {len(updated_files)} 个旧 TeX 文件。")
+                with st.expander("查看处理文件", expanded=False):
+                    for file_path in updated_files:
+                        st.write(f"- {file_path}")
+            else:
+                st.info("未发现需要修复的 TikZ 辅助副本。")
+
+    with st.container(border=True):
+        st.markdown("#### 🗑️ 删除与恢复旧 TeX 题目")
+        st.write("通过旧版全局浏览和三级查找定位 `chapters/` 中的单题 TeX；删除前自动备份，并同步旧 CSV 与章节索引。")
+        st.warning("这里只处理旧 TeX 文件，不会删除 SQLite 正式库中的题目。新版数据库删除将在回收站机制完成后接入单题编辑页。")
+        if st.button("进入旧 TeX 删除与恢复", key="btn_legacy_tex_delete_questions", use_container_width=True):
+            st.session_state["delete_mode_return_subpage"] = "legacy_tex_compatibility"
+            st.session_state["tools_subpage"] = "delete_questions"
+            st.session_state["adv_search_active"] = False
+            _clear_advanced_search_result_cache()
+            st.rerun()
+
+
+def render_similar_questions_page():
+    """Find SQLite questions similar to a selected reference question."""
+    from services.database_service import DEFAULT_DATABASE_PATH
+    from services.export_service import format_choice_item
+    from services.question_db_service import QuestionListFilters, get_question_bundle, list_question_filter_options
+    from services.sqlite_legacy_adapter import list_sqlite_legacy_rows, sqlite_bundle_to_legacy_card
+
+    db_path = DEFAULT_DATABASE_PATH
+    st.markdown("### 🧠 相似题查找")
+    st.caption("先选择一条基准题，再按相似度从高到低查找当前 SQLite 题库中的相关题目。结果不会修改题库。")
+    st.markdown("""
+    <style>
+    .similarity-result-meta { color: #6b7280; font-size: .84rem; line-height: 1.5; margin-bottom: .35rem; }
+    .similarity-score { color: #6d28d9; font-size: 1.05rem; font-weight: 760; }
+    .similarity-result-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .28rem .58rem; margin-bottom: .65rem; }
+    .similarity-result-id { color: #241b35; font-weight: 720; }
+    .similarity-result-source, .similarity-result-taxonomy { color: #6b6475; font-size: .88rem; }
+    .similarity-match-reason { color: #71667e; font-size: .82rem; margin: -.2rem 0 .65rem; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    def _load_problem_preview(question_id: str, fallback_row: dict) -> tuple[str, dict, str]:
+        try:
+            bundle = get_question_bundle(db_path, question_id)
+            card = sqlite_bundle_to_legacy_card(bundle)
+            detail_row = card.get("row") or {}
+            question = bundle.get("question") or {}
+            choices = _db_preview_json_list(question.get("choices_json", "[]"))
+            choice_items = [format_choice_item(choice) for choice in choices]
+            choice_items = [choice_item for choice_item in choice_items if choice_item]
+            choices_tex = ""
+            if choice_items:
+                choices_tex = "\n".join([
+                    "\\begin{choices}",
+                    *(f"\\choice{{{choice_item}}}" for choice_item in choice_items),
+                    "\\end{choices}",
+                ])
+            problem_tex = "\n".join(filter(None, [
+                detail_row.get("题干") or fallback_row.get("题干") or "题干暂缺",
+                choices_tex,
+            ]))
+            return problem_tex, detail_row, ""
+        except Exception as exc:
+            return fallback_row.get("题干") or "题干暂缺", {}, str(exc)
+
+    def _render_similarity_result_card(match: dict) -> None:
+        row = match["row"]
+        question_id = row.get("SQLite题目ID") or row.get("题目ID") or "未知 ID"
+        score = max(0.0, min(1.0, float(match.get("score") or 0))) * 100
+        source = " · ".join(filter(None, [row.get("年份"), row.get("试卷名称"), row.get("原卷题号")]))
+        taxonomy = " · ".join(filter(None, [row.get("知识板块"), row.get("题型")]))
+        with st.container(border=True):
+            st.markdown(
+                "<div class='similarity-result-header'>"
+                f"<span class='similarity-score'>{score:.1f}% 综合相关</span>"
+                f"<span class='similarity-result-id'>{html.escape(question_id)}</span>"
+                f"<span class='similarity-result-source'>{html.escape(source or '来源未登记')}</span>"
+                f"<span class='similarity-result-taxonomy'>{html.escape(taxonomy or '分类未登记')}</span>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f"<div class='similarity-match-reason'>匹配依据：{html.escape(match.get('reason') or '语义接近')}</div>",
+                unsafe_allow_html=True,
+            )
+            problem_tex, detail_row, preview_error = _load_problem_preview(question_id, row)
+            _render_preview_with_inline_assets(_cached_latex_to_markdown(problem_tex))
+            with st.expander("展开答案与解析"):
+                if preview_error:
+                    st.warning(f"答案与解析暂不可用：{preview_error}")
+                else:
+                    preview_tex = "\n".join(filter(None, [detail_row.get("答案"), detail_row.get("解析")]))
+                    if preview_tex.strip():
+                        _render_preview_with_inline_assets(_cached_latex_to_markdown(preview_tex))
+                    else:
+                        st.caption("该题暂未登记答案或解析。")
+
+    left_col, right_col = st.columns([0.82, 1.75], gap="large")
+    with left_col:
+        st.markdown("#### 选择基准题")
+        reference_keyword = st.text_input(
+            "按 ID、来源或题干搜索",
+            key="similarity_reference_keyword",
+            placeholder="例如 Q000496、上海卷、函数",
+        )
+        reference_candidates = list_sqlite_legacy_rows(
+            db_path,
+            QuestionListFilters(keyword=reference_keyword.strip(), limit=20, offset=0),
+        )
+        reference_options = ["__none__"] + [
+            row.get("SQLite题目ID") or row.get("题目ID") for row in reference_candidates
+        ]
+        reference_by_id = {
+            row.get("SQLite题目ID") or row.get("题目ID"): row for row in reference_candidates
+        }
+        if st.session_state.get("similarity_reference_id") not in reference_options:
+            st.session_state["similarity_reference_id"] = "__none__"
+
+        def _reference_label(question_id):
+            row = reference_by_id.get(question_id)
+            if not row:
+                return "先搜索并选择一条题目"
+            source = " · ".join(filter(None, [row.get("年份"), row.get("试卷名称"), row.get("原卷题号")]))
+            return f"{question_id}｜{source or '来源未登记'}"
+
+        selected_reference_id = st.selectbox(
+            "基准题",
+            reference_options,
+            format_func=_reference_label,
+            key="similarity_reference_id",
+        )
+        reference_row = reference_by_id.get(selected_reference_id)
+
+        st.markdown("#### 精细筛选")
+        options = list_question_filter_options(db_path)
+        selected_year = st.selectbox("年份", ["全部年份"] + options["years"], key="similarity_year")
+        selected_source = st.selectbox("试卷来源", ["全部来源"] + options["sources"], key="similarity_source")
+        type_map = {item["question_type_id"]: item["name"] for item in options["all_question_types"]}
+        type_options = ["__all__"] + [item["question_type_id"] for item in options["all_question_types"]]
+        selected_type = st.selectbox(
+            "题型",
+            type_options,
+            format_func=lambda value: "全部题型" if value == "__all__" else type_map.get(value, str(value)),
+            key="similarity_type",
+        )
+        selected_difficulty = st.selectbox("难度", ["全部难度"] + options["difficulties"], key="similarity_difficulty")
+        selected_chapter = st.selectbox("知识板块", ["全部板块"] + options["chapters"], key="similarity_chapter")
+        page_size = 20
+        st.caption("结果区每页显示 20 道，双列排列，每列 10 道。")
+
+        if st.button("查找相似题", type="primary", use_container_width=True, disabled=not reference_row, key="btn_similarity_search"):
+            filters = QuestionListFilters(
+                year=None if selected_year == "全部年份" else int(selected_year),
+                source="" if selected_source == "全部来源" else selected_source,
+                question_type_id=None if selected_type == "__all__" else selected_type,
+                difficulty=None if selected_difficulty == "全部难度" else int(selected_difficulty),
+                chapter="" if selected_chapter == "全部板块" else selected_chapter,
+                limit=100,
+                offset=0,
+            )
+            with st.spinner("正在计算相似度…"):
+                try:
+                    candidates = list_sqlite_legacy_rows(db_path, filters, max_rows=0)
+                    config = _semantic_api_config()
+                    matches = semantic_search_similar_row(reference_row, candidates, config["model_name"], top_k=200)
+                    st.session_state["similarity_results"] = matches
+                    st.session_state["similarity_results_reference"] = selected_reference_id
+                    st.session_state["similarity_page"] = 1
+                except SemanticSearchError as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.error(f"相似题查找失败：{exc}")
+
+        if st.button("更新语义索引", use_container_width=True, key="btn_similarity_rebuild_index"):
+            st.session_state["tools_subpage"] = "semantic_index"
+            st.rerun()
+
+    with right_col:
+        if not reference_row:
+            st.info("请先在左侧输入关键词并选择一条基准题。")
+            return
+        st.markdown("#### 基准题")
+        reference_source = " · ".join(filter(None, [
+            reference_row.get("年份"),
+            reference_row.get("试卷名称"),
+            reference_row.get("原卷题号"),
+        ]))
+        reference_taxonomy = " · ".join(filter(None, [
+            reference_row.get("知识板块"),
+            reference_row.get("题型"),
+        ]))
+        st.markdown(
+            "<div class='similarity-result-header'>"
+            f"<span class='similarity-result-id'>{html.escape(selected_reference_id)}</span>"
+            f"<span class='similarity-result-source'>{html.escape(reference_source or '来源未登记')}</span>"
+            f"<span class='similarity-result-taxonomy'>{html.escape(reference_taxonomy or '分类未登记')}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        reference_problem_tex, _, reference_preview_error = _load_problem_preview(selected_reference_id, reference_row)
+        _render_preview_with_inline_assets(_cached_latex_to_markdown(reference_problem_tex))
+        if reference_preview_error:
+            st.caption(f"完整题目预览暂不可用：{reference_preview_error}")
+        st.divider()
+
+        matches = st.session_state.get("similarity_results") or []
+        if st.session_state.get("similarity_results_reference") != selected_reference_id:
+            matches = []
+        if not matches:
+            st.info("选择基准题后点击“查找相似题”，结果会显示在这里。")
+            return
+        total = len(matches)
+        page_count = max(1, (total + int(page_size) - 1) // int(page_size))
+        current_page = min(max(1, int(st.session_state.get("similarity_page", 1))), page_count)
+        st.session_state["similarity_page"] = current_page
+        st.markdown(f"#### 相似题结果 · {total} 道")
+        page_col, summary_col = st.columns([1, 1])
+        with page_col:
+            selected_page = st.number_input(
+                "页码", min_value=1, max_value=page_count, value=current_page, step=1, key="similarity_page_input"
+            )
+            if selected_page != current_page:
+                st.session_state["similarity_page"] = int(selected_page)
+                st.rerun()
+        with summary_col:
+            st.caption(f"共 {page_count} 页 · 双列横向递减 · 按综合相关度降序")
+
+        start = (current_page - 1) * int(page_size)
+        page_matches = matches[start:start + int(page_size)]
+        for row_start in range(0, len(page_matches), 2):
+            result_columns = st.columns(2, gap="medium")
+            for result_column, match in zip(result_columns, page_matches[row_start:row_start + 2]):
+                with result_column:
+                    _render_similarity_result_card(match)
+
+def render_sqlite_batch_maintenance_tool():
+    from services.database_service import DEFAULT_DATABASE_PATH
+    from services.batch_maintenance_service import apply_question_bulk_updates, preview_question_bulk_updates
+    from services.question_db_service import QuestionListFilters, list_question_filter_options
+    from services.sqlite_legacy_adapter import list_sqlite_legacy_rows
+
+    st.markdown("### 🧰 SQLite 批量维护")
+    st.caption("先按范围选题，再预览修改前后差异；正式执行使用单次 SQLite 事务，并为每道题写入修订记录。")
+    options = list_question_filter_options(DEFAULT_DATABASE_PATH)
+    type_map = {item["question_type_id"]: item["name"] for item in options["all_question_types"]}
+    with st.container(border=True):
+        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        with filter_col1:
+            year = st.selectbox("年份", ["全部年份"] + options["years"], key="bulk_maintenance_year")
+            chapter = st.selectbox("知识板块", ["全部板块"] + options["chapters"], key="bulk_maintenance_chapter")
+        with filter_col2:
+            source = st.selectbox("试卷来源", ["全部来源"] + options["sources"], key="bulk_maintenance_source")
+            difficulty = st.selectbox("当前难度", ["全部难度"] + options["difficulties"], key="bulk_maintenance_filter_difficulty")
+        with filter_col3:
+            question_type = st.selectbox(
+                "当前题型", ["__all__"] + [item["question_type_id"] for item in options["all_question_types"]],
+                format_func=lambda value: "全部题型" if value == "__all__" else type_map.get(value, str(value)),
+                key="bulk_maintenance_filter_type",
+            )
+            keyword = st.text_input("关键词 / ID", key="bulk_maintenance_keyword")
+
+    filter_values = QuestionListFilters(
+        keyword=keyword.strip(),
+        year=None if year == "全部年份" else int(year),
+        chapter="" if chapter == "全部板块" else chapter,
+        source="" if source == "全部来源" else source,
+        question_type_id=None if question_type == "__all__" else question_type,
+        difficulty=None if difficulty == "全部难度" else int(difficulty),
+        limit=100,
+        offset=0,
+    )
+    candidates = list_sqlite_legacy_rows(DEFAULT_DATABASE_PATH, filter_values, max_rows=100)
+    candidate_by_id = {row.get("SQLite题目ID") or row.get("题目ID"): row for row in candidates}
+    option_ids = list(candidate_by_id)
+    if not option_ids:
+        st.info("当前筛选范围没有题目。")
+        return
+    selected_ids = st.multiselect(
+        f"选择要维护的题目（当前 {len(option_ids)} 道，最多显示 100 道）",
+        option_ids,
+        format_func=lambda question_id: f"{question_id}｜{candidate_by_id[question_id].get('年份') or '年份未登记'}｜{candidate_by_id[question_id].get('试卷名称') or '来源未登记'}｜第{candidate_by_id[question_id].get('原卷题号') or '?'}题",
+        key="bulk_maintenance_selected_ids",
+    )
+    if not selected_ids:
+        st.info("请选择至少一条题目后配置批量修改字段。")
+        return
+
+    st.markdown("#### 修改内容")
+    update_col1, update_col2 = st.columns(2)
+    updates = {}
+    with update_col1:
+        update_difficulty = st.checkbox("修改难度", key="bulk_maintenance_change_difficulty")
+        if update_difficulty:
+            updates["difficulty"] = st.selectbox("新难度", options["difficulties"], key="bulk_maintenance_new_difficulty")
+        update_tags = st.checkbox("覆盖标签", key="bulk_maintenance_change_tags")
+        if update_tags:
+            updates["tags_json"] = st.text_area("新标签（逗号或换行分隔）", key="bulk_maintenance_new_tags", height=90)
+    with update_col2:
+        update_note = st.checkbox("覆盖备注", key="bulk_maintenance_change_note")
+        if update_note:
+            updates["note"] = st.text_area("新备注", key="bulk_maintenance_new_note", height=90)
+        update_type = st.checkbox("修改题型", key="bulk_maintenance_change_type")
+        if update_type:
+            updates["question_type_id"] = st.selectbox("新题型", [item["question_type_id"] for item in options["all_question_types"]], format_func=lambda value: type_map.get(value, str(value)), key="bulk_maintenance_new_type")
+        update_official = st.checkbox("修改官方标记", key="bulk_maintenance_change_official")
+        if update_official:
+            updates["official_flag"] = st.checkbox("标记为官方题", key="bulk_maintenance_official_value")
+
+    if not updates:
+        st.warning("请至少勾选一个需要修改的字段。")
+        return
+    if st.button("预览批量修改", type="primary", use_container_width=True, key="btn_bulk_maintenance_preview"):
+        try:
+            st.session_state["bulk_maintenance_plan"] = preview_question_bulk_updates(DEFAULT_DATABASE_PATH, selected_ids, updates)
+        except Exception as exc:
+            st.error(f"生成修改预览失败：{exc}")
+    plan = st.session_state.get("bulk_maintenance_plan") or {}
+    if plan.get("updates") != updates or set(item.get("question_id") for item in plan.get("items", [])) - set(selected_ids):
+        plan = {}
+    if plan:
+        st.markdown(f"预览：将修改 **{plan.get('changed', 0)}** 道题，**{plan.get('unchanged', 0)}** 道题无需修改。")
+        preview_rows = []
+        for item in plan.get("items", [])[:30]:
+            if item.get("changed_fields"):
+                preview_rows.append({"题目ID": item["question_id"], "变化字段": "、".join(item["changed_fields"])})
+        if preview_rows:
+            st.dataframe(preview_rows, use_container_width=True, hide_index=True)
+        st.warning("执行后会写入正式 SQLite，并为每道题生成修订记录；不会修改旧 TeX 文件。")
+        confirm = st.checkbox("我已检查预览，确认执行本次批量修改", key="bulk_maintenance_confirm")
+        if st.button("确认执行批量修改", type="primary", use_container_width=True, disabled=not confirm, key="btn_bulk_maintenance_apply"):
+            try:
+                result = apply_question_bulk_updates(DEFAULT_DATABASE_PATH, plan, operator="streamlit_ui")
+                record_operation("bulk_question_update", details=json.dumps({"changed": result["changed"], "skipped": result["skipped"]}, ensure_ascii=False))
+                st.session_state.pop("bulk_maintenance_plan", None)
+                st.session_state["bulk_maintenance_selected_ids"] = []
+                st.success(f"批量维护完成：已修改 {result['changed']} 道题。")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"批量维护失败，事务已回滚：{exc}")
+
+
+def render_asset_audit_tool():
+    from services.database_service import DEFAULT_DATABASE_PATH
+    from services.asset_service import audit_asset_library
+
+    st.markdown("### 🖼️ 图片资源管理")
+    st.caption("检查题目图片登记、文件存在性、TeX 占位符引用和本地资源目录中的孤立文件；本页面只读，不会自动删除文件。")
+    if st.button("扫描图片资源", type="primary", use_container_width=True, key="btn_asset_audit"):
+        with st.spinner("正在检查图片资源…"):
+            try:
+                st.session_state["asset_audit_report"] = audit_asset_library(DEFAULT_DATABASE_PATH, project_root=APP_ROOT)
+            except Exception as exc:
+                st.error(f"图片资源检查失败：{exc}")
+    report = st.session_state.get("asset_audit_report")
+    if not report:
+        st.info("点击“扫描图片资源”开始检查。")
+        return
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("已登记资源", report.get("registered", 0))
+    metric_cols[1].metric("可正常读取", report.get("valid", 0))
+    metric_cols[2].metric("缺失文件", len(report.get("missing", [])))
+    metric_cols[3].metric("孤立文件", len(report.get("orphan_files", [])))
+    missing = report.get("missing", [])
+    orphan_files = report.get("orphan_files", [])
+    reference_issues = report.get("reference_issues", [])
+    if missing:
+        st.markdown("#### 缺失或无法读取的登记资源")
+        st.dataframe(missing, use_container_width=True, hide_index=True)
+    if reference_issues:
+        st.markdown("#### TeX 引用与登记关系异常")
+        st.dataframe([{"题目ID": item["question_id"], "问题": item["issues"]} for item in reference_issues], use_container_width=True, hide_index=True)
+    if orphan_files:
+        st.markdown("#### 资源目录中的孤立文件")
+        st.dataframe([{"文件": item} for item in orphan_files[:200]], use_container_width=True, hide_index=True)
+    if not missing and not orphan_files and not reference_issues:
+        st.success("图片资源登记、文件路径和 TeX 引用均未发现问题。")
+def render_semantic_index_maintenance_tool():
+    st.markdown("### 🧠 语义搜索索引")
+    st.caption("维护题干 embedding 索引，供混合搜索和语义搜索使用；索引属于可重建的派生数据，不会修改题目内容。")
+
+    try:
+        semantic_status = semantic_index_status()
+        semantic_status_error = ""
+    except SemanticSearchError as exc:
+        semantic_status = {"count": 0, "model_name": ""}
+        semantic_status_error = str(exc)
+
+    status_text = f"{semantic_status['count']} 道题" if semantic_status.get("count") else "未建立"
+    model_text = semantic_status.get("model_name") or "未配置"
+    status_tone = "ready" if semantic_status.get("count") else "pending"
+    model_tone = "ready" if semantic_status.get("model_name") else "pending"
+    st.markdown("""
+    <style>
+    .semantic-status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin: 0.2rem 0 1rem;
+    }
+    .semantic-status-card {
+        min-height: 112px;
+        box-sizing: border-box;
+        padding: 1rem 1.1rem 0.95rem;
+        border: 1px solid rgba(109, 40, 217, 0.13);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow: 0 6px 18px rgba(76, 29, 149, 0.06);
+    }
+    .semantic-status-card.pending {
+        background: rgba(248, 247, 252, 0.84);
+        border-color: rgba(107, 114, 128, 0.16);
+    }
+    .semantic-status-label {
+        display: flex;
+        align-items: center;
+        gap: 0.42rem;
+        color: #6b7280;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+    .semantic-status-dot {
+        width: 0.48rem;
+        height: 0.48rem;
+        border-radius: 50%;
+        background: #a78bfa;
+        box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.14);
+    }
+    .semantic-status-card.ready .semantic-status-dot {
+        background: #22c55e;
+        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+    }
+    .semantic-status-value {
+        margin-top: 0.55rem;
+        color: #211b35;
+        font-size: clamp(1.45rem, 2.5vw, 2rem);
+        font-weight: 780;
+        line-height: 1.1;
+        overflow-wrap: anywhere;
+    }
+    .semantic-status-card.model .semantic-status-value {
+        font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+        line-height: 1.3;
+    }
+    .semantic-status-hint {
+        margin-top: 0.38rem;
+        color: #8b8499;
+        font-size: 0.75rem;
+    }
+    @media (max-width: 700px) {
+        .semantic-status-grid { grid-template-columns: 1fr; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="semantic-status-grid">
+        <div class="semantic-status-card {status_tone}">
+            <div class="semantic-status-label"><span class="semantic-status-dot"></span>当前索引规模</div>
+            <div class="semantic-status-value">{html.escape(status_text)}</div>
+            <div class="semantic-status-hint">用于相似题查找与语义搜索</div>
+        </div>
+        <div class="semantic-status-card model {model_tone}">
+            <div class="semantic-status-label"><span class="semantic-status-dot"></span>Embedding 模型</div>
+            <div class="semantic-status-value">{html.escape(model_text)}</div>
+            <div class="semantic-status-hint">向量模型需与索引保持一致</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if semantic_status_error:
+        st.warning(f"索引状态读取失败：{semantic_status_error}")
+
+    st.info("普通更新只处理新增或发生变化的题目；仅在更换模型、索引异常或需要完整校验时启用强制重建。")
+    force_rebuild = st.checkbox("强制重新生成已有向量", key="semantic_force_rebuild")
+
+    if st.button("更新语义索引", key="btn_rebuild_semantic", type="primary", use_container_width=True):
+        config = _semantic_api_config()
+        progress_bar = st.progress(0)
+
+        def _semantic_progress(done, total):
+            progress_bar.progress(1.0 if total <= 0 else min(1.0, done / total))
+
+        try:
+            rows = _csv_index_cached(_csv_index_cache_token())
+            with st.spinner("正在生成题目 embedding，请稍候..."):
+                result = build_semantic_index(
+                    rows,
+                    config["base_url"],
+                    config["api_key"],
+                    config["model_name"],
+                    force=force_rebuild,
+                    progress=_semantic_progress,
+                )
+            progress_bar.empty()
+            _clear_advanced_search_result_cache()
+            st.success(f"语义索引已更新：处理 {result['updated']} 道，当前共 {result['total']} 道。")
+        except SemanticSearchError as exc:
+            progress_bar.empty()
+            st.error(str(exc))
+        except Exception as exc:
+            progress_bar.empty()
+            st.error(f"语义索引更新失败：{exc}")
+
+
 def page_tools():
     st.header("🛠️ 工具箱")
 
-    if st.session_state.get("tools_subpage") == "tag_edit":
-        if st.button("⬅️ 返回工具箱", type="secondary"):
-            st.session_state["tools_subpage"] = None
-            st.rerun()
-        page_tag_edit()
-        return
     if st.session_state.get("tools_subpage") == "delete_questions":
         page_browse(is_delete_mode=True)
         return
@@ -15561,6 +19719,12 @@ def page_tools():
             st.rerun()
         render_duplicate_check_page()
         return
+    if st.session_state.get("tools_subpage") == "legacy_tex_compatibility":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_legacy_tex_compatibility_tool()
+        return
     if st.session_state.get("tools_subpage") == "legacy_tex_migration":
         if st.button("⬅️ 返回工具箱", type="secondary"):
             st.session_state["tools_subpage"] = None
@@ -15573,7 +19737,37 @@ def page_tools():
             st.rerun()
         render_local_maintenance_tool()
         return
-    
+    if st.session_state.get("tools_subpage") == "paper_catalog":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_paper_catalog_maintenance()
+        return
+    if st.session_state.get("tools_subpage") == "semantic_index":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = "similar_questions"
+            st.rerun()
+        render_semantic_index_maintenance_tool()
+        return
+
+    if st.session_state.get("tools_subpage") == "similar_questions":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_similar_questions_page()
+        return
+    if st.session_state.get("tools_subpage") == "sqlite_batch_maintenance":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_sqlite_batch_maintenance_tool()
+        return
+    if st.session_state.get("tools_subpage") == "asset_audit":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_asset_audit_tool()
+        return
     st.markdown("""
     <style>
     /* 工具卡片网格布局：一行三个 */
@@ -15596,6 +19790,10 @@ def page_tools():
         flex-direction: column;
         justify-content: space-between;
         min-height: 240px; /* 确保同一行的卡片高度一致 */
+    }
+    .tool-card-four {
+        min-height: 255px;
+        padding: 18px;
     }
     .tool-card:hover {
         transform: translateY(-4px);
@@ -15643,359 +19841,108 @@ def page_tools():
     }
     </style>
     """, unsafe_allow_html=True)
+
+    _render_workflow_mode_switch_tool()
     
     # 开启网格布局容器
     st.markdown('<div class="tool-grid">', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True) 
     
-    # 第一行 3 个工具
-    r1_c1, r1_c2, r1_c3 = st.columns([1, 1, 1])
-    
+    # 第一行：四列
+    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns([1, 1, 1, 1])
     with r1_c1:
         st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🗄️ 1. 数据库维护</div>
-            <div class="tool-desc-highlight">
-                如果您手动删除、外部复制等变动，导致与 CSV 索引不一致，或者统计数据异常，可以点击下方按钮进行一键重建。该操作会保留现有题目的 ID，并自动追加新题或删除不存在的死链接。
-            </div>
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🧱 1. 旧 TeX 迁移到 SQLite</div>
+            <div class="tool-desc">从旧 <code>chapters</code> 生成 SQLite 预览库和报告，确认无阻塞后安全提升为正式库；不删除旧题源。</div>
         </div>
         """, unsafe_allow_html=True)
-        # 负 margin 把按钮拉进卡片里
-        st.markdown("<style>div:has(> button[key='btn_rebuild_db']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("🔄 一键重建/同步题库索引", key="btn_rebuild_db", use_container_width=True):
-            with st.spinner("正在扫描所有目录并重建 CSV 索引..."):
-                try:
-                    init_script = os.path.join(BASE_DIR, "utils", "init_csv_index.py")
-                    subprocess.run(
-                        [sys.executable, init_script],
-                        cwd=BASE_DIR,
-                        check=True,
-                        capture_output=True,
-                        text=True,
-                    )
-                    clear_statistics_cache()
-                    st.success("题库索引重建成功！")
-                    record_operation("rebuild_csv_index", details="manual rebuild from chapters")
-                    st.toast("题库索引同步完成！", icon="✅")
-                    time.sleep(1)
-                    st.rerun()
-                except subprocess.CalledProcessError as e:
-                    st.error(f"同步失败：\n{e.stderr}")
-                except Exception as e:
-                    st.error(f"发生错误：{str(e)}")
-            
+        st.markdown("<style>div:has(> button[key='btn_tools_legacy_tex_migration']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入旧库迁移工具", key="btn_tools_legacy_tex_migration", use_container_width=True):
+            st.session_state["tools_subpage"] = "legacy_tex_migration"
+            st.rerun()
+
     with r1_c2:
         st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">📑 2. 更新板块题目索引</div>
-            <div class="tool-desc">
-                调用本地的脚本，自动扫描 chapters 目录下的所有题目，并为每个板块重新生成最新的 <code>content_*.tex</code> 索引文件。供主文件 <code>main.tex</code> 调用编译。
-                <br><br><i>(当您新增、删除或重命名了题目文件后，请执行此操作以确保主文件目录同步)</i>
-            </div>
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🧰 2. 旧 TeX 兼容工具</div>
+            <div class="tool-desc">集中管理旧 <code>chapters + 单题 TeX + CSV + main.tex</code> 工作流。包含 CSV 索引、章节汇总、TikZ 辅助副本修复和旧题删除恢复。</div>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_update_idx']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("⚡ 执行更新章节索引", key="btn_update_idx", use_container_width=True):
-            with st.spinner("正在运行更新脚本..."):
-                try:
-                    if BASE_DIR not in sys.path:
-                        sys.path.append(BASE_DIR)
-                    import utils.batch_gen as batch_gen
-                    batch_gen.update_chapter_contents()
-                    st.success("章节索引更新完成！")
-                    record_operation("update_chapter_index", details="manual chapter index update")
-                except Exception as e:
-                    st.error(f"执行失败: {e}")
+        st.markdown("<style>div:has(> button[key='btn_tools_legacy_compatibility']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入旧 TeX 兼容工具", key="btn_tools_legacy_compatibility", use_container_width=True):
+            st.session_state["tools_subpage"] = "legacy_tex_compatibility"
+            st.rerun()
 
     with r1_c3:
         st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🎨 3. 提取并分离 TikZ 绘图</div>
-            <div class="tool-desc">
-                扫描题库中所有现存的 <code>.tex</code> 文件。如果发现未被分离的 <code>\\begin{tikzpicture} ... \\end{tikzpicture}</code> 代码，将会自动将其剥离到同级目录下的 <code>相关图</code> 文件夹中生成副本，同时在主文件中保留内联 TikZ 源码。
-            </div>
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🧰 3. 本地维护与升级</div>
+            <div class="tool-desc">检查更新计划、应用 SQLite schema 迁移，并导出、检查和恢复本地数据迁移包。</div>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_extract_tikz']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("✂️ 执行全库 TikZ 剥离", key="btn_extract_tikz", use_container_width=True):
-            updated_files = batch_extract_tikz_all()
-            if updated_files:
-                st.success(f"操作完成，共处理了 {len(updated_files)} 个文件。")
-                with st.expander("查看更新的文件名单", expanded=True):
-                    for f in updated_files: st.write(f"- {f}")
-            else:
-                st.info("未发现需要处理的文件。")
+        st.markdown("<style>div:has(> button[key='btn_tools_local_maintenance']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入本地维护与升级", key="btn_tools_local_maintenance", use_container_width=True):
+            st.session_state["tools_subpage"] = "local_maintenance"
+            st.rerun()
+
+    with r1_c4:
+        st.markdown("""
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🗂️ 4. 标准试卷名录</div>
+            <div class="tool-desc">管理标准试卷名、历史别名、停用状态和最近审核记录，避免相似名称形成重复试卷。</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_paper_catalog']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入标准试卷名录", key="btn_tools_paper_catalog", use_container_width=True):
+            st.session_state["tools_subpage"] = "paper_catalog"
+            st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # 第二行 3 个工具
+
+    # 第二行：三列
     r2_c1, r2_c2, r2_c3 = st.columns([1, 1, 1])
-    
     with r2_c1:
         st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">✅ 4. 纠正选择题选项格式</div>
-            <div class="tool-desc">
-                扫描题库中所有现存的 <code>.tex</code> 文件。如果发现形如 <code>A. xxx B. xxx C. xxx D. xxx</code> 的非标准选择题格式，将自动尝试提取选项内容，并用规范的 <code>\\begin{choices} ... \\end{choices}</code> 指令进行替换。
-            </div>
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🧩 5. 挖空题生成</div>
+            <div class="tool-desc">上传或粘贴题目与解答，按预设要求生成挖空题。支持实时预览、保存题目和导出当前挖空题图片。</div>
         </div>
         """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_fix_choices']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("🔧 执行全库选择题格式纠正", key="btn_fix_choices", use_container_width=True):
-            updated_files = batch_fix_choice_formats()
-            if updated_files:
-                st.success(f"操作完成，共修复了 {len(updated_files)} 个文件。")
-                with st.expander("查看已修复的文件名单", expanded=True):
-                    for f in updated_files: st.write(f"- {f}")
-            else:
-                st.info("未发现需要修复的选择题格式文件。")
-
-    with r2_c2:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🏷️ 5. 标签与属性修改</div>
-            <div class="tool-desc">
-                查找并修改某一道题或某一整套试卷的元数据：年份、试卷类别、试卷名称、题号、知识板块，并同步更新文件名与 CSV 索引。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_tools_tag_edit']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("进入标签与属性修改", key="btn_tools_tag_edit", use_container_width=True):
-            st.session_state["tools_subpage"] = "tag_edit"
-            st.rerun()
-
-    with r2_c3:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🗑️ 6. 删除题库问题</div>
-            <div class="tool-desc">
-                进入专用删除模式，沿用全局浏览和三级查找定位题目。删除时会先把题目文件及同名相关图备份到 <code>.backups</code>，再从题库目录移除，并同步 CSV 索引和章节索引；误删可在删除模式右上角“恢复误删题目”恢复本次删除记录，也可点“管理备份问题”查找历史备份。当前备份不会自动定期清理。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_tools_delete_questions']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("开始删除选定问题", key="btn_tools_delete_questions", use_container_width=True):
-            st.session_state["tools_subpage"] = "delete_questions"
-            st.session_state["adv_search_active"] = False
-            _clear_advanced_search_result_cache()
-            st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # 第三行工具
-    r3_c1, r3_c2, r3_c3 = st.columns([1, 1, 1])
-
-    with r3_c1:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🧩 7. 挖空题生成</div>
-            <div class="tool-desc">
-                上传或粘贴题目与解答，按预设要求生成挖空题。当前先沿用单题录入界面，支持实时预览、保存题目，并可导出当前挖空题图片；具体 AI 提示词与挖空生成策略后续补充。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_tools_cloze_generator']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_cloze_generator']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
         if st.button("进入挖空题生成界面", key="btn_tools_cloze_generator", use_container_width=True):
             st.session_state["tools_subpage"] = "cloze_generator"
             st.session_state["cloze_image_result"] = None
             st.session_state.setdefault("cloze_auto_solve", True)
             st.rerun()
 
-    with r3_c2:
-        try:
-            semantic_status = semantic_index_status()
-            semantic_status_error = ""
-        except SemanticSearchError as exc:
-            semantic_status = {"count": 0, "model_name": ""}
-            semantic_status_error = str(exc)
-        status_text = "未建立"
-        if semantic_status.get("count"):
-            status_text = f"{semantic_status['count']} 道题"
+    with r2_c2:
         st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🧠 8. 语义搜索索引</div>
-            <div class="tool-desc">
-                使用可配置的 embedding 模型建立题干语义索引，供高级搜索中的“混合搜索”和“语义搜索”使用。索引是可重建的派生数据，不会修改题目文件或 CSV。
-            </div>
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🧠 6. 相似题查找</div>
+            <div class="tool-desc">选择一条基准题，在 SQLite 题库中按相似度排序，并按年份、来源、题型、难度和知识板块继续筛选。</div>
         </div>
         """, unsafe_allow_html=True)
-        st.caption(f"当前状态：{status_text} · 模型：{semantic_status.get('model_name') or '未配置'}")
-        if semantic_status_error:
-            st.warning(f"索引状态读取失败：{semantic_status_error}")
-        force_rebuild = st.checkbox("强制重新生成已有向量", key="semantic_force_rebuild")
-        st.markdown("<style>div:has(> button[key='btn_rebuild_semantic']) { margin-top: -24px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("🔄 更新语义索引", key="btn_rebuild_semantic", use_container_width=True):
-            config = _semantic_api_config()
-            progress_bar = st.progress(0)
+        st.markdown("<style>div:has(> button[key='btn_tools_similar_questions']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入相似题查找", key="btn_tools_similar_questions", use_container_width=True):
+            st.session_state["tools_subpage"] = "similar_questions"
+            st.rerun()
 
-            def _semantic_progress(done, total):
-                progress_bar.progress(1.0 if total <= 0 else min(1.0, done / total))
-
-            try:
-                rows = _csv_index_cached(_csv_index_cache_token())
-                with st.spinner("正在生成题目 embedding，请稍候..."):
-                    result = build_semantic_index(
-                        rows,
-                        config["base_url"],
-                        config["api_key"],
-                        config["model_name"],
-                        force=force_rebuild,
-                        progress=_semantic_progress,
-                    )
-                progress_bar.empty()
-                _clear_advanced_search_result_cache()
-                st.success(f"语义索引已更新：处理 {result['updated']} 道，当前共 {result['total']} 道。")
-            except SemanticSearchError as exc:
-                progress_bar.empty()
-                st.error(str(exc))
-            except Exception as exc:
-                progress_bar.empty()
-                st.error(f"语义索引更新失败：{exc}")
-
-    with r3_c3:
+    with r2_c3:
         st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🔎 9. 搜索模式说明</div>
-            <div class="tool-desc">
-                精确筛选适合题号、年份、题型等明确条件；混合搜索在语义相关度基础上优先展示关键词命中的题目；语义搜索适合用自然语言描述考点。
-            </div>
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🔎 7. 题目查重</div>
+            <div class="tool-desc">扫描题库，识别完全重复和高度相似的题目，提供题目 ID、来源路径和并排预览。</div>
         </div>
         """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    r4_c1, r4_c2, r4_c3 = st.columns([1, 1, 1])
-    with r4_c1:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🔎 10. 题目查重</div>
-            <div class="tool-desc">
-                按题干内容扫描题库，识别完全重复和高度相似的题目，提供题目 ID、来源路径和并排预览，方便人工确认后处理。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_tools_duplicate_check']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_duplicate_check']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
         if st.button("进入题目查重", key="btn_tools_duplicate_check", use_container_width=True):
             st.session_state["tools_subpage"] = "duplicate_check"
             st.session_state.pop("duplicate_scan_results", None)
             st.rerun()
 
-    with r4_c2:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🧾 11. 操作记录</div>
-            <div class="tool-desc">
-                查看题目创建、编辑、重命名、删除、恢复和查重记录，便于追踪最近的数据变更。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with r4_c3:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🧱 12. 旧 TeX 迁移到 SQLite</div>
-            <div class="tool-desc">
-                为早期本地 TeX 题库用户提供升级入口：先从旧 <code>chapters</code> 生成 SQLite 预览库和迁移报告，再做提升检查；确认无阻塞后可强确认提升为正式库。全程不删除旧题源。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_tools_legacy_tex_migration']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("进入旧库迁移工具", key="btn_tools_legacy_tex_migration", use_container_width=True):
-            st.session_state["tools_subpage"] = "legacy_tex_migration"
-            st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    r5_c1, r5_c2, r5_c3 = st.columns([1, 1, 1])
-    with r5_c1:
-        st.markdown("""
-        <div class="tool-card">
-            <div class="tool-title">🧰 13. 本地维护与升级</div>
-            <div class="tool-desc">
-                面向源码版和未来打包版用户：检查 GitHub 更新计划、应用 SQLite schema 迁移、导出/检查/恢复本地数据迁移包。默认 dry-run，真正写入需要手动确认。
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<style>div:has(> button[key='btn_tools_local_maintenance']) { margin-top: -65px; padding: 0 20px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
-        if st.button("进入本地维护与升级", key="btn_tools_local_maintenance", use_container_width=True):
-            st.session_state["tools_subpage"] = "local_maintenance"
-            st.rerun()
-    with r5_c2:
-        st.empty()
-    with r5_c3:
-        st.empty()
-
     render_operation_log_panel()
 
-
-def batch_fix_choice_formats():
-    import re
-    updated_files = []
-    
-    for root, dirs, files in os.walk(CHAPTERS_DIR):
-        for file in files:
-            if not file.endswith(".tex"): continue
-            if file.startswith("content_"): continue
-            if " 相关图" in root or " 图" in file: continue
-            
-            file_path = os.path.join(root, file)
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                # 寻找 A. B. C. D. 模式 (支持全半角和换行)
-                pattern = r'(?:A|Ａ)[\.．]\s*(.*?)\s*(?:B|Ｂ)[\.．]\s*(.*?)\s*(?:C|Ｃ)[\.．]\s*(.*?)\s*(?:D|Ｄ)[\.．]\s*(.*?)(?=\\end\{problem\}|\\begin\{solutions?\}|$)'
-                
-                def replace_choices(match):
-                    opt_a = match.group(1).strip()
-                    opt_b = match.group(2).strip()
-                    opt_c = match.group(3).strip()
-                    opt_d = match.group(4).strip()
-                    
-                    # 移除选项末尾可能多余的 \quad, \qquad 和 \\ 等
-                    def clean_opt(opt):
-                        opt = re.sub(r'\\quad\s*$', '', opt).strip()
-                        opt = re.sub(r'\\qquad\s*$', '', opt).strip()
-                        opt = re.sub(r'\\\\$', '', opt).strip() # 去除换行符 \\
-                        return opt
-                        
-                    opt_a = clean_opt(opt_a)
-                    opt_b = clean_opt(opt_b)
-                    opt_c = clean_opt(opt_c)
-                    opt_d = clean_opt(opt_d)
-                    
-                    return f"\n\\begin{{choices}}\n\\choice{{{{{opt_a}}}}}\n\\choice{{{{{opt_b}}}}}\n\\choice{{{{{opt_c}}}}}\n\\choice{{{{{opt_d}}}}}\n\\end{{choices}}\n"
-                
-                new_content, count = re.subn(pattern, replace_choices, content, flags=re.DOTALL)
-                
-                # 检查 \begin{choices} 前面是否有 (\hspace{1cm})
-                if r'\begin{choices}' in new_content:
-                    parts = new_content.split(r'\begin{choices}')
-                    for i in range(len(parts) - 1):
-                        prefix = parts[i]
-                        stripped_prefix = prefix.rstrip()
-                        
-                        # 检查是否已经有 (\hspace{1cm}) 或者类似的占位符 (支持全角半角括号和空格)
-                        has_hspace = re.search(r'[\(（]\s*\\hspace\{1cm\}\s*[\)）]$', stripped_prefix)
-                        
-                        if not has_hspace:
-                            # 检查是否有空的括号 () 或 （），有的话直接替换掉
-                            if stripped_prefix.endswith('()') or stripped_prefix.endswith('（）'):
-                                stripped_prefix = stripped_prefix[:-2] + r'(\hspace{1cm})'
-                            else:
-                                stripped_prefix += r' (\hspace{1cm})'
-                                
-                        parts[i] = stripped_prefix + '\n'
-                        
-                    new_content = r'\begin{choices}'.join(parts)
-                
-                if new_content != content:
-                    atomic_write_text(file_path, new_content, backup=True)
-                    updated_files.append(file)
-            except Exception as e:
-                print(f"Error processing {file_path}: {e}")
-                
-    return updated_files
 
 def batch_extract_tikz_all():
     updated_files = []
@@ -16168,352 +20115,6 @@ def standardize_national_papers():
     return count
 
 # ================= 页面：标签与属性修改 (含搜索) =================
-def page_tag_edit():
-    st.header("🏷️ 标签与属性修改")
-    st.info("在此模式下，您可以修改题目的元数据（年份、试卷名、题号、板块）以及文件名。")
-    
-    # Session state for selected file in this tab
-    if "tag_edit_file" not in st.session_state:
-        st.session_state["tag_edit_file"] = None
-
-    # 定义匹配函数 (局部使用)
-    # def is_match(path, s_type, s_query): ... (Use global check_search_match instead)
-        
-    c_left, c_right = st.columns([1, 1.5])  # 调整比例，使右侧搜索栏宽度缩小
-    
-    with c_left:
-        st.markdown("""
-        <style>
-        #tag-edit-dir-label {
-            font-size: 16px;
-            font-weight: 700;
-            margin: 0.35rem 0 0.15rem 0;
-        }
-        #tag-edit-dir-box div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
-            font-size: 16px !important;
-            font-weight: 700 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        st.markdown('<div id="tag-edit-dir-box"></div>', unsafe_allow_html=True)
-        st.subheader("📂 目录选择")
-        csv_rows = []
-        all_years = get_all_years_globally()
-        st.markdown('<div id="tag-edit-dir-label">年份</div>', unsafe_allow_html=True)
-        year = st.selectbox("年份", options=all_years, key="te_year", label_visibility="collapsed")
-
-        type_opts = ["全部试卷类别"] + _editable_paper_type_options()
-        st.markdown('<div id="tag-edit-dir-label">试卷类别筛选</div>', unsafe_allow_html=True)
-        ptype_filter = st.selectbox("试卷类别筛选", options=type_opts, key="te_ptype_filter", label_visibility="collapsed", format_func=lambda x: x if x == "全部试卷类别" else f"{x} ({PAPER_TYPES.get(x, '')})")
-
-        paper_name = None
-        if year:
-            csv_token = _csv_index_cache_token()
-            try:
-                csv_rows = _csv_index_cached(csv_token)
-            except Exception:
-                from utils.csv_ops import read_csv_index
-                csv_rows = _filter_question_rows(read_csv_index())
-
-            papers_set = set()
-            for row in csv_rows:
-                if (row.get("年份", "") or "").strip() != str(year):
-                    continue
-                if ptype_filter != "全部试卷类别" and (row.get("试卷类型", "") or "").strip() != ptype_filter:
-                    continue
-                pname = (row.get("试卷名称", "") or "").strip()
-                if pname:
-                    papers_set.add(pname)
-            papers = sorted(papers_set) if papers_set else get_papers_by_year(year)
-            if papers:
-                st.markdown('<div id="tag-edit-dir-label">试卷</div>', unsafe_allow_html=True)
-                paper_name = st.selectbox("试卷", options=papers, key="te_paper", label_visibility="collapsed")
-        
-        if year and paper_name:
-            questions = get_questions_by_paper(year, paper_name)
-            if questions:
-                by_path = {}
-                for row in csv_rows if year else []:
-                    relp = (row.get("相对文件路径", "") or "").strip()
-                    if not relp:
-                        continue
-                    by_path[os.path.join(CHAPTERS_DIR, relp)] = row
-
-                filtered_questions = []
-                for q in questions:
-                    qpath = q.get("path")
-                    r = by_path.get(qpath)
-                    if ptype_filter != "全部试卷类别":
-                        if not r or (r.get("试卷类型", "") or "").strip() != ptype_filter:
-                            continue
-                    filtered_questions.append(q)
-
-                questions = filtered_questions
-                q_options = ["（所有题目：本试卷）"] + [f"第{q['file'].split('-')[3]}题 ({q['subject']})" for q in questions]
-                st.markdown('<div id="tag-edit-dir-label">题目</div>', unsafe_allow_html=True)
-                sel_idx = st.selectbox("题目", range(len(q_options)), format_func=lambda i: q_options[i], key="te_q_select", label_visibility="collapsed")
-                
-                if st.button("⬇️ 加载选中题目", key="btn_load_hierarchy", use_container_width=True):
-                    if sel_idx == 0:
-                        st.session_state["tag_edit_file"] = None
-                        st.session_state["tag_edit_bulk_paths"] = [q.get("path") for q in questions if q.get("path")]
-                        st.session_state["tag_edit_bulk_meta"] = {"year": str(year), "paper": str(paper_name)}
-                    else:
-                        st.session_state["tag_edit_bulk_paths"] = []
-                        st.session_state["tag_edit_bulk_meta"] = None
-                        st.session_state["tag_edit_file"] = questions[sel_idx - 1]["path"]
-                    st.rerun()
-
-    with c_right:
-        st.subheader("🔍 搜索选择")
-        search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签", "备注"]
-        # 因为需要级联更新 UI（selectbox -> text_input/selectbox），不能将包含动态类型的输入框直接放进 form
-        # 我们改用普通的容器，最后加一个搜索按钮
-        c1a, c1b = st.columns([1, 2])
-        with c1a: 
-            t1 = st.selectbox("一级类型", search_opts, index=0, key="te_s_t1", label_visibility="collapsed")
-        with c1b: 
-            if t1 == "题目类型":
-                q1 = st.selectbox("一级检索", ["选择题", "填空题", "解答题"], key="te_s_q1_sel", label_visibility="collapsed")
-            else:
-                q1 = st.text_input("一级检索", placeholder="一级关键词", key="te_s_q1", label_visibility="collapsed")
-        
-        # Level 2
-        c2a, c2b = st.columns([1, 2])
-        with c2a: 
-            t2 = st.selectbox("二级类型", search_opts, index=0, key="te_s_t2", label_visibility="collapsed")
-        with c2b: 
-            if t2 == "题目类型":
-                q2 = st.selectbox("二级检索", ["选择题", "填空题", "解答题"], key="te_s_q2_sel", label_visibility="collapsed")
-            else:
-                q2 = st.text_input("二级检索", placeholder="筛选词", key="te_s_q2", label_visibility="collapsed")
-        
-        # Level 3
-        c3a, c3b = st.columns([1, 2])
-        with c3a: 
-            t3 = st.selectbox("三级类型", search_opts, index=0, key="te_s_t3", label_visibility="collapsed")
-        with c3b: 
-            if t3 == "题目类型":
-                q3 = st.selectbox("三级检索", ["选择题", "填空题", "解答题"], key="te_s_q3_sel", label_visibility="collapsed")
-            else:
-                q3 = st.text_input("三级检索", placeholder="筛选词", key="te_s_q3", label_visibility="collapsed")
-        
-        submitted = st.button("🔍 搜索", type="primary", use_container_width=True)
-             
-        if submitted:
-            st.session_state["te_search_active"] = True
-            
-        if st.session_state.get("te_search_active"):
-            def _row_match(row, s_type, s_query):
-                s_query = (s_query or "").strip()
-                if not s_query:
-                    return True
-                if s_type == "题目类型":
-                    return s_query == (row.get("题型", "") or "").strip()
-                if s_type == "题目内容":
-                    return s_query in (row.get("题干", "") or "")
-                if s_type == "解答内容":
-                    return s_query in (row.get("解析", "") or "")
-                if s_type == "难度星级":
-                    return s_query in (row.get("难度星级", "") or "")
-                if s_type == "标签":
-                    return s_query in (row.get("标签", "") or "")
-                if s_type == "备注":
-                    return s_query in (row.get("备注", "") or "")
-                if s_type == "全文内容":
-                    hay = (row.get("题干", "") or "") + "\n" + (row.get("答案", "") or "") + "\n" + (row.get("解析", "") or "") + "\n" + (row.get("标签", "") or "") + "\n" + (row.get("备注", "") or "")
-                    return s_query in hay
-                return False
-
-            csv_token = _csv_index_cache_token()
-            try:
-                csv_rows = _csv_index_cached(csv_token)
-            except Exception:
-                from utils.csv_ops import read_csv_index
-                csv_rows = _filter_question_rows(read_csv_index())
-
-            results = []
-            for row in csv_rows:
-                if q1 and not _row_match(row, t1, q1):
-                    continue
-                if q2 and not _row_match(row, t2, q2):
-                    continue
-                if q3 and not _row_match(row, t3, q3):
-                    continue
-                relp = (row.get("相对文件路径", "") or "").strip()
-                if not relp:
-                    continue
-                absp = os.path.join(CHAPTERS_DIR, relp)
-                if not os.path.exists(absp):
-                    continue
-                fname = (row.get("文件名称", "") or "").strip()
-                if fname and not fname.lower().endswith(".tex"):
-                    fname = fname + ".tex"
-                results.append({"file": fname or os.path.basename(absp), "path": absp})
-            
-            if results:
-                st.success(f"找到 {len(results)} 个结果")
-                res_options = [r["file"] for r in results]
-                sel_res_idx = st.selectbox("选择搜索结果", range(len(results)), format_func=lambda i: res_options[i], key="te_res_select")
-                
-                if st.button("⬇️ 加载搜索结果", key="btn_load_search", use_container_width=True):
-                    st.session_state["tag_edit_file"] = results[sel_res_idx]["path"]
-                    st.rerun()
-            else:
-                st.warning("未找到匹配项")
-
-    st.divider()
-    
-    # 编辑区域
-    bulk_paths = st.session_state.get("tag_edit_bulk_paths") or []
-    bulk_meta = st.session_state.get("tag_edit_bulk_meta") or {}
-    if bulk_paths:
-        st.subheader("🧩 批量修改（本试卷所有题目）")
-        st.caption("仅修改：年份、试卷类别、试卷名称；题号与知识板块保持不变。")
-
-        cur_year = (bulk_meta.get("year") or "").strip()
-        cur_paper = (bulk_meta.get("paper") or "").strip()
-        st.info(f"当前试卷：{cur_year} 年｜{cur_paper}｜共 {len(bulk_paths)} 题")
-
-        type_opts = _editable_paper_type_options()
-        with st.form("te_bulk_update_form"):
-            new_year = st.text_input("统一年份", value=cur_year)
-            new_type = st.selectbox("统一试卷类别", options=type_opts, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})")
-            new_name = st.text_input("统一试卷名称", value=cur_paper)
-            submitted = st.form_submit_button("执行批量更新", type="primary")
-
-        if submitted:
-            ok, fail = 0, 0
-            log_lines = []
-            for old_path in bulk_paths:
-                try:
-                    if not old_path or not os.path.exists(old_path):
-                        fail += 1
-                        continue
-                    base = os.path.basename(old_path).replace(".tex", "")
-                    parts = base.split("-")
-                    if len(parts) < 5:
-                        fail += 1
-                        continue
-                    old_year, old_ptype, old_pname, old_pnum, old_subj = parts[0], parts[1], parts[2], parts[3], parts[4]
-                    new_filename = generate_filename(new_year, new_type, new_name, old_pnum, old_subj)
-                    primary_subj = old_subj.split("，")[0] if old_subj else ""
-                    target_dir = os.path.join(CHAPTERS_DIR, primary_subj, str(new_year))
-                    ensure_dir(target_dir)
-                    new_path = os.path.join(target_dir, new_filename)
-                    with open(old_path, "r", encoding="utf-8") as f:
-                        old_content = f.read()
-                    new_header = f"\\begin{{problem}}{{{new_year}}}{{{new_type}}}{{{new_name}}}{{{old_pnum}}}{{{old_subj}}}"
-                    new_content = re.sub(r"\\begin\{problem\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}", lambda _m: new_header, old_content, count=1)
-                    if new_content == old_content and "\\begin{problem}" in old_content:
-                        new_content = re.sub(r"\\begin\{problem\}", lambda _m: new_header, old_content, count=1)
-                    atomic_write_text(new_path, new_content, backup=os.path.exists(new_path))
-                    if os.path.abspath(new_path) != os.path.abspath(old_path):
-                        os.remove(old_path)
-                    update_csv_index_for_edit(old_path, new_path, new_content, str(new_year), new_type, new_name, old_pnum, old_subj)
-                    ok += 1
-                    log_lines.append(f"✅ {os.path.basename(old_path)} -> {os.path.basename(new_path)}")
-                except Exception as e:
-                    fail += 1
-                    log_lines.append(f"❌ {os.path.basename(old_path) if old_path else ''}: {e}")
-
-            clear_statistics_cache()
-            st.success(f"批量更新完成：成功 {ok}，失败 {fail}")
-            with st.expander("查看日志", expanded=(fail > 0)):
-                for line in log_lines:
-                    st.write(line)
-            st.session_state["tag_edit_bulk_paths"] = []
-            st.session_state["tag_edit_bulk_meta"] = None
-            time.sleep(0.5)
-            st.rerun()
-
-    file_path = st.session_state.get("tag_edit_file")
-    if file_path and os.path.exists(file_path):
-        # 读取文件内容
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # 解析当前元数据
-        current_meta = {}
-        parts = os.path.basename(file_path)[:-4].split('-')
-        if len(parts) >= 5:
-            current_meta = {
-                "year": parts[0],
-                "type": parts[1],
-                "name": parts[2],
-                "num": parts[3],
-                "subject": parts[4]
-            }
-        
-        c_edit_left, c_edit_right = st.columns([1, 1])
-        
-        with c_edit_left:
-            st.subheader("LaTeX 源码预览")
-            est_height = get_editor_height(content)
-            mtime_token = int(os.path.getmtime(file_path)) if os.path.exists(file_path) else 0
-            st.text_area("源码", value=content, height=est_height, disabled=True, key=f"te_preview_left_{file_path}_{mtime_token}")
-            st.caption(f"文件路径: {file_path}")
-            
-        with c_edit_right:
-            st.subheader("修改元数据")
-            with st.form("te_meta_update_form"):
-                new_year = st.text_input("年份", value=current_meta.get("year", ""))
-                
-                type_opts = _editable_paper_type_options()
-                default_type_idx = 0
-                if current_meta.get("type") in type_opts:
-                    default_type_idx = type_opts.index(current_meta.get("type"))
-                new_type = st.selectbox("试卷类型", options=type_opts, index=default_type_idx, format_func=lambda x: f"{x} ({PAPER_TYPES[x]})")
-                
-                new_name = st.text_input("试卷名称", value=current_meta.get("name", ""))
-                new_num = st.text_input("题号", value=current_meta.get("num", ""))
-                
-                # 多板块处理
-                current_subjects = current_meta.get("subject", "").split("，")
-                valid_current_subjects = [s for s in current_subjects if s in SUBJECTS]
-                if not valid_current_subjects:
-                    valid_current_subjects = [SUBJECTS[0]] if SUBJECTS else []
-                
-                new_subjects = st.multiselect("知识板块 (首个为主)", options=SUBJECTS, default=valid_current_subjects)
-                new_subject_str = "，".join(new_subjects) if new_subjects else (SUBJECTS[0] if SUBJECTS else "")
-                
-                st.caption("注意：修改元数据将重命名文件并更新文件内容的 problem 头部信息。主板块(第一个)决定文件存储位置。")
-                
-                if st.form_submit_button("执行重命名与标签更新", type="primary"):
-                    new_filename = generate_filename(new_year, new_type, new_name, new_num, new_subject_str)
-                    
-                    primary_subj = new_subject_str.split("，")[0] if new_subject_str else ""
-                    current_primary = current_meta.get("subject", "").split("，")[0]
-                    
-                    target_dir = os.path.join(CHAPTERS_DIR, primary_subj, new_year)
-                    if primary_subj != current_primary or new_year != current_meta.get("year"):
-                        ensure_dir(target_dir)
-                    new_path = os.path.join(target_dir, new_filename)
-
-                    try:
-                        new_header = f"\\begin{{problem}}{{{new_year}}}{{{new_type}}}{{{new_name}}}{{{new_num}}}{{{new_subject_str}}}"
-                        new_full_text = re.sub(r"\\begin\{problem\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}\{.*?\}", lambda _m: new_header, content, count=1)
-                        if new_full_text == content and "\\begin{problem}" in content:
-                            new_full_text = re.sub(r"\\begin\{problem\}", lambda _m: new_header, content, count=1)
-                        with open(new_path, "w", encoding="utf-8") as f:
-                            f.write(new_full_text)
-                        
-                        if new_path != file_path:
-                            os.remove(file_path)
-                            
-                        # 同步更新到 CSV 索引
-                        update_csv_index_for_edit(file_path, new_path, new_full_text, new_year, new_type, new_name, new_num, new_subject_str)
-                        _invalidate_semantic_for_file(file_path)
-                        _invalidate_semantic_for_file(new_path)
-                            
-                        st.success(f"更新成功！\n旧: {os.path.basename(file_path)}\n新: {new_filename}")
-                        clear_statistics_cache()
-                        st.session_state["tag_edit_file"] = new_path
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"更新失败: {e}")
-
 def update_question_meta(fpath, key, value):
     from utils.latex_ops import parse_meta_data, inject_meta_data
     with open(fpath, "r", encoding="utf-8") as f:
@@ -16658,7 +20259,7 @@ def render_cloze_source_trace(content: str, fpath: str, meta: dict):
         with open(lookup["path"], "r", encoding="utf-8") as f:
             source_content = f.read()
         with st.expander(f"原题预览：{lookup['label']}", expanded=True):
-            st.markdown(latex_to_markdown(source_content, show_title=False), unsafe_allow_html=True)
+            _render_preview_with_inline_assets(latex_to_markdown(source_content, show_title=False))
     except Exception as e:
         st.warning(f"打开来源原题失败：{e}")
 
@@ -17303,7 +20904,7 @@ def get_statistics():
     return get_statistics_sqlite_first()
 
 def render_statistics_dashboard():
-    from utils.charts import generate_heatmap_html, generate_activity_curve_html, generate_echarts_bar_html, generate_echarts_pie_html
+    from utils.charts import generate_activity_curve_html, generate_echarts_donut_html, generate_heatmap_html
     stats = get_statistics()
 
     st.markdown("### 📊 数据统计")
@@ -17404,6 +21005,22 @@ def render_statistics_dashboard():
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    .stats-breakdown {
+        margin: 8px 0 18px;
+        border-top: 1px solid rgba(148, 163, 184, 0.18);
+        color: #475569;
+        font-size: 0.86rem;
+    }
+    .stats-breakdown-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 10px;
+        padding: 7px 4px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    }
+    .stats-breakdown-row span:first-child { overflow-wrap: anywhere; }
+    .stats-breakdown-row span:nth-child(2),
+    .stats-breakdown-row span:nth-child(3) { text-align: right; white-space: nowrap; }
     div[data-testid="stVerticalBlock"]:has(.stats-chart-title) iframe {
         border-radius: 12px !important;
         box-shadow: 0 10px 30px rgba(31, 35, 48, 0.065) !important;
@@ -17431,90 +21048,91 @@ def render_statistics_dashboard():
     elif stats.get("sqlite_primary"):
         st.caption("当前统计已直接读取 SQLite 正式库；CSV 和旧 TeX 只作为旧安装环境的兼容兜底。")
 
-    # 计算平均难度
-    avg_diff = 0.0
-    if stats.get("difficulty_count", 0) > 0:
-        avg_diff = stats["total_difficulty"] / stats["difficulty_count"]
+    from services.database_service import DEFAULT_DATABASE_PATH
 
-    # 指标数据 - 恢复8个卡片两行排列
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("题库总题目数", stats["total_questions"])
-    c2.metric("题库Tikz总数", stats["total_tikz"])
-    c3.metric("今日新增题目", stats["today_new_questions"])
-    c4.metric("今日改动题目", stats["today_mod_questions"])
+    database_size = 0
+    try:
+        database_size = os.path.getsize(DEFAULT_DATABASE_PATH)
+    except OSError:
+        pass
+    database_size_text = (
+        f"{database_size / (1024 * 1024):.1f} MB"
+        if database_size < 1024 * 1024 * 1024
+        else f"{database_size / (1024 * 1024 * 1024):.2f} GB"
+    )
+    tag_count = len(stats.get("tag_counts", {}) or {})
 
-    st.write("")
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("今日新增Tikz", stats["today_new_tikz"])
-    c6.metric("今日改动Tikz", stats["today_mod_tikz"])
-    c7.metric("平均难度星级", f"{avg_diff:.1f} ★" if avg_diff > 0 else "N/A")
-
-    # 获取最高频的三个标签
-    top_tags = sorted(stats.get("tag_counts", {}).items(), key=lambda x: x[1], reverse=True)[:3]
-    top_tags_str = "、".join([t[0] for t in top_tags]) if top_tags else "暂无"
-    c8.metric("热门标签", top_tags_str)
-
-    st.write("")
-
-    # 热力图与代码活跃时段曲线
-    r2_c1, r2_c2 = st.columns([1, 1])
-    with r2_c1:
-        heatmap_html = generate_heatmap_html(stats["daily_activity"])
-        st.markdown(heatmap_html, unsafe_allow_html=True)
-
-    with r2_c2:
-        import streamlit.components.v1 as components
-        hourly_activity_by_day = stats.get("hourly_activity_by_day", {})
-        components.html(generate_activity_curve_html(hourly_activity_by_day), height=300)
+    metric_columns = st.columns(6, gap="small")
+    metric_columns[0].metric("有效题目", stats.get("total_questions", 0))
+    metric_columns[1].metric("试卷总数", stats.get("paper_count", 0))
+    metric_columns[2].metric("教材总数", stats.get("book_count", 0))
+    metric_columns[3].metric("专题总数", stats.get("topic_count", 0))
+    metric_columns[4].metric("标签总数", tag_count)
+    metric_columns[5].metric("数据库大小", database_size_text)
 
     st.write("")
 
-    # 更多有趣的数据统计：图表区
-    r3_c1, r3_c2 = st.columns([1, 1])
-    with r3_c1:
-        st.markdown('<div class="stats-chart-title">📈 各知识板块题目分布</div>', unsafe_allow_html=True)
-        subj_counts = stats.get("subject_counts", {})
-        components.html(generate_echarts_bar_html(subj_counts, "各知识板块题目分布"), height=370)
+    # 活跃趋势先于分布图，保留用户对近期数据变化的第一视线。
+    import streamlit.components.v1 as components
+    activity_columns = st.columns(2, gap="medium")
+    with activity_columns[0]:
+        st.markdown('<div class="stats-chart-title">📅 活跃题目热力图</div>', unsafe_allow_html=True)
+        st.markdown(generate_heatmap_html(stats.get("daily_activity", {})), unsafe_allow_html=True)
+    with activity_columns[1]:
+        st.markdown('<div class="stats-chart-title">⏱️ 活跃时段曲线</div>', unsafe_allow_html=True)
+        components.html(generate_activity_curve_html(stats.get("hourly_activity_by_day", {})), height=300)
 
-    with r3_c2:
-        st.markdown('<div class="stats-chart-title">🍰 题型占比分布 & 难度分布</div>', unsafe_allow_html=True)
-        type_counts = stats.get("type_counts", {})
-        diff_counts = stats.get("difficulty_dist", {})
-        components.html(generate_echarts_pie_html(type_counts, diff_counts, "题型与难度分布"), height=370)
+    st.write("")
 
-    if stats.get("sqlite_primary"):
-        st.write("")
-        st.markdown('<div class="stats-chart-title">🗃️ SQLite 结构化维度</div>', unsafe_allow_html=True)
-        rel_c1, rel_c2, rel_c3, rel_c4 = st.columns(4)
-        rel_c1.metric("试卷来源关联", stats.get("paper_relation_count", 0))
-        rel_c2.metric("专题收录题目", stats.get("topic_linked_questions", 0))
-        rel_c3.metric("教材关联题目", stats.get("book_linked_questions", 0))
-        rel_c4.metric("图片资源", stats.get("asset_count", 0))
+    def render_stats_breakdown(data, label_map=None):
+        label_map = label_map or {}
+        normalized = [(label_map.get(str(key), str(key)), int(value or 0)) for key, value in (data or {}).items()]
+        normalized = [(label, value) for label, value in normalized if value > 0]
+        normalized.sort(key=lambda item: (-item[1], item[0]))
+        total = sum(value for _, value in normalized)
+        colors = ["#2563eb", "#16a34a", "#ea580c", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#64748b"]
+        rows = "".join(
+            f"<div class='stats-breakdown-row'><span class='stats-breakdown-name'><i class='stats-breakdown-swatch' style='background:{colors[index % len(colors)]}'></i>{html.escape(label)}</span><span>{value:,}</span><span>{(value / total * 100):.1f}%</span></div>"
+            for index, (label, value) in enumerate(normalized)
+        )
+        st.markdown(
+            f"""
+            <style>
+                .stats-breakdown-name {{ display: inline-flex; align-items: center; min-width: 0; }}
+                .stats-breakdown-swatch {{ width: 9px; height: 9px; flex: 0 0 9px; margin-right: 8px; border-radius: 50%; }}
+            </style>
+            <div class='stats-breakdown'><div class='stats-breakdown-row'><span>项目</span><span>数量</span><span>占比</span></div>{rows}</div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        def _stats_table(title, values, value_label="题目数", limit=12):
-            st.markdown(f"**{title}**")
-            items = sorted((values or {}).items(), key=lambda item: item[1], reverse=True)[:limit]
-            if not items:
-                st.caption("暂无数据")
-                return
-            st.dataframe(
-                [{"名称": key, value_label: value} for key, value in items],
-                use_container_width=True,
-                hide_index=True,
-                height=min(420, 38 * len(items) + 38),
-            )
-
-        s1, s2, s3 = st.columns([1, 1, 1])
-        with s1:
-            _stats_table("按年份覆盖", stats.get("year_counts", {}))
-            _stats_table("按卷别覆盖", stats.get("source_series_counts", {}))
-        with s2:
-            _stats_table("按文理/新高考覆盖", stats.get("track_counts", {}))
-            _stats_table("按修订来源统计", stats.get("revision_source_counts", {}), value_label="修订次数")
-        with s3:
-            _stats_table("专题收录分布", stats.get("topic_counts", {}))
-            _stats_table("教材来源分布", stats.get("book_counts", {}))
-
+    # 三个主要分布图横向排列，每个图表下方保留可核对的明细。
+    chart_columns = st.columns(3, gap="medium")
+    with chart_columns[0]:
+        st.markdown('<div class="stats-chart-title">📚 知识板块分布</div>', unsafe_allow_html=True)
+        components.html(
+            generate_echarts_donut_html(stats.get("subject_counts", {}), "知识板块分布"),
+            height=370,
+        )
+        render_stats_breakdown(stats.get("subject_counts", {}))
+    with chart_columns[1]:
+        st.markdown('<div class="stats-chart-title">📝 题型分布</div>', unsafe_allow_html=True)
+        components.html(
+            generate_echarts_donut_html(stats.get("type_counts", {}), "题型分布"),
+            height=370,
+        )
+        render_stats_breakdown(stats.get("type_counts", {}))
+    with chart_columns[2]:
+        st.markdown('<div class="stats-chart-title">🗂️ 试卷类型分布</div>', unsafe_allow_html=True)
+        paper_type_counts = {}
+        for key, value in (stats.get("source_series_counts", {}) or {}).items():
+            label = PAPER_TYPES.get(str(key), str(key))
+            paper_type_counts[label] = paper_type_counts.get(label, 0) + int(value or 0)
+        components.html(
+            generate_echarts_donut_html(paper_type_counts, "试卷类型分布"),
+            height=370,
+        )
+        render_stats_breakdown(paper_type_counts)
 
 # ================= 页面：规范说明 =================
 def page_manual():
@@ -17570,6 +21188,7 @@ def page_manual():
     - **批量试题录入**：用于粘贴多题 TeX；系统优先识别 `---xxx.tex---` 分隔符，其次按多个 `problem` 环境拆分。
     - **同卷试题录入**：多题共享年份、卷别、文理/新高考和试卷名称；题号优先从 `problem` 头读取，读不到时按顺序编号。
     - **同书试题录入**：多题共享教材名称、册次/年级、页码和栏目；后续审核时可进一步维护教材来源关系。
+    - **PDF 导入草稿**：上传 PDF 后先生成本地任务，按页面核对切分候选并校订题型、题干、选项、答案、解析、难度和审核状态；不会直接写正式题库。
     - **选项填写**：单题模式只填写选项内部 TeX；系统保存和导出时统一生成 `\\choice{{...}}`。
 
     **🧰 六、 本地维护与升级规范**
@@ -17834,18 +21453,18 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         align-items: stretch !important;
         gap: 1rem !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) > div[data-testid="column"] {
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-inputs-anchor) > div[data-testid="stColumn"] {
         min-width: 0 !important;
         width: auto !important;
         max-width: none !important;
         flex: initial !important;
     }
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) {
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) {
         overflow: hidden !important;
         margin-top: 0 !important;
         padding-top: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] {
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] {
         display: grid !important;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) !important;
         width: 100% !important;
@@ -17854,26 +21473,26 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         gap: 0.75rem !important;
         margin: 0 0 0.75rem !important;
     }
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="column"],
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stElementContainer"] {
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-testid="stElementContainer"] {
         min-width: 0 !important;
         width: auto !important;
         max-width: none !important;
         margin: 0 !important;
         padding: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stSelectbox"],
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"],
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] {
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-testid="stSelectbox"],
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"],
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] {
         width: 100% !important;
         max-width: none !important;
     }
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] > div,
-    div[data-testid="column"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] input {
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-baseweb="select"] > div,
+    div[data-testid="stColumn"]:has(#adv-search-inputs-anchor) div[data-testid="stTextInput"] input {
         min-height: 42px !important;
         height: 42px !important;
     }
-    div[data-testid="column"]:has(#adv-search-btn-anchor) {
+    div[data-testid="stColumn"]:has(#adv-search-btn-anchor) {
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -17883,7 +21502,7 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         margin: 0 !important;
         padding: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-btn-anchor) > div[data-testid="stVerticalBlock"] {
+    div[data-testid="stColumn"]:has(#adv-search-btn-anchor) > div[data-testid="stVerticalBlock"] {
         width: 100% !important;
         height: 100% !important;
         display: flex !important;
@@ -17891,7 +21510,7 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         justify-content: center !important;
         gap: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-btn-anchor) button {
+    div[data-testid="stColumn"]:has(#adv-search-btn-anchor) button {
         width: 96px !important;
         min-width: 96px !important;
         max-width: 96px !important;
@@ -17906,14 +21525,14 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         border-radius: 10px !important;
         white-space: normal !important;
     }
-    div[data-testid="column"]:has(#adv-search-btn-anchor) button p {
+    div[data-testid="stColumn"]:has(#adv-search-btn-anchor) button p {
         white-space: pre-wrap !important;
         word-break: keep-all !important;
         text-align: center !important;
         line-height: 1.35 !important;
         margin: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-info-anchor) {
+    div[data-testid="stColumn"]:has(#adv-search-info-anchor) {
         display: flex !important;
         align-items: flex-start !important;
         height: 196px !important;
@@ -17921,7 +21540,7 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         max-height: 196px !important;
         padding: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
+    div[data-testid="stColumn"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
         width: 100% !important;
         min-height: 64px !important;
         height: 64px !important;
@@ -17932,17 +21551,17 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         filter: none !important;
         overflow: hidden !important;
     }
-    div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] > div {
+    div[data-testid="stColumn"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] > div {
         box-shadow: none !important;
         filter: none !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-btn-anchor),
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-info-anchor) {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stColumn"]:has(#adv-search-btn-anchor),
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stColumn"]:has(#adv-search-info-anchor) {
         height: auto !important;
         min-height: 0 !important;
         max-height: none !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-btn-anchor) button {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stColumn"]:has(#adv-search-btn-anchor) button {
         width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
@@ -17950,12 +21569,12 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         min-height: 48px !important;
         max-height: 48px !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="column"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stColumn"]:has(#adv-search-info-anchor) div[data-testid="stAlert"] {
         height: auto !important;
         min-height: 64px !important;
         max-height: none !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stButton"] > button {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stButton"] > button {
         width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
@@ -17970,27 +21589,27 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         border-radius: 10px !important;
         white-space: nowrap !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stButton"] > button p {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stButton"] > button p {
         white-space: nowrap !important;
         word-break: keep-all !important;
         line-height: 1.2 !important;
         margin: 0 !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] div[role="radiogroup"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         align-items: center !important;
         gap: 0.35rem !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] label {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] label {
         width: auto !important;
         min-width: 0 !important;
         margin: 0 !important;
         padding-right: 0.2rem !important;
         white-space: nowrap !important;
     }
-    div[data-testid="column"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] label p {
+    div[data-testid="stColumn"]:has(#adv-search-left-anchor) div[data-testid="stRadio"] label p {
         white-space: nowrap !important;
         font-size: 0.92rem !important;
         line-height: 1.15 !important;
@@ -18019,7 +21638,7 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         gap: 0.75rem !important;
         align-items: end !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) > div[data-testid="column"] {
+    div[data-testid="stHorizontalBlock"]:has(#adv-search-pager-anchor) > div[data-testid="stColumn"] {
         width: auto !important;
         min-width: 0 !important;
         max-width: none !important;
@@ -18036,13 +21655,13 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
             grid-template-columns: minmax(0, 1fr) !important;
             gap: 0.75rem !important;
         }
-        div[data-testid="column"]:has(#adv-search-btn-anchor),
-        div[data-testid="column"]:has(#adv-search-info-anchor) {
+        div[data-testid="stColumn"]:has(#adv-search-btn-anchor),
+        div[data-testid="stColumn"]:has(#adv-search-info-anchor) {
             height: auto !important;
             min-height: 0 !important;
             max-height: none !important;
         }
-        div[data-testid="column"]:has(#adv-search-btn-anchor) button {
+        div[data-testid="stColumn"]:has(#adv-search-btn-anchor) button {
             width: 100% !important;
             min-width: 0 !important;
             max-width: none !important;
@@ -18055,10 +21674,16 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
     """, unsafe_allow_html=True)
 
     def on_adv_search():
-        if not _adv_search_has_query():
+        q1, q2, q3 = _adv_search_queries_from_session()
+        search_mode = st.session_state.get("adv_search_mode", "精确筛选")
+        semantic_query = st.session_state.get("adv_semantic_query", "") if search_mode != "精确筛选" else ""
+        if not any(str(value).strip() for value in (q1, q2, q3, semantic_query)):
             st.session_state["adv_search_active"] = False
             st.toast("请输入至少一个关键词后再开始查找。", icon="⚠️")
             return
+        for field in ("t1", "t2", "t3", "q1", "q1_sel", "q2", "q2_sel", "q3", "q3_sel", "search_mode", "semantic_query"):
+            if f"adv_{field}" in st.session_state:
+                st.session_state[f"adv_submitted_{field}"] = st.session_state[f"adv_{field}"]
         st.session_state["adv_search_active"] = True
         st.session_state["adv_results_page"] = 1
         st.session_state["adv_results_page_size"] = 10
@@ -18080,7 +21705,6 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
             "语义描述",
             placeholder="例如：含参数的函数单调性与最值问题",
             key="adv_semantic_query",
-            on_change=on_adv_search,
         )
 
     search_opts = ["全文内容", "题目类型", "题目内容", "解答内容", "难度星级", "标签"]
@@ -18089,21 +21713,21 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
         st.markdown('<div id="adv-search-compact-inputs-anchor"></div>', unsafe_allow_html=True)
         t1 = st.selectbox("一级类型", search_opts, index=0, key="adv_t1")
         if t1 == "题目类型":
-            q1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="adv_q1_sel", on_change=on_adv_search)
+            q1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="adv_q1_sel")
         else:
-            q1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="adv_q1", on_change=on_adv_search)
+            q1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="adv_q1")
 
         t2 = st.selectbox("二级类型", search_opts, index=0, key="adv_t2")
         if t2 == "题目类型":
-            q2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="adv_q2_sel", on_change=on_adv_search)
+            q2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="adv_q2_sel")
         else:
-            q2 = st.text_input("二级关键词", placeholder="输入二级关键词...", key="adv_q2", on_change=on_adv_search)
+            q2 = st.text_input("二级关键词", placeholder="输入二级关键词...", key="adv_q2")
 
         t3 = st.selectbox("三级类型", search_opts, index=0, key="adv_t3")
         if t3 == "题目类型":
-            q3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="adv_q3_sel", on_change=on_adv_search)
+            q3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="adv_q3_sel")
         else:
-            q3 = st.text_input("三级关键词", placeholder="输入三级关键词...", key="adv_q3", on_change=on_adv_search)
+            q3 = st.text_input("三级关键词", placeholder="输入三级关键词...", key="adv_q3")
 
         st.markdown('<div id="adv-search-compact-btn-anchor"></div>', unsafe_allow_html=True)
         st.button("🔎 再次搜索", use_container_width=True, type="primary", on_click=on_adv_search)
@@ -18159,27 +21783,27 @@ def render_advanced_search_inline(compact=False, search_result_count=None):
             t1 = st.selectbox("一级类型", search_opts, index=0, key="adv_t1", label_visibility="collapsed")
         with c1b:
             if t1 == "题目类型":
-                q1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="adv_q1_sel", label_visibility="collapsed", on_change=on_adv_search)
+                q1 = st.selectbox("一级关键词", ["选择题", "填空题", "解答题"], key="adv_q1_sel", label_visibility="collapsed")
             else:
-                q1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="adv_q1", label_visibility="collapsed", on_change=on_adv_search)
+                q1 = st.text_input("一级关键词", placeholder="输入一级关键词...", key="adv_q1", label_visibility="collapsed")
 
         c2a, c2b = st.columns([1, 2])
         with c2a:
             t2 = st.selectbox("二级类型", search_opts, index=0, key="adv_t2", label_visibility="collapsed")
         with c2b:
             if t2 == "题目类型":
-                q2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="adv_q2_sel", label_visibility="collapsed", on_change=on_adv_search)
+                q2 = st.selectbox("二级关键词", ["选择题", "填空题", "解答题"], key="adv_q2_sel", label_visibility="collapsed")
             else:
-                q2 = st.text_input("二级关键词", placeholder="输入二级关键词...", key="adv_q2", label_visibility="collapsed", on_change=on_adv_search)
+                q2 = st.text_input("二级关键词", placeholder="输入二级关键词...", key="adv_q2", label_visibility="collapsed")
 
         c3a, c3b = st.columns([1, 2])
         with c3a:
             t3 = st.selectbox("三级类型", search_opts, index=0, key="adv_t3", label_visibility="collapsed")
         with c3b:
             if t3 == "题目类型":
-                q3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="adv_q3_sel", label_visibility="collapsed", on_change=on_adv_search)
+                q3 = st.selectbox("三级关键词", ["选择题", "填空题", "解答题"], key="adv_q3_sel", label_visibility="collapsed")
             else:
-                q3 = st.text_input("三级关键词", placeholder="输入三级关键词...", key="adv_q3", label_visibility="collapsed", on_change=on_adv_search)
+                q3 = st.text_input("三级关键词", placeholder="输入三级关键词...", key="adv_q3", label_visibility="collapsed")
 
     with col_btn:
         st.markdown('<div id="adv-search-btn-anchor"></div>', unsafe_allow_html=True)
@@ -18220,16 +21844,18 @@ def render_advanced_search_workspace(is_delete_mode=False, paper_type_scope=None
         render_advanced_search_results(is_delete_mode=is_delete_mode, paper_type_scope=paper_type_scope, results=results, controls_in_sidebar=True)
 
 def _get_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
-    search_mode = st.session_state.get("adv_search_mode", "精确筛选")
-    semantic_query = (st.session_state.get("adv_semantic_query", "") or "").strip() if search_mode != "精确筛选" else ""
+    use_submitted = bool(st.session_state.get("adv_search_active"))
+    prefix = "adv_submitted_" if use_submitted else "adv_"
+    search_mode = st.session_state.get(f"{prefix}search_mode", st.session_state.get("adv_search_mode", "精确筛选"))
+    semantic_query = (st.session_state.get(f"{prefix}semantic_query", "") or "").strip() if search_mode != "精确筛选" else ""
 
-    t1 = st.session_state.get("adv_t1", "全文内容")
-    t2 = st.session_state.get("adv_t2", "全文内容")
-    t3 = st.session_state.get("adv_t3", "全文内容")
+    t1 = st.session_state.get(f"{prefix}t1", st.session_state.get("adv_t1", "全文内容"))
+    t2 = st.session_state.get(f"{prefix}t2", st.session_state.get("adv_t2", "全文内容"))
+    t3 = st.session_state.get(f"{prefix}t3", st.session_state.get("adv_t3", "全文内容"))
 
-    q1 = st.session_state.get("adv_q1_sel" if t1 == "题目类型" else "adv_q1", "")
-    q2 = st.session_state.get("adv_q2_sel" if t2 == "题目类型" else "adv_q2", "")
-    q3 = st.session_state.get("adv_q3_sel" if t3 == "题目类型" else "adv_q3", "")
+    q1 = st.session_state.get(f"{prefix}q1_sel" if t1 == "题目类型" else f"{prefix}q1", "")
+    q2 = st.session_state.get(f"{prefix}q2_sel" if t2 == "题目类型" else f"{prefix}q2", "")
+    q3 = st.session_state.get(f"{prefix}q3_sel" if t3 == "题目类型" else f"{prefix}q3", "")
 
     def _row_match(item, s_type, s_query):
         s_query = (s_query or "").strip()
@@ -18299,6 +21925,12 @@ def _get_advanced_search_results(is_delete_mode=False, paper_type_scope=None):
                     for item in filtered_items
                 }
                 try:
+                    refresh_pending_semantic(
+                        [item["row"] for item in search_rows],
+                        config["base_url"],
+                        config["api_key"],
+                        config["model_name"],
+                    )
                     semantic_matches = semantic_search(
                         semantic_query,
                         [item["row"] for item in filtered_items],
@@ -18436,6 +22068,768 @@ def page_advanced_search():
     if st.session_state.get("adv_search_active") and _adv_search_has_query():
         render_advanced_search_results()
 
+
+@st.dialog("三级查找", width="large")
+def advanced_search_compare_dialog():
+    """Search existing questions without leaving the current entry draft."""
+    st.markdown(
+        "<div class='mc-adv-dialog-caption'>在录入新题时查找已有题目，仅用于对照，不会修改当前草稿或正式题库。</div>",
+        unsafe_allow_html=True,
+    )
+    render_advanced_search_inline(compact=True)
+    if st.session_state.get("adv_search_active") and _adv_search_has_query():
+        results = _get_advanced_search_results()
+        render_advanced_search_results(results=results)
+
+
+@st.dialog("题目预览", width="large")
+def _duplicate_question_preview_dialog_legacy(question_id: str):
+    """Preview an existing question without leaving the current draft."""
+    from services.database_service import DEFAULT_DATABASE_PATH
+
+    question_id = str(question_id or "").strip()
+    title_col, close_col = st.columns([8, 1], vertical_alignment="center")
+    with title_col:
+        st.markdown(f"### 已有题目 · {html.escape(question_id)}")
+    with close_col:
+        if st.button("×", key=f"close_duplicate_preview_{_question_key('duplicate-preview', question_id)}", help="关闭预览"):
+            st.session_state["duplicate_question_preview_id"] = ""
+            st.rerun()
+
+    try:
+        payload = _db_preview_question_payload(
+            DEFAULT_DATABASE_PATH,
+            question_id,
+            os.path.getmtime(DEFAULT_DATABASE_PATH),
+        )
+        question = payload.get("question") or {}
+        if not question:
+            st.warning(f"未找到题目：{question_id}")
+            return
+        st.caption(_db_preview_label(question))
+        _render_preview_with_inline_assets(payload.get("preview_markdown") or "")
+    except Exception as exc:
+        st.error(f"读取题目预览失败：{exc}")
+
+
+def duplicate_question_preview_dialog(question_id: str):
+    """Render a movable, non-modal duplicate preview beside the draft."""
+    from services.database_service import DEFAULT_DATABASE_PATH
+
+    question_id = str(question_id or "").strip()
+    panel_key = _question_key("duplicate-floating-preview", question_id)
+    st.markdown(
+        """
+        <style>
+        .mc-duplicate-preview-panel {
+            position: fixed !important;
+            right: 26px !important;
+            top: 96px !important;
+            width: 620px !important;
+            height: 620px !important;
+            min-width: 420px !important;
+            min-height: 280px !important;
+            max-width: calc(100vw - 84px) !important;
+            max-height: calc(100vh - 116px) !important;
+            z-index: 1010 !important;
+            overflow: auto !important;
+            padding: 1rem !important;
+            border: 1px solid rgba(119, 102, 142, 0.30) !important;
+            border-radius: 12px !important;
+            background: #faf8ff !important;
+            box-shadow: 0 18px 42px rgba(36, 28, 52, 0.22) !important;
+        }
+        .mc-duplicate-preview-panel h4 { cursor: move !important; user-select: none !important; }
+        .mc-duplicate-preview-resize-grip {
+            position: absolute !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 34px !important;
+            height: 34px !important;
+            cursor: nwse-resize !important;
+            touch-action: none !important;
+            z-index: 20 !important;
+            background: linear-gradient(135deg, transparent 58%, rgba(109, 40, 217, 0.48) 59%, rgba(109, 40, 217, 0.48) 64%, transparent 65%);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    components.html(
+        """
+        <script>
+        (() => {
+            const doc = window.parent.document;
+            const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+            function bind() {
+                const marker = doc.querySelector('.mc-duplicate-preview-anchor');
+                const panel = marker ? marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
+                if (!panel) return;
+                panel.classList.add('mc-duplicate-preview-panel');
+                if (panel.dataset.mcDuplicateBound === '1') return;
+                panel.dataset.mcDuplicateBound = '1';
+                const grip = doc.createElement('div');
+                grip.className = 'mc-duplicate-preview-resize-grip';
+                panel.appendChild(grip);
+                const saved = (name, fallback) => Number(window.parent.localStorage.getItem(name) || fallback);
+                panel.style.setProperty('width', `${clamp(saved('mcDuplicatePreviewWidth', 620), 420, window.parent.innerWidth - 84)}px`, 'important');
+                panel.style.setProperty('height', `${clamp(saved('mcDuplicatePreviewHeight', 620), 280, window.parent.innerHeight - 116)}px`, 'important');
+                const x = Number(window.parent.localStorage.getItem('mcDuplicatePreviewX'));
+                const y = Number(window.parent.localStorage.getItem('mcDuplicatePreviewY'));
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    panel.style.setProperty('left', `${clamp(x, 72, window.parent.innerWidth - panel.offsetWidth - 12)}px`, 'important');
+                    panel.style.setProperty('top', `${clamp(y, 12, window.parent.innerHeight - 90)}px`, 'important');
+                    panel.style.setProperty('right', 'auto', 'important');
+                }
+                let moving = false, resizing = false, ox = 0, oy = 0, sx = 0, sy = 0, sw = 0, sh = 0;
+                panel.addEventListener('pointerdown', (event) => {
+                    const rect = panel.getBoundingClientRect();
+                    if (event.target.closest('.mc-duplicate-preview-resize-grip') || (rect.right - event.clientX <= 34 && rect.bottom - event.clientY <= 34)) {
+                        resizing = true; sx = event.clientX; sy = event.clientY; sw = rect.width; sh = rect.height;
+                        panel.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation(); return;
+                    }
+                    if (!event.target.closest('h4')) return;
+                    moving = true; ox = event.clientX - rect.left; oy = event.clientY - rect.top;
+                    panel.setPointerCapture(event.pointerId); event.preventDefault();
+                });
+                panel.addEventListener('pointermove', (event) => {
+                    if (resizing) {
+                        const width = clamp(sw + event.clientX - sx, 420, window.parent.innerWidth - panel.getBoundingClientRect().left - 12);
+                        const height = clamp(sh + event.clientY - sy, 280, window.parent.innerHeight - panel.getBoundingClientRect().top - 12);
+                        panel.style.setProperty('width', `${width}px`, 'important'); panel.style.setProperty('height', `${height}px`, 'important');
+                        window.parent.localStorage.setItem('mcDuplicatePreviewWidth', width); window.parent.localStorage.setItem('mcDuplicatePreviewHeight', height); return;
+                    }
+                    if (!moving) return;
+                    const rect = panel.getBoundingClientRect();
+                    const x = clamp(event.clientX - ox, 72, window.parent.innerWidth - rect.width - 12);
+                    const y = clamp(event.clientY - oy, 12, window.parent.innerHeight - 90);
+                    panel.style.setProperty('left', `${x}px`, 'important'); panel.style.setProperty('top', `${y}px`, 'important'); panel.style.setProperty('right', 'auto', 'important');
+                    window.parent.localStorage.setItem('mcDuplicatePreviewX', x); window.parent.localStorage.setItem('mcDuplicatePreviewY', y);
+                });
+                panel.addEventListener('pointerup', () => { moving = false; resizing = false; });
+                panel.addEventListener('pointercancel', () => { moving = false; resizing = false; });
+            }
+            bind(); window.parent.setTimeout(bind, 80); window.parent.setTimeout(bind, 300);
+            if (window.parent.__mcDuplicatePreviewObserver) window.parent.__mcDuplicatePreviewObserver.disconnect();
+            window.parent.__mcDuplicatePreviewObserver = new window.parent.MutationObserver(bind);
+            window.parent.__mcDuplicatePreviewObserver.observe(doc.body, {childList: true, subtree: true});
+        })();
+        </script>
+        """,
+        height=0,
+    )
+    with st.container(border=True):
+        st.markdown('<span class="mc-duplicate-preview-anchor"></span>', unsafe_allow_html=True)
+        title_col, close_col = st.columns([8, 1], vertical_alignment="center")
+        with title_col:
+            st.markdown(f"#### 已有题目 · {html.escape(question_id)}")
+        with close_col:
+            if st.button("×", key=f"close_duplicate_floating_{panel_key}", help="关闭预览"):
+                st.session_state["duplicate_question_preview_id"] = ""
+                st.rerun()
+        try:
+            payload = _db_preview_question_payload(DEFAULT_DATABASE_PATH, question_id, os.path.getmtime(DEFAULT_DATABASE_PATH))
+            question = payload.get("question") or {}
+            st.caption(_db_preview_label(question))
+            _render_preview_with_inline_assets(payload.get("preview_markdown") or "")
+        except Exception as exc:
+            st.error(f"读取题目预览失败：{exc}")
+
+
+def render_duplicate_question_preview_panel(question_id: str) -> None:
+    """Pre-render a hidden preview so duplicate links open without a rerun."""
+    from services.database_service import DEFAULT_DATABASE_PATH
+
+    question_id = str(question_id or "").strip()
+    if not question_id:
+        return
+    panel_token = _question_key("duplicate-inline-preview", question_id)
+    try:
+        payload = _db_preview_question_payload(
+            DEFAULT_DATABASE_PATH,
+            question_id,
+            os.path.getmtime(DEFAULT_DATABASE_PATH),
+        )
+        question = payload.get("question") or {}
+        preview_markdown = payload.get("preview_markdown") or ""
+    except Exception as exc:
+        question = {}
+        preview_markdown = f"预览读取失败：{exc}"
+
+    st.markdown(
+        """
+        <style>
+        .mc-duplicate-preview-panel { display: none !important; }
+        .mc-duplicate-preview-panel.mc-duplicate-preview-open {
+            display: block !important;
+            position: fixed !important;
+            left: auto !important;
+            right: 26px !important;
+            top: 96px !important;
+            width: 620px !important;
+            height: 620px !important;
+            min-width: 420px !important;
+            min-height: 280px !important;
+            max-width: calc(100vw - 84px) !important;
+            max-height: calc(100vh - 116px) !important;
+            z-index: 1010 !important;
+            overflow: auto !important;
+            padding: 1rem !important;
+            border: 1px solid rgba(119, 102, 142, 0.30) !important;
+            border-radius: 12px !important;
+            background: #faf8ff !important;
+            box-shadow: 0 18px 42px rgba(36, 28, 52, 0.22) !important;
+        }
+        .mc-duplicate-preview-panel .mc-duplicate-preview-header {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: .75rem; margin: -.15rem 0 .55rem; cursor: move; user-select: none;
+        }
+        .mc-duplicate-preview-panel .mc-duplicate-preview-close {
+            border: 0; background: transparent; color: #475569; font-size: 1.35rem;
+            line-height: 1; cursor: pointer; padding: .15rem .35rem;
+        }
+        .mc-duplicate-preview-resize-grip {
+            position: absolute !important; right: 0 !important; bottom: 0 !important;
+            width: 34px !important; height: 34px !important; cursor: nwse-resize !important;
+            touch-action: none !important; z-index: 20 !important;
+            background: linear-gradient(135deg, transparent 58%, rgba(109,40,217,.48) 59%, rgba(109,40,217,.48) 64%, transparent 65%);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    components.html(
+        """
+        <script>
+        (() => {
+            if (window.parent.__mcDuplicatePreviewGlobalBound) return;
+            const doc = window.parent.document;
+            const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+            function bind() {
+                doc.querySelectorAll('a[data-duplicate-preview-id]').forEach((link) => {
+                    if (link.dataset.duplicateBound === '1') return;
+                    link.dataset.duplicateBound = '1';
+                    link.addEventListener('click', (event) => {
+                        event.preventDefault(); event.stopPropagation();
+                        const id = link.dataset.duplicatePreviewId;
+                        const panel = doc.querySelector(`.mc-duplicate-preview-anchor[data-question-id="${CSS.escape(id)}"]`);
+                        if (panel) {
+                            const wrapper = panel.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                            if (wrapper) wrapper.classList.add('mc-duplicate-preview-open');
+                        }
+                    });
+                });
+                doc.querySelectorAll('.mc-duplicate-preview-anchor').forEach((marker) => {
+                    const panel = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                    if (!panel || panel.dataset.duplicatePanelBound === '1') return;
+                    panel.dataset.duplicatePanelBound = '1'; panel.classList.add('mc-duplicate-preview-panel');
+                    const grip = doc.createElement('div'); grip.className = 'mc-duplicate-preview-resize-grip'; panel.appendChild(grip);
+                    const header = panel.querySelector('.mc-duplicate-preview-header');
+                    const key = marker.dataset.questionId;
+                    const saved = (name, fallback) => Number(window.parent.localStorage.getItem(`mcDuplicate_${key}_${name}`) || fallback);
+                    panel.style.setProperty('width', `${clamp(saved('width', 620), 420, window.parent.innerWidth - 84)}px`, 'important');
+                    panel.style.setProperty('height', `${clamp(saved('height', 620), 280, window.parent.innerHeight - 116)}px`, 'important');
+                    let moving = false, resizing = false, ox = 0, oy = 0, sx = 0, sy = 0, sw = 0, sh = 0;
+                    panel.addEventListener('pointerdown', (event) => {
+                        const rect = panel.getBoundingClientRect();
+                        if (event.target.closest('.mc-duplicate-preview-resize-grip') || (rect.right-event.clientX <= 34 && rect.bottom-event.clientY <= 34)) {
+                            resizing=true; sx=event.clientX; sy=event.clientY; sw=rect.width; sh=rect.height; panel.setPointerCapture(event.pointerId); event.preventDefault(); return;
+                        }
+                        if (!header || !event.target.closest('.mc-duplicate-preview-header')) return;
+                        moving=true; ox=event.clientX-rect.left; oy=event.clientY-rect.top; panel.setPointerCapture(event.pointerId); event.preventDefault();
+                    });
+                    panel.addEventListener('pointermove', (event) => {
+                        if (resizing) {
+                            const width=clamp(sw+event.clientX-sx,420,window.parent.innerWidth-panel.getBoundingClientRect().left-12);
+                            const height=clamp(sh+event.clientY-sy,280,window.parent.innerHeight-panel.getBoundingClientRect().top-12);
+                            panel.style.setProperty('width',`${width}px`,'important'); panel.style.setProperty('height',`${height}px`,'important');
+                            window.parent.localStorage.setItem(`mcDuplicate_${key}_width`,width); window.parent.localStorage.setItem(`mcDuplicate_${key}_height`,height); return;
+                        }
+                        if (!moving) return;
+                        const rect=panel.getBoundingClientRect(); const x=clamp(event.clientX-ox,72,window.parent.innerWidth-rect.width-12); const y=clamp(event.clientY-oy,12,window.parent.innerHeight-90);
+                        panel.style.setProperty('left',`${x}px`,'important'); panel.style.setProperty('top',`${y}px`,'important'); panel.style.setProperty('right','auto','important');
+                    });
+                    panel.addEventListener('pointerup',()=>{moving=false;resizing=false}); panel.addEventListener('pointercancel',()=>{moving=false;resizing=false});
+                });
+            }
+            bind(); window.parent.setTimeout(bind,80); window.parent.setTimeout(bind,300);
+            if (window.parent.__mcDuplicateInlineCloseHandler) {
+                doc.removeEventListener('pointerdown', window.parent.__mcDuplicateInlineCloseHandler, true);
+            }
+            window.parent.__mcDuplicateInlineCloseHandler = (event) => {
+                const target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+                const close = target && target.closest ? target.closest('.mc-duplicate-preview-close') : null;
+                if (!close) return;
+                const panel = close.closest('.mc-duplicate-preview-panel');
+                if (panel) {
+                    event.preventDefault(); event.stopImmediatePropagation();
+                    panel.classList.remove('mc-duplicate-preview-open');
+                }
+            };
+            doc.addEventListener('pointerdown', window.parent.__mcDuplicateInlineCloseHandler, true);
+            if (window.parent.__mcDuplicateInlineObserver) window.parent.__mcDuplicateInlineObserver.disconnect();
+            window.parent.__mcDuplicateInlineObserver = new window.parent.MutationObserver(bind);
+            window.parent.__mcDuplicateInlineObserver.observe(doc.body,{childList:true,subtree:true});
+        })();
+        </script>
+        """,
+        height=0,
+    )
+    with st.container(border=True):
+        st.markdown(
+            f'<span class="mc-duplicate-preview-anchor" data-question-id="{html.escape(question_id)}"></span>'
+            f'<div class="mc-duplicate-preview-header"><strong>已有题目 · {html.escape(question_id)}</strong>'
+            f'<button type="button" class="mc-duplicate-preview-close" aria-label="关闭预览">×</button></div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(_db_preview_label(question) if question else f"未找到题目：{question_id}")
+        _render_preview_with_inline_assets(preview_markdown)
+
+
+def _render_exact_search_floating_contents() -> None:
+    """Render the familiar SQLite exact-search controls inside the floating panel."""
+    from services.database_service import DEFAULT_DATABASE_PATH
+    from services.question_db_service import QuestionListFilters, list_question_filter_options, list_questions_page
+
+    db_path = DEFAULT_DATABASE_PATH
+    prefix = "floating_exact_search_"
+    st.markdown("### 精确搜索")
+    st.caption("可搜索题干、SQLite ID、旧 ID、标签、备注、知识点、试卷来源和题型；多个关键词可用 / 分隔。")
+    keyword = st.text_input(
+        "关键词",
+        key=f"{prefix}keyword_input",
+        placeholder="例如：Q000765、旧ID:834、标签:导数",
+        label_visibility="collapsed",
+    )
+    search_col, clear_col = st.columns([1, 1], gap="small")
+    with search_col:
+        search_clicked = st.button("开始搜索", key=f"{prefix}apply", type="primary", use_container_width=True)
+    with clear_col:
+        clear_clicked = st.button("清空条件", key=f"{prefix}clear", use_container_width=True)
+    if clear_clicked:
+        st.session_state[f"{prefix}keyword_input"] = ""
+        st.session_state[f"{prefix}keyword"] = ""
+        st.session_state[f"{prefix}page"] = 1
+        st.rerun(scope="fragment")
+    if search_clicked:
+        st.session_state[f"{prefix}keyword"] = str(keyword or "").strip()
+        st.session_state[f"{prefix}page"] = 1
+
+    active_keyword = str(st.session_state.get(f"{prefix}keyword") or "").strip()
+    st.markdown("### 范围筛选")
+    all_chapters = ["全部板块"]
+    all_years = ["全部年份"]
+    base_options = {}
+    try:
+        base_options = list_question_filter_options(db_path, QuestionListFilters(limit=1))
+        all_chapters += [str(item) for item in base_options.get("chapters") or []]
+        all_years += [str(item) for item in base_options.get("years") or []]
+    except Exception as exc:
+        st.warning(f"读取范围筛选失败：{exc}")
+    source_kind_options = ["全部来源类型"] + [str(item) for item in base_options.get("source_kinds") or []]
+    paper_series_options = ["全部卷别", "__UNMARKED_SOURCE__"] + [
+        str(item) for item in base_options.get("paper_series") or []
+    ]
+    paper_series_labels = {
+        "__UNMARKED_SOURCE__": "未标记来源",
+        **{code: f"{code} ({PAPER_TYPES.get(code, code)})" for code in paper_series_options if code != "__UNMARKED_SOURCE__"},
+    }
+    source_kind_col, paper_series_col = st.columns(2, gap="small")
+    with source_kind_col:
+        source_kind = st.selectbox("来源类型", source_kind_options, key=f"{prefix}source_kind")
+    with paper_series_col:
+        paper_series = st.selectbox(
+            "卷别代码",
+            list(dict.fromkeys(paper_series_options)),
+            format_func=lambda value: paper_series_labels.get(value, value),
+            key=f"{prefix}paper_series",
+        )
+
+    range_year_col, range_chapter_col = st.columns([0.85, 1.15], gap="small")
+    with range_year_col:
+        year = st.selectbox("年份", all_years, key=f"{prefix}year")
+    with range_chapter_col:
+        chapter = st.selectbox("知识板块", all_chapters, key=f"{prefix}chapter")
+
+    st.markdown("### 更多筛选")
+    try:
+        context_options = list_question_filter_options(
+            db_path,
+            QuestionListFilters(
+                keyword=active_keyword,
+                chapter="" if chapter == "全部板块" else chapter,
+                year=None if year == "全部年份" else int(year),
+                source_kind="" if source_kind == "全部来源类型" else source_kind,
+                paper_series="" if paper_series == "全部卷别" else paper_series,
+                limit=1,
+            ),
+        )
+    except Exception:
+        context_options = {}
+    sources = ["全部来源"] + [str(item) for item in context_options.get("sources") or []]
+    types = [("__all__", "全部题型")] + [
+        (str(item.get("question_type_id")), str(item.get("name") or ""))
+        for item in context_options.get("question_types") or []
+    ]
+    difficulties = ["全部难度"] + [str(item) for item in context_options.get("difficulties") or []]
+    more_source_col, more_type_col, more_difficulty_col = st.columns(3, gap="small")
+    with more_source_col:
+        source = st.selectbox("试卷来源", sources, key=f"{prefix}source")
+    with more_type_col:
+        type_id = st.selectbox("题型", [value for value, _label in types], format_func=lambda value: dict(types).get(value, value), key=f"{prefix}type")
+    with more_difficulty_col:
+        difficulty = st.selectbox("难度", difficulties, key=f"{prefix}difficulty")
+
+    filters = QuestionListFilters(
+        keyword=active_keyword,
+        chapter="" if chapter == "全部板块" else chapter,
+        year=None if year == "全部年份" else int(year),
+        source_kind="" if source_kind == "全部来源类型" else source_kind,
+        paper_series="" if paper_series == "全部卷别" else paper_series,
+        source="" if source == "全部来源" else source,
+        question_type_id=None if type_id == "__all__" else type_id,
+        difficulty=None if difficulty == "全部难度" else int(difficulty),
+        limit=5,
+        offset=(max(1, int(st.session_state.get(f"{prefix}page", 1) or 1)) - 1) * 5,
+    )
+    try:
+        page = list_questions_page(db_path, filters)
+    except Exception as exc:
+        st.error(f"查找题目失败：{exc}")
+        return
+    st.markdown(f"### 查找结果 · {int(page.get('total') or 0)} 道")
+    if page.get("page_count"):
+        current_page = max(1, min(int(page["page_count"]), int(st.session_state.get(f"{prefix}page", 1) or 1)))
+        st.session_state[f"{prefix}page"] = current_page
+        page_col, prev_col, next_col = st.columns([1.2, 1, 1], gap="small")
+        with page_col:
+            st.caption(f"第 {current_page}/{page['page_count']} 页")
+        with prev_col:
+            if st.button("上一页", key=f"{prefix}prev", disabled=current_page <= 1, use_container_width=True):
+                st.session_state[f"{prefix}page"] = current_page - 1
+                st.rerun(scope="fragment")
+        with next_col:
+            if st.button("下一页", key=f"{prefix}next", disabled=current_page >= int(page["page_count"]), use_container_width=True):
+                st.session_state[f"{prefix}page"] = current_page + 1
+                st.rerun(scope="fragment")
+    for item in page.get("items") or []:
+        question_id = str(item.get("question_id") or "")
+        try:
+            payload = _db_preview_question_payload(db_path, question_id, os.path.getmtime(db_path))
+            question = payload.get("question") or {}
+            title = _db_preview_label(question)
+            st.markdown(f"#### {html.escape(title)}")
+            st.caption(f"ID：{question_id} · {question.get('detected_source') or '未标注来源'}")
+            _render_preview_with_inline_assets(payload.get("preview_markdown") or "")
+        except Exception as exc:
+            st.warning(f"{question_id} 预览失败：{exc}")
+        st.divider()
+    if not page.get("items"):
+        st.info("没有找到匹配题目。")
+
+
+@st.fragment
+def render_advanced_search_floating_panel():
+    """Render non-blocking three-level search beside the current entry page."""
+    panel_open = bool(st.session_state.get("advanced_search_panel_open")) and not bool(
+        st.session_state.get("advanced_search_panel_collapsed")
+    )
+
+    st.markdown(
+        """
+        <style>
+        .mc-advanced-floating-panel {
+            position: fixed !important;
+            right: 16px !important;
+            top: 92px !important;
+            width: 720px !important;
+            height: 680px !important;
+            min-width: 520px !important;
+            min-height: 360px !important;
+            max-width: calc(100vw - 96px) !important;
+            max-height: calc(100vh - 112px) !important;
+            z-index: 1005 !important;
+            overflow: auto !important;
+            padding: 0.9rem !important;
+            border: 1px solid rgba(119, 102, 142, 0.30) !important;
+            border-radius: 12px !important;
+            background: #faf8ff !important;
+            box-shadow: 0 18px 42px rgba(36, 28, 52, 0.22) !important;
+        }
+        .mc-advanced-floating-panel > * {
+            position: relative;
+            z-index: 1;
+        }
+        .mc-advanced-floating-panel::after {
+            content: "";
+            position: absolute;
+            right: 3px;
+            bottom: 3px;
+            width: 18px;
+            height: 18px;
+            border-right: 2px solid rgba(109, 40, 217, 0.50);
+            border-bottom: 2px solid rgba(109, 40, 217, 0.50);
+            border-radius: 0 0 8px 0;
+            cursor: nwse-resize;
+            z-index: 3;
+        }
+        .mc-advanced-floating-resize-grip {
+            position: absolute !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 34px !important;
+            height: 34px !important;
+            z-index: 20 !important;
+            cursor: nwse-resize !important;
+            touch-action: none !important;
+            background: linear-gradient(135deg, transparent 58%, rgba(109, 40, 217, 0.48) 59%, rgba(109, 40, 217, 0.48) 64%, transparent 65%);
+        }
+        .mc-advanced-floating-panel h4 {
+            cursor: move !important;
+            user-select: none !important;
+        }
+        .mc-advanced-floating-collapsed {
+            position: fixed !important;
+            right: 18px !important;
+            top: 50vh !important;
+            transform: translateY(-50%) !important;
+            width: 58px !important;
+            min-width: 58px !important;
+            max-width: 58px !important;
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+            z-index: 1005 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+            box-sizing: border-box !important;
+        }
+        .mc-advanced-floating-collapsed > div,
+        .mc-advanced-floating-collapsed div[data-testid="stVerticalBlock"],
+        .mc-advanced-floating-collapsed div[data-testid="stElementContainer"],
+        .mc-advanced-floating-collapsed div[data-testid="stButton"] {
+            width: 58px !important;
+            min-width: 58px !important;
+            max-width: 58px !important;
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            box-sizing: border-box !important;
+        }
+        .mc-advanced-floating-collapsed button {
+            width: 58px !important;
+            min-width: 58px !important;
+            max-width: 58px !important;
+            height: 58px !important;
+            min-height: 58px !important;
+            max-height: 58px !important;
+            padding: 0 !important;
+        }
+        @media (max-width: 980px) {
+            .mc-advanced-floating-panel {
+                left: 72px !important;
+                right: 12px !important;
+                width: auto !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    components.html(
+        """
+        <script>
+        (() => {
+            const doc = window.parent.document;
+            const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+            const find = (selector) => doc.querySelector(selector);
+            function mark() {
+                doc.querySelectorAll('.mc-advanced-floating-panel').forEach((node) => {
+                    if (!node.querySelector('.mc-advanced-floating-anchor')) node.classList.remove('mc-advanced-floating-panel');
+                });
+                doc.querySelectorAll('.mc-advanced-floating-collapsed').forEach((node) => {
+                    if (!node.querySelector('.mc-advanced-floating-collapsed-anchor')) node.classList.remove('mc-advanced-floating-collapsed');
+                });
+                const marker = find('.mc-advanced-floating-anchor');
+                const panel = marker ? marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
+                if (panel) {
+                    panel.classList.add('mc-advanced-floating-panel');
+                    panel.classList.remove('mc-advanced-floating-collapsed');
+                    ['width', 'min-width', 'max-width', 'height', 'min-height', 'max-height', 'left', 'right', 'top', 'transform', 'overflow', 'margin', 'padding', 'box-sizing'].forEach((property) => panel.style.removeProperty(property));
+                }
+                const collapsedMarker = find('.mc-advanced-floating-collapsed-anchor');
+                const collapsed = collapsedMarker ? collapsedMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
+                if (collapsed) {
+                    collapsed.classList.add('mc-advanced-floating-collapsed');
+                    const collapsedStyles = {
+                        width: '58px', minWidth: '58px', maxWidth: '58px',
+                        height: '58px', minHeight: '58px', maxHeight: '58px',
+                        left: 'auto', right: '18px', top: '50vh',
+                        transform: 'translateY(-50%)', overflow: 'visible',
+                        margin: '0', padding: '0', boxSizing: 'border-box'
+                    };
+                    Object.entries(collapsedStyles).forEach(([key, value]) => {
+                        const cssKey = key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+                        collapsed.style.setProperty(cssKey, value, 'important');
+                    });
+                }
+                return panel;
+            }
+            function bind() {
+                const panel = mark();
+                if (!panel) return;
+                if (panel.dataset.mcAdvancedBound === '1') {
+                    if (!panel.querySelector('.mc-advanced-floating-resize-grip')) {
+                        const grip = doc.createElement('div');
+                        grip.className = 'mc-advanced-floating-resize-grip';
+                        grip.setAttribute('aria-label', '调整搜索窗口大小');
+                        panel.appendChild(grip);
+                    }
+                    return;
+                }
+                panel.dataset.mcAdvancedBound = '1';
+                const resizeGrip = doc.createElement('div');
+                resizeGrip.className = 'mc-advanced-floating-resize-grip';
+                resizeGrip.setAttribute('aria-label', '调整搜索窗口大小');
+                panel.appendChild(resizeGrip);
+                const saved = (name, fallback) => Number(window.parent.localStorage.getItem(name) || fallback);
+                panel.style.setProperty('width', `${clamp(saved('mcAdvancedSearchWidth', 720), 520, Math.max(560, window.parent.innerWidth - 96))}px`, 'important');
+                panel.style.setProperty('height', `${clamp(saved('mcAdvancedSearchHeight', 680), 360, Math.max(400, window.parent.innerHeight - 112))}px`, 'important');
+                const x = Number(window.parent.localStorage.getItem('mcAdvancedSearchX'));
+                const y = Number(window.parent.localStorage.getItem('mcAdvancedSearchY'));
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    panel.style.setProperty('left', `${clamp(x, 72, Math.max(72, window.parent.innerWidth - panel.offsetWidth - 12))}px`, 'important');
+                    panel.style.setProperty('top', `${clamp(y, 12, Math.max(12, window.parent.innerHeight - 90))}px`, 'important');
+                    panel.style.setProperty('right', 'auto', 'important');
+                    panel.style.setProperty('transform', 'none', 'important');
+                } else {
+                    panel.style.setProperty('right', '22px', 'important');
+                    panel.style.setProperty('top', '50vh', 'important');
+                    panel.style.setProperty('transform', 'translateY(-50%)', 'important');
+                }
+                let moving = false, resizing = false, ox = 0, oy = 0, sx = 0, sy = 0, sw = 0, sh = 0;
+                panel.addEventListener('pointerdown', (event) => {
+                    const rect = panel.getBoundingClientRect();
+                    if (event.target.closest('.mc-advanced-floating-resize-grip') || (rect.right - event.clientX <= 34 && rect.bottom - event.clientY <= 34)) {
+                        resizing = true; sx = event.clientX; sy = event.clientY; sw = rect.width; sh = rect.height;
+                        panel.setPointerCapture(event.pointerId); event.preventDefault(); event.stopPropagation(); return;
+                    }
+                    if (!event.target.closest('h4')) return;
+                    moving = true; ox = event.clientX - rect.left; oy = event.clientY - rect.top;
+                    panel.setPointerCapture(event.pointerId); event.preventDefault();
+                });
+                panel.addEventListener('pointermove', (event) => {
+                    if (resizing) {
+                        event.preventDefault();
+                        const width = clamp(sw + event.clientX - sx, 520, Math.max(560, window.parent.innerWidth - panel.getBoundingClientRect().left - 12));
+                        const height = clamp(sh + event.clientY - sy, 360, Math.max(400, window.parent.innerHeight - panel.getBoundingClientRect().top - 12));
+                        panel.style.setProperty('width', `${width}px`, 'important'); panel.style.setProperty('height', `${height}px`, 'important');
+                        window.parent.localStorage.setItem('mcAdvancedSearchWidth', width); window.parent.localStorage.setItem('mcAdvancedSearchHeight', height); return;
+                    }
+                    if (!moving) return;
+                    const rect = panel.getBoundingClientRect();
+                    const x = clamp(event.clientX - ox, 72, Math.max(72, window.parent.innerWidth - rect.width - 12));
+                    const y = clamp(event.clientY - oy, 12, Math.max(12, window.parent.innerHeight - 90));
+                    panel.style.setProperty('left', `${x}px`, 'important'); panel.style.setProperty('top', `${y}px`, 'important'); panel.style.setProperty('right', 'auto', 'important');
+                    window.parent.localStorage.setItem('mcAdvancedSearchX', x); window.parent.localStorage.setItem('mcAdvancedSearchY', y);
+                });
+                panel.addEventListener('pointerup', () => { moving = false; resizing = false; });
+                panel.addEventListener('pointercancel', () => { moving = false; resizing = false; });
+            }
+            bind(); window.parent.setTimeout(bind, 80); window.parent.setTimeout(bind, 300);
+            if (window.parent.__mcAdvancedSearchObserver) window.parent.__mcAdvancedSearchObserver.disconnect();
+            window.parent.__mcAdvancedSearchObserver = new window.parent.MutationObserver(bind);
+            window.parent.__mcAdvancedSearchObserver.observe(doc.body, {childList: true, subtree: true});
+        })();
+        </script>
+        """,
+        height=0,
+    )
+    if not panel_open:
+        with st.container(border=True):
+            st.markdown('<span class="mc-advanced-floating-collapsed-anchor"></span>', unsafe_allow_html=True)
+            if st.button("🔍", key="mc_advanced_search_open", help="展开三级查找", use_container_width=True):
+                st.session_state["advanced_search_panel_open"] = True
+                st.session_state["advanced_search_panel_collapsed"] = False
+                st.rerun(scope="fragment")
+        return
+
+    with st.container(border=True):
+        st.markdown('<span class="mc-advanced-floating-anchor"></span>', unsafe_allow_html=True)
+        title_col, action_col = st.columns([5, 1], vertical_alignment="center")
+        with title_col:
+            st.markdown("#### 🔍 三级查找对照")
+        with action_col:
+            if st.button("收起", key="mc_advanced_search_collapse", use_container_width=True):
+                st.session_state["advanced_search_panel_collapsed"] = True
+                st.rerun(scope="fragment")
+        _render_exact_search_floating_contents()
+
+
+@st.dialog("首次使用新版题库", width="large")
+def show_sqlite_migration_onboarding_dialog():
+    st.markdown("#### 检测到旧版 TeX 题库")
+    st.write("你正在第一次进入新版录入或全局浏览页面。为了让新版功能读取到原有题目，请先将旧 `chapters/` 题库迁移到 SQLite。")
+    st.markdown(
+        "- 迁移过程先生成预览库和报告，不会删除或改写旧 `.tex` 文件。\n"
+        "- 你确认检查结果后，再由迁移工具写入正式数据库。\n"
+        "- 完成后，新版录入、SQLite 浏览、筛选和编辑才能使用完整题库。\n"
+        "- 旧版 TeX 页面仍会保留，可以继续切换使用。"
+    )
+    action_col, later_col = st.columns(2, gap="small")
+    with action_col:
+        if st.button("前往旧 TeX 迁移工具", key="btn_open_sqlite_onboarding_dialog", type="primary", use_container_width=True):
+            from services.local_preferences_service import save_local_preferences
+
+            save_local_preferences({"sqlite_migration_onboarding_version": str(globals().get("APP_DATA_VERSION", "sqlite-v1"))})
+            st.session_state["tools_subpage"] = "legacy_tex_migration"
+            st.session_state["main_nav_selection"] = "🛠️\n工具箱"
+            st.rerun()
+    with later_col:
+        if st.button("稍后提醒", key="btn_dismiss_sqlite_onboarding_dialog", use_container_width=True):
+            from services.local_preferences_service import save_local_preferences
+
+            save_local_preferences({"sqlite_migration_onboarding_version": str(globals().get("APP_DATA_VERSION", "sqlite-v1"))})
+            st.rerun()
+
+
+def _render_sqlite_migration_onboarding_notice(surface: str = ""):
+    """Show the migration dialog only on first entry to a new SQLite workflow surface."""
+    from services.database_service import DEFAULT_DATABASE_PATH
+    from services.local_preferences_service import load_local_preferences, save_local_preferences
+    from services.question_db_service import get_question_bank_availability
+
+    preferences = load_local_preferences()
+    current_version = str(globals().get("APP_DATA_VERSION", "sqlite-v1"))
+    if not surface or preferences.get("sqlite_migration_onboarding_version") == current_version:
+        return
+
+    chapters_exists = os.path.isdir(CHAPTERS_DIR) and any(
+        name.lower().endswith(".tex")
+        for root, _, files in os.walk(CHAPTERS_DIR)
+        for name in files
+    )
+    if not chapters_exists:
+        save_local_preferences({"sqlite_migration_onboarding_version": current_version})
+        return
+
+    try:
+        sqlite_ready = bool(get_question_bank_availability(DEFAULT_DATABASE_PATH).get("ready_for_browse"))
+    except Exception:
+        sqlite_ready = False
+    if sqlite_ready:
+        save_local_preferences({"sqlite_migration_onboarding_version": current_version})
+        return
+
+    show_sqlite_migration_onboarding_dialog()
+
+
 # ================= 主程序 =================
 def main():
     st.set_page_config(page_title="高中数学题库管理系统", layout="wide", initial_sidebar_state="expanded")
@@ -18459,25 +22853,26 @@ def main():
         api_nav_option,
         stats_nav_option,
         entry_nav_option,
-        sqlite_entry_nav_option,
         browse_nav_option,
-        sqlite_nav_option,
         exam_nav_option,
         topic_nav_option,
         tools_nav_option,
-        advanced_nav_option,
         intro_nav_option,
         manual_nav_option,
     ]
     default_nav_option = stats_nav_option
+    if st.session_state.get("main_nav_selection") == advanced_nav_option:
+        st.session_state["main_nav_selection"] = default_nav_option
+    if st.session_state.get("main_sidebar_radio") == advanced_nav_option:
+        st.session_state["main_sidebar_radio"] = default_nav_option
 
     legacy_nav_aliases = {
         "API设置": api_nav_option,
         "数据统计": stats_nav_option,
         "录入新题": entry_nav_option,
-        "录入问题": sqlite_entry_nav_option,
+        "录入问题": entry_nav_option,
         "全局浏览\n与编辑": browse_nav_option,
-        "SQLite预览": sqlite_nav_option,
+        "SQLite预览": browse_nav_option,
         "组卷服务": exam_nav_option,
         "专题收录": topic_nav_option,
         "工具箱": tools_nav_option,
@@ -18487,9 +22882,9 @@ def main():
         "🔑\nAPI设置": api_nav_option,
         "📊\n数据统计": stats_nav_option,
         "📝\n录入新题": entry_nav_option,
-        "✍️\n录入问题": sqlite_entry_nav_option,
+        "✍️\n录入问题": entry_nav_option,
         "🔍\n全局浏览\n与编辑": browse_nav_option,
-        "🗃️\nSQLite预览": sqlite_nav_option,
+        "🗃️\nSQLite预览": browse_nav_option,
         "🖨️\n组卷服务\n(完善中)": exam_nav_option,
         "🖨️\n组卷服务": exam_nav_option,
         "📚\n专题收录": topic_nav_option,
@@ -18524,6 +22919,15 @@ def main():
         if selection not in nav_options:
             return
 
+        if selection == advanced_nav_option and st.session_state.get("main_nav_selection") in {
+            entry_nav_option,
+            sqlite_entry_nav_option,
+        }:
+            st.session_state["advanced_search_panel_open"] = True
+            st.session_state["advanced_search_panel_collapsed"] = False
+            st.session_state["main_sidebar_radio"] = st.session_state["main_nav_selection"]
+            return
+
         st.session_state["main_nav_selection"] = selection
         st.session_state["main_sidebar_radio"] = selection
         if selection == browse_nav_option:
@@ -18550,13 +22954,10 @@ def main():
     top_nav_items = [
         (stats_nav_option, stats_nav_option),
         (entry_nav_option, entry_nav_option),
-        (sqlite_entry_nav_option, sqlite_entry_nav_option),
         (browse_nav_option, browse_nav_option),
-        (sqlite_nav_option, sqlite_nav_option),
         (exam_nav_option, exam_nav_option),
         (topic_nav_option, topic_nav_option),
         (tools_nav_option, tools_nav_option),
-        (advanced_nav_option, advanced_nav_option),
         (intro_nav_option, intro_nav_option),
         (manual_nav_option, manual_nav_option),
     ]
@@ -18592,14 +22993,50 @@ def main():
             min-width: 110px !important;
             max-width: 110px !important;
         }
+        [data-testid="stSidebarContent"] {
+            width: 110px !important;
+            min-width: 110px !important;
+            max-width: 110px !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            box-sizing: border-box !important;
+            overflow-x: visible !important;
+        }
 
         /* 调整内部边距，让内容完全居中 */
         [data-testid="stSidebarUserContent"] {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
             padding: 0.3rem 0rem 1rem 0rem !important;
             display: flex !important;
             flex-direction: column !important;
-            align-items: center !important;
+            align-items: stretch !important;
             justify-content: flex-start !important;
+        }
+        [data-testid="stSidebarUserContent"] > div,
+        [data-testid="stSidebar"] div[data-testid="stVerticalBlock"]:has(> .st-key-main_sidebar_radio),
+        [data-testid="stSidebar"] .st-key-main_sidebar_radio,
+        [data-testid="stSidebar"] div[data-testid="stRadio"],
+        [data-testid="stSidebar"] div[data-testid="stRadio"] > div {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        [data-testid="stSidebar"] .st-key-main_sidebar_radio {
+            align-self: stretch !important;
+            overflow: visible !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stVerticalBlock"]:has(> .st-key-main_sidebar_radio) {
+            align-self: stretch !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stRadio"] {
+            overflow: visible !important;
         }
 
         /* 原生切换由持久代理触发，避免 Streamlit 重建控件时产生闪烁。 */
@@ -18752,6 +23189,7 @@ def main():
             display: flex !important;
             justify-content: center !important;
             padding: 0 !important;
+            overflow: visible !important;
         }
 
         /* Radio 项 (上下结构，图标居上文字居下) */
@@ -18760,11 +23198,14 @@ def main():
             flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
-            width: calc(100% - 12px) !important;
+            flex: 0 0 auto !important;
+            width: 90px !important;
+            min-width: 90px !important;
             min-height: 58px !important;
             padding: 8px 6px !important;
             margin: 0 auto !important;
-            max-width: 90px !important; /* 固定宽度，居中 */
+            max-width: 90px !important;
+            box-sizing: border-box !important;
             border-radius: 8px !important;
             background-color: transparent !important;
             color: #5b21b6 !important;
@@ -18832,15 +23273,32 @@ def main():
         [data-testid="stSidebar"] div[role="radiogroup"] span {
             color: #5b21b6 !important;
         }
-        [data-testid="stSidebar"] div[role="radiogroup"] > label {
-            max-width: 96px !important;
-        }
         [data-testid="stSidebar"] div[role="radiogroup"] p {
-            width: auto !important;
+            width: 100% !important;
+            min-width: 0 !important;
             max-width: 100% !important;
             font-size: 13px !important;
             font-weight: 700 !important;
             line-height: 1.35 !important;
+            white-space: pre-line !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label > div:not(:first-child),
+        [data-testid="stSidebar"] div[role="radiogroup"] > label [data-testid="stMarkdownContainer"],
+        [data-testid="stSidebar"] div[role="radiogroup"] > label [data-testid="stMarkdownContainer"] > p {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            flex: 1 1 auto !important;
+            box-sizing: border-box !important;
+            text-align: center !important;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] > label > div:last-child {
+            margin: 0 !important;
+            margin-left: 0 !important;
+            padding: 0 !important;
+            transform: none !important;
         }
         .sol-logo,
         .sol-logo span {
@@ -19033,6 +23491,9 @@ def main():
             [data-testid="stSidebar"] div[data-testid="stImage"] {
                 display: flex !important;
                 justify-content: center !important;
+                width: 90px !important;
+                min-width: 90px !important;
+                max-width: 90px !important;
                 margin: 0 auto 4px auto !important;
             }
             [data-testid="stSidebar"] div[data-testid="stImage"] img {
@@ -19045,6 +23506,13 @@ def main():
             .sol-logo-link:hover,
             .sol-logo-link:active {
                 display: block !important;
+                width: 90px !important;
+                min-width: 90px !important;
+                max-width: 90px !important;
+                margin-left: auto !important;
+                margin-right: auto !important;
+                box-sizing: border-box !important;
+                text-align: center !important;
                 text-decoration: none !important;
                 color: #5b21b6 !important;
                 cursor: pointer !important;
@@ -19071,6 +23539,8 @@ def main():
         api_settings_dialog()
         st.session_state["api_settings_dialog_requested"] = False
     selected_nav = st.session_state.get("main_nav_selection", default_nav_option)
+    if selected_nav in {entry_nav_option, sqlite_entry_nav_option}:
+        render_advanced_search_floating_panel()
 
     # Inject the shared visual system before route content to avoid first-painting legacy styles.
     # Keep the final injection below as a cascade safeguard for page-local styles.
@@ -19080,11 +23550,33 @@ def main():
     if selected_nav == stats_nav_option:
         render_statistics_dashboard()
     elif selected_nav == entry_nav_option:
-        page_entry()
+        from services.local_preferences_service import QUESTION_SOURCE_SQLITE, get_entry_default_source
+
+        _render_sqlite_migration_onboarding_notice("entry")
+        if get_entry_default_source() == QUESTION_SOURCE_SQLITE:
+            render_sqlite_manual_draft_entry()
+        else:
+            page_entry()
     elif selected_nav == sqlite_entry_nav_option:
         render_sqlite_manual_draft_entry()
     elif selected_nav == browse_nav_option:
-        page_browse()
+        from services.database_service import DEFAULT_DATABASE_PATH
+        from services.local_preferences_service import QUESTION_SOURCE_SQLITE, get_browse_default_source
+        from services.question_db_service import get_question_bank_availability
+
+        _render_sqlite_migration_onboarding_notice("browse")
+        sqlite_availability = get_question_bank_availability(DEFAULT_DATABASE_PATH)
+        if get_browse_default_source() == QUESTION_SOURCE_SQLITE and sqlite_availability.get("ready_for_browse"):
+            render_sqlite_readonly_browse_preview(
+                allow_exam_basket=False,
+                right_heading="### 全局浏览与编辑",
+                right_caption="当前由工具箱偏好切换为 SQLite 预览；单题点击开始修改后保存到 SQLite，不修改旧 `.tex` 文件。",
+            )
+            render_advanced_search_floating_panel()
+        else:
+            if get_browse_default_source() == QUESTION_SOURCE_SQLITE and not sqlite_availability.get("ready_for_browse"):
+                st.caption("SQLite 正式库暂无可浏览题目，已回退旧 TeX 浏览。")
+            page_browse()
     elif selected_nav == sqlite_nav_option:
         from services.database_service import DEFAULT_DATABASE_PATH
         from services.question_db_service import get_question_bank_availability

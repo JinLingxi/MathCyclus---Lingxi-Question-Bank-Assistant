@@ -295,9 +295,14 @@ def apply_pending_migrations(
     backup: bool = True,
     backup_dir: str | os.PathLike[str] | None = None,
     stamp: str | None = None,
+    allow_external_database: bool = False,
 ) -> dict[str, Any]:
     database = Path(resolve_database_path(db_path or DEFAULT_DATABASE_PATH))
-    ensure_inside_project(database)
+    # Local-workspace bootstrap and isolated smoke tests may intentionally
+    # create a database outside the source checkout. Normal callers keep the
+    # project-boundary guard enabled.
+    if not allow_external_database:
+        ensure_inside_project(database)
     migrations = list_migration_files(migrations_dir)
     before = migration_status(database, migrations_dir)
     if before["status"] == "missing_database":

@@ -40,6 +40,7 @@ def empty_statistics() -> dict[str, Any]:
         "topic_counts": {},
         "book_counts": {},
         "paper_relation_count": 0,
+        "paper_count": 0,
         "paper_linked_questions": 0,
         "topic_count": 0,
         "topic_link_count": 0,
@@ -251,6 +252,10 @@ def _sqlite_relation_statistics(conn: sqlite3.Connection, question_ids: set[str]
     placeholders, params = _question_placeholders(question_ids)
 
     if _table_exists(conn, "paper") and _table_exists(conn, "paper_question"):
+        stats["paper_count"] = _scalar_count(
+            conn,
+            "SELECT COUNT(*) FROM paper WHERE COALESCE(paper_series, '') <> 'WK'",
+        )
         stats["paper_relation_count"] = _scalar_count(
             conn,
             f"SELECT COUNT(*) FROM paper_question WHERE question_id IN ({placeholders})",

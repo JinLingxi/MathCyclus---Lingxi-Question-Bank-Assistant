@@ -10,7 +10,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import sqlite3
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -93,6 +96,10 @@ def file_sha256(path: Path) -> str:
         for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def bytes_sha256(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
 
 
 def iter_files(path: Path) -> Iterable[Path]:
@@ -251,7 +258,36 @@ def read_manifest(bundle_path: str | Path) -> dict[str, Any]:
         if MANIFEST_NAME not in archive.namelist():
             raise ValueError(f"迁移包缺少清单：{MANIFEST_NAME}")
         with archive.open(MANIFEST_NAME) as file_obj:
-            return json.loads(file_obj.read().decode("utf-8"))
+            manifest = json.loads(file_obj.read().decode("utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("迁移包清单必须是 JSON 对象")
+    if manifest.get("format") != "mathcyclus-local-data-bundle":
+        raise ValueError(f"不支持的迁移包格式：{manifest.get('format')}")
+    if int(manifest.get("format_version") or 0) != 1:
+        raise ValueError(f"不支持的迁移包版本：{manifest.get('format_version')}")
+    if not isinstance(manifest.get("items"), list):
+        raise ValueError("迁移包清单缺少 items 数组")
+    return manifest
+
+
+def backup_existing_database(project_root: Path, database_path: Path) -> str:
+    """Create a consistent SQLite backup before an overwrite restore."""
+    backup_dir = project_root / "data" / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = backup_dir / f"mathcyclus_before_restore_{stamp}.sqlite3"
+    suffix = 1
+    while backup_path.exists():
+        backup_path = backup_dir / f"mathcyclus_before_restore_{stamp}_{suffix}.sqlite3"
+        suffix += 1
+    source_conn = sqlite3.connect(database_path)
+    target_conn = sqlite3.connect(backup_path)
+    try:
+        source_conn.backup(target_conn)
+    finally:
+        target_conn.close()
+        source_conn.close()
+    return backup_path.relative_to(project_root).as_posix()
 
 
 def inspect_bundle(bundle_path: str | Path) -> dict[str, Any]:
@@ -302,6 +338,26 @@ def restore_bundle(
         if MANIFEST_NAME not in names:
             raise ValueError(f"迁移包缺少清单：{MANIFEST_NAME}")
 
+        manifest = read_manifest(bundle_path)
+        manifest_items = {
+            safe_zip_relative_path(str(item.get("path") or "")): item
+            for item in manifest.get("items", [])
+            if item.get("path")
+        }
+
+        for rel, item in manifest_items.items():
+            if not is_restore_allowed(rel):
+                continue
+            if rel not in names:
+                blocked.append(f"bundle manifest item missing from archive: {rel}")
+            if int(item.get("size", -1)) < 0 or not str(item.get("sha256") or ""):
+                blocked.append(f"bundle manifest item missing checksum: {rel}")
+
+        database_backup = ""
+        database_target = (root / "data" / "mathcyclus.sqlite3").resolve()
+        if apply and overwrite and database_target.is_file() and "data/mathcyclus.sqlite3" in manifest_items:
+            database_backup = backup_existing_database(root, database_target)
+
         for name in names:
             if name == MANIFEST_NAME or name.endswith("/"):
                 continue
@@ -327,8 +383,42 @@ def restore_bundle(
 
             if apply:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(name) as source, target.open("wb") as destination:
-                    destination.write(source.read())
+                manifest_item = manifest_items.get(rel)
+                if not manifest_item:
+                    blocked.append(f"bundle manifest missing file: {rel}")
+                    continue
+                payload = archive.read(name)
+                expected_size = int(manifest_item.get("size", -1))
+                expected_hash = str(manifest_item.get("sha256") or "")
+                if len(payload) != expected_size or bytes_sha256(payload) != expected_hash:
+                    blocked.append(f"bundle checksum validation failed: {rel}")
+                    continue
+
+                temp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="wb",
+                        prefix=f".{target.name}.",
+                        suffix=".restore-tmp",
+                        dir=target.parent,
+                        delete=False,
+                    ) as temporary:
+                        temp_path = Path(temporary.name)
+                        temporary.write(payload)
+                    if target.name == "mathcyclus.sqlite3":
+                        check_conn = sqlite3.connect(temp_path)
+                        try:
+                            integrity = str(check_conn.execute("PRAGMA integrity_check").fetchone()[0])
+                        finally:
+                            check_conn.close()
+                        if integrity != "ok":
+                            blocked.append(f"SQLite integrity validation failed: {rel}")
+                            continue
+                    os.replace(temp_path, target)
+                    temp_path = None
+                finally:
+                    if temp_path and temp_path.exists():
+                        temp_path.unlink()
             restored.append(rel)
 
     status = "blocked" if blocked or conflicts else "ok"
@@ -346,6 +436,7 @@ def restore_bundle(
         "skipped": skipped[:80],
         "blocked": blocked[:80],
         "overwrite": overwrite,
+        "database_backup": database_backup,
         "deletes_files": False,
     }
 

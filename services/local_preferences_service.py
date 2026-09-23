@@ -11,6 +11,7 @@ from services.file_service import atomic_write_text
 
 
 DEFAULT_PREFERENCES_PATH = Path(BASE_DIR) / "data" / "local_preferences.json"
+PREFERENCES_SCHEMA_VERSION = 2
 
 QUESTION_SOURCE_SQLITE = "sqlite"
 QUESTION_SOURCE_LEGACY = "legacy"
@@ -21,14 +22,22 @@ BROWSE_SOURCE_LABELS = {
     QUESTION_SOURCE_LEGACY: "旧 TeX 题库",
 }
 
+ENTRY_SOURCE_LABELS = {
+    QUESTION_SOURCE_SQLITE: "SQLite 结构化录入",
+    QUESTION_SOURCE_LEGACY: "旧 TeX 录入",
+}
+
 EXAM_SOURCE_LABELS = {
     QUESTION_SOURCE_SQLITE: "SQLite 试用题库",
     QUESTION_SOURCE_LEGACY: "旧 TeX 题库",
 }
 
 DEFAULT_PREFERENCES: dict[str, Any] = {
-    "browse_default_source": QUESTION_SOURCE_SQLITE,
+    "preferences_schema_version": PREFERENCES_SCHEMA_VERSION,
+    "entry_default_source": QUESTION_SOURCE_LEGACY,
+    "browse_default_source": QUESTION_SOURCE_LEGACY,
     "exam_default_source": QUESTION_SOURCE_SQLITE,
+    "sqlite_migration_onboarding_version": "",
 }
 
 
@@ -45,6 +54,8 @@ def _normalize_source(value: Any, fallback: str = QUESTION_SOURCE_SQLITE) -> str
         "sqlite": QUESTION_SOURCE_SQLITE,
         "sqlite 数据库": QUESTION_SOURCE_SQLITE,
         "sqlite 试用题库": QUESTION_SOURCE_SQLITE,
+        "sqlite 结构化录入": QUESTION_SOURCE_SQLITE,
+        "旧 tex 录入": QUESTION_SOURCE_LEGACY,
         "旧 tex 题库": QUESTION_SOURCE_LEGACY,
         "旧题库": QUESTION_SOURCE_LEGACY,
         "legacy": QUESTION_SOURCE_LEGACY,
@@ -66,8 +77,17 @@ def load_local_preferences(path: str | Path | None = None) -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             data = {}
 
+    legacy_entry_browse_defaults = data.get("preferences_schema_version") != PREFERENCES_SCHEMA_VERSION
     preferences = dict(DEFAULT_PREFERENCES)
     preferences.update(data)
+    if legacy_entry_browse_defaults:
+        preferences["preferences_schema_version"] = PREFERENCES_SCHEMA_VERSION
+        preferences["entry_default_source"] = QUESTION_SOURCE_LEGACY
+        preferences["browse_default_source"] = QUESTION_SOURCE_LEGACY
+    preferences["entry_default_source"] = _normalize_source(
+        preferences.get("entry_default_source"),
+        QUESTION_SOURCE_LEGACY,
+    )
     preferences["browse_default_source"] = _normalize_source(preferences.get("browse_default_source"))
     preferences["exam_default_source"] = _normalize_source(preferences.get("exam_default_source"))
     preferences["_path"] = str(target)
@@ -85,6 +105,11 @@ def save_local_preferences(
     current.pop("_path", None)
     current.pop("_exists", None)
     current.update(updates or {})
+    current["preferences_schema_version"] = PREFERENCES_SCHEMA_VERSION
+    current["entry_default_source"] = _normalize_source(
+        current.get("entry_default_source"),
+        QUESTION_SOURCE_LEGACY,
+    )
     current["browse_default_source"] = _normalize_source(current.get("browse_default_source"))
     current["exam_default_source"] = _normalize_source(current.get("exam_default_source"))
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -94,8 +119,12 @@ def save_local_preferences(
     return saved
 
 
+def get_entry_default_source(path: str | Path | None = None) -> str:
+    return str(load_local_preferences(path).get("entry_default_source") or QUESTION_SOURCE_LEGACY)
+
+
 def get_browse_default_source(path: str | Path | None = None) -> str:
-    return str(load_local_preferences(path).get("browse_default_source") or QUESTION_SOURCE_SQLITE)
+    return str(load_local_preferences(path).get("browse_default_source") or QUESTION_SOURCE_LEGACY)
 
 
 def get_exam_default_source(path: str | Path | None = None) -> str:
@@ -103,13 +132,18 @@ def get_exam_default_source(path: str | Path | None = None) -> str:
 
 
 def source_label(source: str, *, surface: str) -> str:
-    labels = EXAM_SOURCE_LABELS if surface == "exam" else BROWSE_SOURCE_LABELS
+    if surface == "exam":
+        labels = EXAM_SOURCE_LABELS
+    elif surface == "entry":
+        labels = ENTRY_SOURCE_LABELS
+    else:
+        labels = BROWSE_SOURCE_LABELS
     return labels.get(_normalize_source(source), labels[QUESTION_SOURCE_SQLITE])
 
 
 def source_from_label(label: str) -> str:
     text = str(label or "").strip()
-    for labels in (BROWSE_SOURCE_LABELS, EXAM_SOURCE_LABELS):
+    for labels in (BROWSE_SOURCE_LABELS, ENTRY_SOURCE_LABELS, EXAM_SOURCE_LABELS):
         for source, source_label_text in labels.items():
             if text == source_label_text:
                 return source

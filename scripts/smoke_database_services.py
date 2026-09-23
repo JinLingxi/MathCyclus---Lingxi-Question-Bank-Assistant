@@ -119,6 +119,31 @@ def main() -> None:
     first_chapter = first_item.get("detected_chapter") or ""
     first_year = first_item.get("detected_year")
     first_source = first_item.get("detected_source") or ""
+    first_legacy_id = first_item.get("legacy_id") or ""
+    if first_question_id:
+        id_page = list_questions_page(
+            str(db_path),
+            QuestionListFilters(keyword=f"ID:{first_question_id}", limit=args.limit, offset=0),
+        )
+        checks.append(
+            check(
+                "question_id_keyword_search",
+                any(item.get("question_id") == first_question_id for item in id_page["items"]),
+                {"keyword": f"ID:{first_question_id}", "total": id_page["total"]},
+            )
+        )
+    if first_legacy_id:
+        legacy_id_page = list_questions_page(
+            str(db_path),
+            QuestionListFilters(keyword=f"旧ID:{first_legacy_id}", limit=args.limit, offset=0),
+        )
+        checks.append(
+            check(
+                "legacy_id_keyword_search",
+                any(item.get("question_id") == first_question_id for item in legacy_id_page["items"]),
+                {"keyword": f"旧ID:{first_legacy_id}", "total": legacy_id_page["total"]},
+            )
+        )
     if first_chapter and first_source:
         slash_page = list_questions_page(
             str(db_path),

@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 
@@ -18,7 +19,7 @@ from scripts.local_data_bundle import export_bundle, inspect_bundle, restore_bun
 
 
 def table_count(db_path: Path, table: str) -> int:
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
@@ -79,6 +80,11 @@ def main() -> int:
         restore_conflict = restore_bundle(project_root=target_root, bundle=bundle_path, apply=False)
         assert restore_conflict["status"] == "blocked", restore_conflict
         assert restore_conflict["conflict_count"] >= 1
+
+        restore_overwrite = restore_bundle(project_root=target_root, bundle=bundle_path, apply=True, overwrite=True)
+        assert restore_overwrite["status"] == "ok", restore_overwrite
+        assert restore_overwrite["database_backup"], restore_overwrite
+        assert (target_root / restore_overwrite["database_backup"]).exists()
 
     print("status=ok")
     print("init_local_workspace=ok")

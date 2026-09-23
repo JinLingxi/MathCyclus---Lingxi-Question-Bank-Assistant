@@ -185,7 +185,7 @@ def generate_heatmap_html(daily_activity):
     <div class="heatmap-container">
         <div class="heatmap-title">🗓️ 活跃指标 (Active Days)</div>
         <div class="heatmap-scroll-area">
-            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #64748b; margin-right: 8px; margin-top: 20px; position: sticky; left: 0; background-color: rgba(249,250,255,0.96); z-index: 2;">
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #64748b; margin-right: 8px; margin-top: 20px; position: sticky; left: 0; background-color: transparent; z-index: 2;">
                 <div style="height: 14px;"></div>
                 <div style="height: 14px; line-height: 14px;">M</div>
                 <div style="height: 14px;"></div>
@@ -1263,3 +1263,56 @@ def generate_echarts_pie_html(data_dict, diff_dict, title):
     </script>
     """
     return html
+
+
+def generate_echarts_donut_html(data_dict, title):
+    """Render one clean donut chart for a single categorical distribution."""
+    if not data_dict:
+        return "<div style='color: gray; padding: 24px;'>暂无数据</div>"
+    items = [
+        {"name": str(key), "value": int(value or 0)}
+        for key, value in data_dict.items()
+        if int(value or 0) > 0
+    ]
+    if not items:
+        return "<div style='color: gray; padding: 24px;'>暂无数据</div>"
+    items.sort(key=lambda item: (-item["value"], item["name"]))
+    colors = ["#2563eb", "#16a34a", "#ea580c", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#64748b"]
+    total = sum(item["value"] for item in items)
+    return f"""
+    <style>
+        .single-donut-panel {{
+            width: 100%; height: 350px; padding: 10px 12px 6px;
+            box-sizing: border-box; border-radius: 12px;
+            border: 1px solid rgba(109, 40, 217, 0.10);
+            background: linear-gradient(180deg, rgba(255,255,255,0.90), rgba(255,255,255,0.72));
+            box-shadow: 0 10px 30px rgba(31, 35, 48, 0.06);
+        }}
+        #single-donut-chart {{ width: 100%; height: 100%; }}
+    </style>
+    <div class="single-donut-panel"><div id="single-donut-chart"></div></div>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script>
+        const donutChart = echarts.init(document.getElementById('single-donut-chart'));
+        donutChart.setOption({{
+            animationDuration: 700,
+            tooltip: {{ trigger: 'item', formatter: '{{b}}: {{c}} ({{d}}%)' }},
+            title: {{
+                text: {json.dumps(f"{total:,}", ensure_ascii=False)},
+                subtext: {json.dumps(title, ensure_ascii=False)},
+                left: 'center', top: '31%',
+                textStyle: {{ color: '#1f2937', fontSize: 25, fontWeight: 700 }},
+                subtextStyle: {{ color: '#64748b', fontSize: 13 }}
+            }},
+            legend: {{ show: false }},
+            color: {json.dumps(colors)},
+            series: [{{
+                name: {json.dumps(title, ensure_ascii=False)}, type: 'pie', radius: ['42%', '72%'],
+                center: ['50%', '43%'], itemStyle: {{ borderColor: '#fff', borderWidth: 2, borderRadius: 4 }},
+                label: {{ show: true, formatter: '{{b}}\\n{{c}}道', fontWeight: '600' }},
+                data: {json.dumps(items, ensure_ascii=False)}
+            }}]
+        }});
+        window.addEventListener('resize', () => donutChart.resize());
+    </script>
+    """

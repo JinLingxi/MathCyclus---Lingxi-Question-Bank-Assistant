@@ -33,7 +33,13 @@ def connect_database(path: str | os.PathLike[str] | None = None) -> sqlite3.Conn
 def configure_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
     """Apply project defaults to a SQLite connection."""
     conn.row_factory = sqlite3.Row
+    # Keep read sessions from blocking writes and give short-lived UI writes
+    # enough time to wait for another local Streamlit session.
+    conn.execute("PRAGMA busy_timeout = 20000")
     conn.execute("PRAGMA foreign_keys = ON")
+    if not conn.execute("PRAGMA query_only").fetchone()[0]:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
@@ -103,6 +109,12 @@ def initialize_database(path: str | os.PathLike[str] | None = None, schema_path:
     schema_sql = schema_file.read_text(encoding="utf-8")
     with database_connection(db_path) as conn:
         conn.executescript(schema_sql)
+    # Apply post-baseline migrations to a brand-new database as well. The
+    # schema file remains the install baseline, while migrations remain the
+    # single source of truth for incremental upgrades.
+    from services.schema_migration_service import apply_pending_migrations
+
+    apply_pending_migrations(db_path, apply=True, backup=False)
     return db_path
 
 

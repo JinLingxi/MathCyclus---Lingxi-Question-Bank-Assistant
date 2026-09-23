@@ -7,6 +7,7 @@ import json
 import mimetypes
 import re
 import shutil
+from difflib import SequenceMatcher
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -53,6 +54,7 @@ DRAFT_ASSET_EDITABLE_COLUMNS = {
     "sort_order",
     "review_status",
     "note",
+    "extra_json",
 }
 VALID_DRAFT_ASSET_ROLES = {"problem", "answer", "solution", "source", "thumbnail"}
 QUESTION_TYPE_NAMES = {
@@ -73,6 +75,9 @@ QUESTION_TYPE_NAMES = {
     "proof": 4,
     "解答题": 4,
     "证明题": 4,
+    "true_false": 6,
+    "判断": 6,
+    "判断题": 6,
     "other": 5,
     "其他": 5,
 }
@@ -87,6 +92,7 @@ class DraftAssetInput:
     caption: str = ""
     sort_order: int = 0
     note: str = ""
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -200,6 +206,7 @@ def normalize_draft_question(data: dict[str, Any]) -> DraftQuestionInput:
             caption=str(item.get("caption") or "").strip(),
             sort_order=coerce_int(item.get("sort_order")) or 0,
             note=str(item.get("note") or "").strip(),
+            extra=parse_json_object(item.get("extra") or item.get("extra_json")),
         )
         for item in data.get("assets", []) or []
         if isinstance(item, dict)
@@ -436,9 +443,9 @@ def insert_draft_question(
                 INSERT INTO question_import_draft_asset(
                     draft_asset_id, draft_id, role, source_path, planned_file_path,
                     original_file_name, mime_type, file_hash, caption, sort_order,
-                    review_status, note
+                    review_status, note, extra_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     make_draft_asset_id(draft_id, asset_index, asset),
@@ -453,6 +460,7 @@ def insert_draft_question(
                     asset.sort_order or asset_index,
                     "needs_review",
                     asset.note,
+                    compact_json(asset.extra),
                 ),
             )
     return draft_id, validation
@@ -541,6 +549,84 @@ def list_ready_draft_ids(db_path: str | None, batch_id: str = "") -> list[str]:
     return [str(row[0]) for row in rows]
 
 
+def find_paper_position_conflict(db_path: str | None, extra: dict[str, Any]) -> list[dict[str, Any]]:
+    """Find existing questions occupying the same paper/year/question position."""
+    if str(extra.get("source_kind") or "").strip() != "试卷":
+        return []
+    question_number = str(extra.get("detected_question_number") or "").strip()
+    if not question_number:
+        return []
+    sub_number = str(extra.get("sub_number") or "").strip()
+    paper_standard_id = str(extra.get("paper_standard_id") or "").strip()
+    with readonly_database_connection(db_path) as conn:
+        paper_id = ""
+        if paper_standard_id:
+            row = conn.execute(
+                "SELECT paper_id FROM paper_standard_catalog WHERE paper_standard_id = ?",
+                (paper_standard_id,),
+            ).fetchone()
+            paper_id = str(row["paper_id"] or "") if row and row["paper_id"] else ""
+        if not paper_id:
+            year = _coerce_year(extra.get("detected_year"))
+            paper_name = str(extra.get("detected_source") or "").strip()
+            series = str(extra.get("paper_series") or "G").strip()
+            track = str(extra.get("track") or "").strip()
+            row = conn.execute(
+                """
+                SELECT paper_id FROM paper
+                WHERE ((year = ?) OR (year IS NULL AND ? IS NULL))
+                  AND paper_series = ? AND track = ? AND (paper_name = ? OR source_name = ?)
+                LIMIT 1
+                """,
+                (year, year, series, track, paper_name, paper_name),
+            ).fetchone()
+            paper_id = str(row["paper_id"] or "") if row else ""
+        if not paper_id:
+            return []
+        rows = conn.execute(
+            """
+            SELECT pq.question_id, pq.question_number, pq.sub_number,
+                   p.year, p.paper_name, p.source_name
+            FROM paper_question pq
+            JOIN paper p ON p.paper_id = pq.paper_id
+            WHERE pq.paper_id = ? AND pq.question_number = ? AND pq.sub_number = ?
+            ORDER BY pq.question_id
+            """,
+            (paper_id, question_number, sub_number),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def find_question_content_matches(
+    db_path: str | None,
+    stem_tex: str,
+    *,
+    similarity_threshold: float = 0.88,
+    max_results: int = 3,
+) -> list[dict[str, Any]]:
+    """Find SQLite questions with exactly equal or highly similar statements."""
+    from services.question_service import normalize_question_text
+
+    normalized = normalize_question_text(stem_tex)
+    if not normalized:
+        return []
+    matches: list[dict[str, Any]] = []
+    with readonly_database_connection(db_path) as conn:
+        rows = conn.execute("SELECT question_id, stem_tex FROM question WHERE stem_tex != ''").fetchall()
+    for row in rows:
+        candidate = normalize_question_text(str(row["stem_tex"] or ""))
+        if not candidate:
+            continue
+        if candidate == normalized:
+            matches.append({"question_id": str(row["question_id"]), "kind": "exact", "score": 1.0})
+            continue
+        score = SequenceMatcher(None, normalized, candidate, autojunk=False).ratio()
+        if score >= similarity_threshold:
+            matches.append({"question_id": str(row["question_id"]), "kind": "similar", "score": round(score, 4)})
+    matches.sort(key=lambda item: (item["kind"] != "exact", -float(item["score"]), item["question_id"]))
+    return matches[:max_results]
+
+
 def next_question_id(db_path: str | None) -> str:
     """Allocate the next Q000001-style ID from the current database state."""
     pattern = re.compile(r"^Q(\d+)$")
@@ -621,6 +707,28 @@ def summarize_batch(db_path: str | None, batch_id: str) -> dict[str, Any]:
     }
 
 
+def list_import_report_items(
+    db_path: str | None = None,
+    *,
+    batch_id: str = "",
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """List persisted batch decisions for the review workspace."""
+    safe_limit = max(1, min(int(limit or 100), 500))
+    clauses: list[str] = []
+    params: list[Any] = []
+    if batch_id:
+        clauses.append("batch_id = ?")
+        params.append(batch_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with readonly_database_connection(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT * FROM import_report_item {where} ORDER BY created_at DESC, item_id DESC LIMIT ?",
+            params + [safe_limit],
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def list_import_batches(db_path: str | None = None, limit: int = 20) -> list[dict]:
     safe_limit = max(1, min(int(limit or 20), 100))
     with readonly_database_connection(db_path) as conn:
@@ -646,6 +754,7 @@ def list_draft_questions(
     review_status: str = "",
     limit: int = 50,
     offset: int = 0,
+    exclude_sample: bool = False,
 ) -> list[dict]:
     safe_limit = max(1, min(int(limit or 50), 200))
     safe_offset = max(0, int(offset or 0))
@@ -657,6 +766,8 @@ def list_draft_questions(
     if review_status:
         clauses.append("d.review_status = ?")
         params.append(review_status)
+    if exclude_sample:
+        clauses.append("d.review_status <> 'sample'")
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
     params.extend([safe_limit, safe_offset])
 
@@ -695,6 +806,7 @@ def count_draft_questions(
     db_path: str | None = None,
     batch_id: str = "",
     review_status: str = "",
+    exclude_sample: bool = False,
 ) -> int:
     clauses: list[str] = []
     params: list[object] = []
@@ -704,6 +816,8 @@ def count_draft_questions(
     if review_status:
         clauses.append("review_status = ?")
         params.append(review_status)
+    if exclude_sample:
+        clauses.append("review_status <> 'sample'")
     where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
     with readonly_database_connection(db_path) as conn:
         return int(conn.execute(f"SELECT COUNT(*) FROM question_import_draft {where_sql}", params).fetchone()[0])
@@ -931,6 +1045,7 @@ def _draft_row_to_input(draft: dict[str, Any]) -> DraftQuestionInput:
                 caption=str(asset.get("caption") or ""),
                 sort_order=coerce_int(asset.get("sort_order")) or 0,
                 note=str(asset.get("note") or ""),
+                extra=_safe_json_object(asset.get("extra_json")),
             )
             for asset in draft.get("assets", []) or []
         ],
@@ -1102,6 +1217,7 @@ def _normalize_draft_asset_payload(data: dict[str, Any], default_sort_order: int
         "sort_order": coerce_int(data.get("sort_order")) or default_sort_order,
         "review_status": review_status,
         "note": str(data.get("note") or "").strip(),
+        "extra_json": compact_json(parse_json_object(data.get("extra") or data.get("extra_json"))),
     }
 
 
@@ -1141,6 +1257,7 @@ def add_draft_asset(
             caption=payload["caption"],
             sort_order=payload["sort_order"],
             note=payload["note"],
+            extra=parse_json_object(payload["extra_json"]),
         )
         draft_asset_id = make_draft_asset_id(safe_draft_id, int(payload["sort_order"]), asset_input)
         while _get_draft_asset_from_conn(conn, draft_asset_id):
@@ -1153,6 +1270,7 @@ def add_draft_asset(
                 caption=payload["caption"],
                 sort_order=payload["sort_order"],
                 note=payload["note"],
+                extra=parse_json_object(payload["extra_json"]),
             )
             draft_asset_id = make_draft_asset_id(safe_draft_id, int(payload["sort_order"]), asset_input)
         conn.execute(
@@ -1160,9 +1278,9 @@ def add_draft_asset(
             INSERT INTO question_import_draft_asset(
                 draft_asset_id, draft_id, role, source_path, planned_file_path,
                 original_file_name, mime_type, file_hash, caption, sort_order,
-                review_status, note
+                review_status, note, extra_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 draft_asset_id,
@@ -1177,6 +1295,7 @@ def add_draft_asset(
                 payload["sort_order"],
                 payload["review_status"],
                 payload["note"],
+                payload["extra_json"],
             ),
         )
         conn.execute("UPDATE question_import_draft SET updated_at = CURRENT_TIMESTAMP WHERE draft_id = ?", (safe_draft_id,))
@@ -1219,6 +1338,8 @@ def update_draft_asset_fields(
             if review_status not in ALLOWED_REVIEW_STATUS:
                 raise ValueError(f"不支持资源 review_status：{review_status}")
             normalized_updates[field] = review_status
+        elif field == "extra_json":
+            normalized_updates[field] = compact_json(parse_json_object(value))
         else:
             normalized_updates[field] = str(value or "").strip()
     if "source_path" in normalized_updates and "original_file_name" not in normalized_updates:
@@ -1411,38 +1532,75 @@ def _upsert_paper_link_from_draft_conn(conn, question_id: str, draft: dict[str, 
     extra = _draft_extra(draft)
     if extra.get("source_kind") != "试卷":
         return ""
-    paper_name = str(extra.get("detected_source") or draft.get("source_label") or "").strip()
+    standard_paper = None
+    standard_id = str(extra.get("paper_standard_id") or "").strip()
+    if standard_id:
+        try:
+            standard_paper = conn.execute(
+                """
+                SELECT paper_standard_id, paper_id, year, paper_series, track, paper_name, source_name
+                FROM paper_standard_catalog
+                WHERE paper_standard_id = ? AND status IN ('confirmed', 'active')
+                """,
+                (standard_id,),
+            ).fetchone()
+        except Exception:
+            standard_paper = None
+
+    paper_name = str(
+        (standard_paper["paper_name"] if standard_paper else None)
+        or extra.get("detected_source")
+        or draft.get("source_label")
+        or ""
+    ).strip()
     if not paper_name:
         return ""
-    year = _coerce_year(extra.get("detected_year"))
-    paper_series = str(extra.get("paper_series") or "G").strip()
-    track = str(extra.get("track") or "").strip()
+    year = _coerce_year(standard_paper["year"] if standard_paper else extra.get("detected_year"))
+    paper_series = str(
+        (standard_paper["paper_series"] if standard_paper else None)
+        or extra.get("paper_series")
+        or "G"
+    ).strip()
+    track = str((standard_paper["track"] if standard_paper else None) or extra.get("track") or "").strip()
     question_number = str(extra.get("detected_question_number") or "").strip()
     sub_number = str(extra.get("sub_number") or "").strip()
-    paper_id = stable_id("P", year or "", paper_series, track, paper_name)
-    conn.execute(
-        """
-        INSERT INTO paper(paper_id, year, paper_series, track, paper_name, source_name, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(year, paper_series, track, paper_name) DO UPDATE SET
-            source_name = CASE WHEN excluded.source_name != '' THEN excluded.source_name ELSE paper.source_name END,
-            updated_at = CURRENT_TIMESTAMP
-        """,
-        (paper_id, year, paper_series, track, paper_name, paper_name, "streamlit 草稿提交自动关联"),
-    )
-    row = conn.execute(
-        """
-        SELECT paper_id
-        FROM paper
-        WHERE
-            ((year = ?) OR (year IS NULL AND ? IS NULL))
-            AND paper_series = ?
-            AND track = ?
-            AND paper_name = ?
-        """,
-        (year, year, paper_series, track, paper_name),
-    ).fetchone()
-    final_paper_id = str(row["paper_id"] if row else paper_id)
+    linked_paper_id = str(standard_paper["paper_id"] if standard_paper else "").strip()
+    if linked_paper_id:
+        final_paper_id = linked_paper_id
+    else:
+        paper_id = stable_id("P", year or "", paper_series, track, paper_name)
+        conn.execute(
+            """
+            INSERT INTO paper(paper_id, year, paper_series, track, paper_name, source_name, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(year, paper_series, track, paper_name) DO UPDATE SET
+                source_name = CASE WHEN excluded.source_name != '' THEN excluded.source_name ELSE paper.source_name END,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (paper_id, year, paper_series, track, paper_name, paper_name, "streamlit 草稿提交自动关联"),
+        )
+        row = conn.execute(
+            """
+            SELECT paper_id
+            FROM paper
+            WHERE
+                ((year = ?) OR (year IS NULL AND ? IS NULL))
+                AND paper_series = ?
+                AND track = ?
+                AND paper_name = ?
+            """,
+            (year, year, paper_series, track, paper_name),
+        ).fetchone()
+        final_paper_id = str(row["paper_id"] if row else paper_id)
+        if standard_id:
+            conn.execute(
+                """
+                UPDATE paper_standard_catalog
+                SET paper_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE paper_standard_id = ? AND paper_id IS NULL
+                """,
+                (final_paper_id, standard_id),
+            )
     paper_question_id = stable_id("PQ", final_paper_id, question_id, question_number, sub_number)
     conn.execute(
         """
@@ -1472,6 +1630,7 @@ def _copy_draft_assets_to_question_conn(
     question_id: str,
     *,
     copy_files: bool = True,
+    created_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
     from services.asset_service import _image_dimensions, _stored_path, copy_asset_to_question_dir, file_hash, make_asset_id
 
@@ -1489,7 +1648,11 @@ def _copy_draft_assets_to_question_conn(
             skipped.append({"source_path": source_text, "reason": "file_missing"})
             continue
         role = str(asset.get("role") or "problem").strip() or "problem"
-        target = copy_asset_to_question_dir(question_id, source, role) if copy_files else source
+        asset_extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+        target_stem = str(asset.get("alias") or asset_extra.get("alias") or "").strip() or None
+        target = copy_asset_to_question_dir(question_id, source, role, target_stem=target_stem) if copy_files else source
+        if copy_files and target != source and target.exists() and created_paths is not None:
+            created_paths.append(target)
         mime_type = mimetypes.guess_type(target.name)[0] or str(asset.get("mime_type") or "")
         width, height = _image_dimensions(target) if mime_type.startswith("image/") else (None, None)
         asset_id = make_asset_id(question_id, role, target)
@@ -1517,6 +1680,249 @@ def _copy_draft_assets_to_question_conn(
         )
         inserted.append({"asset_id": asset_id, "file_path": _stored_path(target), "role": role})
     return {"inserted": inserted, "skipped": skipped}
+
+
+def _upsert_book_link_from_draft_conn(conn, question_id: str, draft: dict[str, Any]) -> str:
+    """Persist教材 metadata captured by manual, same-book, or PDF entry."""
+    extra = _draft_extra(draft)
+    if extra.get("source_kind") != "教材":
+        return ""
+    title = str(extra.get("book_title") or draft.get("source_label") or extra.get("detected_source") or "").strip()
+    if not title:
+        return ""
+    publisher = str(extra.get("book_publisher") or "").strip()
+    edition = str(extra.get("book_edition") or "").strip()
+    grade = str(extra.get("book_grade") or "").strip()
+    volume = str(extra.get("book_volume") or extra.get("year_or_volume") or "").strip()
+    curriculum = str(extra.get("book_curriculum_version") or "").strip()
+    book = conn.execute(
+        """
+        SELECT book_id FROM book
+        WHERE title = ? AND publisher = ? AND edition = ? AND grade = ?
+          AND volume = ? AND curriculum_version = ?
+        """,
+        (title, publisher, edition, grade, volume, curriculum),
+    ).fetchone()
+    if book:
+        book_id = str(book["book_id"])
+    else:
+        book_id = stable_id("B", title, publisher, edition, grade, volume, curriculum)
+        conn.execute(
+            """
+            INSERT INTO book(book_id, title, publisher, edition, grade, volume, curriculum_version, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (book_id, title, publisher, edition, grade, volume, curriculum, str(extra.get("book_description") or "")),
+        )
+    section_title = str(extra.get("book_column_name") or extra.get("book_section_title") or "").strip()
+    section_id = ""
+    if section_title:
+        section = conn.execute(
+            "SELECT section_id FROM book_section WHERE book_id = ? AND title = ? AND parent_section_id IS NULL",
+            (book_id, section_title),
+        ).fetchone()
+        if section:
+            section_id = str(section["section_id"])
+        else:
+            section_id = stable_id("BS", book_id, "", section_title)
+            conn.execute(
+                "INSERT INTO book_section(section_id, book_id, title, section_level, sort_order) VALUES (?, ?, ?, 1, 0)",
+                (section_id, book_id, section_title),
+            )
+    page_number = coerce_int(extra.get("book_page_number"))
+    exercise_number = str(extra.get("book_exercise_number") or extra.get("detected_question_number") or "").strip()
+    sub_number = str(extra.get("sub_number") or "").strip()
+    column_name = section_title
+    existing = conn.execute(
+        """
+        SELECT book_exercise_question_id FROM book_exercise_question
+        WHERE book_id = ? AND question_id = ? AND ((section_id = ?) OR (section_id IS NULL AND ? = ''))
+          AND ((page_number = ?) OR (page_number IS NULL AND ? IS NULL))
+          AND column_name = ? AND exercise_number = ? AND sub_number = ?
+        """,
+        (book_id, question_id, section_id or None, section_id, page_number, page_number, column_name, exercise_number, sub_number),
+    ).fetchone()
+    link_id = str(existing["book_exercise_question_id"]) if existing else stable_id(
+        "BEQ", book_id, section_id, question_id, page_number or "", column_name, exercise_number, sub_number
+    )
+    conn.execute(
+        """
+        INSERT INTO book_exercise_question(
+            book_exercise_question_id, book_id, section_id, question_id, page_number,
+            column_name, exercise_number, sub_number, display_order, source_note
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(book_exercise_question_id) DO UPDATE SET
+            section_id = excluded.section_id, page_number = excluded.page_number,
+            column_name = excluded.column_name, exercise_number = excluded.exercise_number,
+            sub_number = excluded.sub_number, display_order = excluded.display_order,
+            source_note = excluded.source_note, updated_at = CURRENT_TIMESTAMP
+        """,
+        (link_id, book_id, section_id or None, question_id, page_number, column_name, exercise_number, sub_number,
+         _display_order_from_number(exercise_number), str(extra.get("book_source_note") or "")),
+    )
+    return link_id
+
+
+def _upsert_topic_link_from_draft_conn(conn, question_id: str, draft: dict[str, Any]) -> str:
+    """Persist专题 metadata captured by manual or document entry."""
+    extra = _draft_extra(draft)
+    if extra.get("source_kind") != "专题":
+        return ""
+    topic_name = str(extra.get("topic_name") or extra.get("detected_source") or draft.get("source_label") or "").strip()
+    if not topic_name:
+        return ""
+    module_name = str(extra.get("topic_module") or "未分类专题").strip() or "未分类专题"
+    module_id = stable_id("TM", module_name)
+    conn.execute(
+        "INSERT INTO topic_module(module_id, name) VALUES (?, ?) ON CONFLICT(name) DO NOTHING",
+        (module_id, module_name),
+    )
+    topic_id = stable_id("T", module_id, topic_name)
+    conn.execute(
+        """
+        INSERT INTO topic(topic_id, module_id, name, file_name, description, extra_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(module_id, name) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+        """,
+        (topic_id, module_id, topic_name, str(extra.get("topic_file_name") or ""), str(extra.get("topic_description") or ""), "{}"),
+    )
+    row = conn.execute(
+        "SELECT topic_id FROM topic WHERE module_id = ? AND name = ?",
+        (module_id, topic_name),
+    ).fetchone()
+    topic_id = str(row["topic_id"] if row else topic_id)
+    group_name = str(extra.get("topic_group") or "").strip()
+    existing = conn.execute(
+        "SELECT topic_question_id FROM topic_question WHERE topic_id = ? AND question_id = ? AND group_name = ?",
+        (topic_id, question_id, group_name),
+    ).fetchone()
+    link_id = str(existing["topic_question_id"]) if existing else stable_id("TQ", topic_id, question_id, group_name)
+    if existing:
+        conn.execute(
+            "UPDATE topic_question SET topic_note = ?, updated_at = CURRENT_TIMESTAMP WHERE topic_question_id = ?",
+            (str(extra.get("topic_note") or draft.get("note") or ""), link_id),
+        )
+    else:
+        next_order = int(conn.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM topic_question WHERE topic_id = ? AND group_name = ?",
+            (topic_id, group_name),
+        ).fetchone()[0] or 1)
+        conn.execute(
+            """
+            INSERT INTO topic_question(topic_question_id, topic_id, question_id, group_name, sort_order, topic_note)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (link_id, topic_id, question_id, group_name, next_order, str(extra.get("topic_note") or draft.get("note") or "")),
+        )
+    return link_id
+
+
+def _link_draft_to_existing_question_conn(conn, draft: dict[str, Any], question_id: str, *, operator: str, report_index: int) -> dict[str, Any]:
+    """Reuse an existing question and attach this draft's source relation."""
+    safe_question_id = str(question_id or "").strip()
+    if not conn.execute("SELECT 1 FROM question WHERE question_id = ?", (safe_question_id,)).fetchone():
+        raise ValueError(f"待复用题目不存在：{safe_question_id}")
+    before = _question_snapshot_from_conn(conn, safe_question_id)
+    paper_link_id = _upsert_paper_link_from_draft_conn(conn, safe_question_id, draft)
+    book_link_id = _upsert_book_link_from_draft_conn(conn, safe_question_id, draft)
+    topic_link_id = _upsert_topic_link_from_draft_conn(conn, safe_question_id, draft)
+    after = _question_snapshot_from_conn(conn, safe_question_id)
+    revision_id = insert_question_revision_from_conn(
+        conn,
+        question_id=safe_question_id,
+        change_source="source_relation_edit",
+        before={"question": before},
+        after={"question": after, "paper_link_id": paper_link_id, "book_link_id": book_link_id, "topic_link_id": topic_link_id},
+        operator=operator,
+        note=f"复用已有题目，draft_id={draft.get('draft_id') or ''}",
+        changed_field_names=[field for field, value in {"paper_link_id": paper_link_id, "book_link_id": book_link_id, "topic_link_id": topic_link_id}.items() if value],
+    )
+    conn.execute(
+        "UPDATE question_import_draft SET review_status = ?, review_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE draft_id = ?",
+        ("committed", f"已复用已有题目：{safe_question_id}", str(draft.get("draft_id") or "")),
+    )
+    report_id = _insert_report_item_from_conn(
+        conn,
+        str(draft.get("batch_id") or ""),
+        report_index,
+        str(draft.get("draft_id") or ""),
+        safe_question_id,
+        "linked",
+        f"复用已有题目 {safe_question_id}",
+        compact_json({"draft_id": draft.get("draft_id"), "question_id": safe_question_id, "paper_link_id": paper_link_id, "book_link_id": book_link_id, "topic_link_id": topic_link_id}),
+    )
+    return {"draft_id": draft.get("draft_id"), "status": "linked", "question_id": safe_question_id, "revision_id": revision_id, "report_id": report_id, "source_link_id": paper_link_id, "book_link_id": book_link_id, "topic_link_id": topic_link_id}
+
+
+def link_draft_to_existing_question(
+    db_path: str | None,
+    draft_id: str,
+    existing_question_id: str,
+    *,
+    operator: str = "streamlit_batch_link_existing",
+) -> dict[str, Any]:
+    """Attach an uncommitted draft's source relation to an existing question."""
+    safe_draft_id = str(draft_id or "").strip()
+    safe_question_id = str(existing_question_id or "").strip()
+    if not safe_draft_id or not safe_question_id:
+        raise ValueError("draft_id and existing_question_id are required")
+    with existing_database_connection(db_path) as conn:
+        draft = _get_draft_question_from_conn(conn, safe_draft_id)
+        if not draft:
+            raise KeyError(f"draft not found: {safe_draft_id}")
+        if str(draft.get("review_status") or "") == "committed":
+            raise ValueError("draft has already been processed")
+        with conn:
+            return _link_draft_to_existing_question_conn(
+                conn, draft, safe_question_id, operator=operator, report_index=1
+            )
+
+
+def record_draft_review_event(
+    db_path: str | None,
+    draft_id: str,
+    *,
+    status: str,
+    reason: str = "",
+    operator: str = "streamlit_batch_review",
+    existing_question_id: str = "",
+) -> dict[str, Any]:
+    """Persist a review decision in both the draft and the import report."""
+    safe_draft_id = str(draft_id or "").strip()
+    if not safe_draft_id:
+        raise ValueError("draft_id is required")
+    with existing_database_connection(db_path) as conn:
+        draft = _get_draft_question_from_conn(conn, safe_draft_id)
+        if not draft:
+            raise KeyError(f"draft not found: {safe_draft_id}")
+        with conn:
+            conn.execute(
+                """
+                UPDATE question_import_draft
+                SET review_status = ?, review_reason = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE draft_id = ?
+                """,
+                (status, reason, safe_draft_id),
+            )
+            report_status = "linked" if status == "linked" else "skipped" if status == "rejected" else status
+            report_id = _insert_report_item_from_conn(
+                conn,
+                str(draft.get("batch_id") or ""),
+                1,
+                safe_draft_id,
+                str(existing_question_id or "") or None,
+                report_status,
+                reason or status,
+                compact_json({
+                    "draft_id": safe_draft_id,
+                    "operator": operator,
+                    "status": status,
+                    "reason": reason,
+                    "existing_question_id": str(existing_question_id or ""),
+                    "reviewed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }),
+            )
+        return {"draft_id": safe_draft_id, "status": status, "report_id": report_id}
 
 
 def _insert_report_item_from_conn(
@@ -1627,6 +2033,8 @@ def commit_draft_to_question(
 
             legacy_file_path = _upsert_legacy_map_from_draft_conn(conn, question_id, question_for_meta, draft)
             paper_question_id = _upsert_paper_link_from_draft_conn(conn, question_id, draft)
+            book_link_id = _upsert_book_link_from_draft_conn(conn, question_id, draft)
+            topic_link_id = _upsert_topic_link_from_draft_conn(conn, question_id, draft)
             asset_result = _copy_draft_assets_to_question_conn(conn, draft, question_id, copy_files=copy_assets)
             revision_id = insert_question_revision_from_conn(
                 conn,
@@ -1660,6 +2068,8 @@ def commit_draft_to_question(
                         "revision_id": revision_id,
                         "legacy_file_path": legacy_file_path,
                         "paper_question_id": paper_question_id,
+                        "book_link_id": book_link_id,
+                        "topic_link_id": topic_link_id,
                         "assets": asset_result,
                     }
                 ),
@@ -1674,7 +2084,241 @@ def commit_draft_to_question(
         "asset_skipped_count": len(asset_result["skipped"]),
         "asset_skipped": asset_result["skipped"],
         "source_link_id": paper_question_id,
+        "book_link_id": book_link_id,
+        "topic_link_id": topic_link_id,
         "legacy_file_path": legacy_file_path,
         "report_id": report_id,
         "message": f"草稿已提交为正式题：{question_id}",
     }
+
+
+def _commit_draft_to_question_conn(
+    conn,
+    draft: dict[str, Any],
+    *,
+    operator: str,
+    copy_assets: bool,
+    report_index: int,
+    created_asset_paths: list[Path] | None = None,
+) -> dict[str, Any]:
+    """Commit a validated draft using the caller's transaction."""
+    safe_draft_id = str(draft.get("draft_id") or "").strip()
+    proposed_action = str(draft.get("proposed_action") or "insert").strip()
+    reuse_question_id = str(draft.get("_reuse_question_id") or "").strip()
+    if reuse_question_id and proposed_action == "insert":
+        return _link_draft_to_existing_question_conn(
+            conn, draft, reuse_question_id, operator=operator, report_index=report_index
+        )
+    if proposed_action == "skip":
+        conn.execute(
+            """
+            UPDATE question_import_draft
+            SET review_status = ?, review_reason = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE draft_id = ?
+            """,
+            ("rejected", "用户确认跳过", safe_draft_id),
+        )
+        report_id = _insert_report_item_from_conn(
+            conn, str(draft.get("batch_id") or ""), report_index, safe_draft_id,
+            None, "skipped", "用户确认跳过", compact_json({"draft_id": safe_draft_id}),
+        )
+        return {"draft_id": safe_draft_id, "status": "skipped", "question_id": "", "revision_id": "", "report_id": report_id}
+
+    if proposed_action == "update":
+        question_id = str(draft.get("target_question_id") or "").strip()
+        if not question_id:
+            raise ValueError("update 草稿缺少 target_question_id")
+        before, after = _update_question_from_draft_conn(conn, question_id, draft)
+        question_for_meta = _draft_preview_question(question_id, draft, base=after)
+    elif proposed_action == "insert":
+        question_id = _next_question_id_from_conn(conn)
+        question_for_meta = _draft_preview_question(question_id, draft)
+        _insert_question_from_draft_conn(conn, question_for_meta)
+        before, after = {}, _question_snapshot_from_conn(conn, question_id)
+    else:
+        raise ValueError(f"不支持 proposed_action：{proposed_action}")
+
+    legacy_file_path = _upsert_legacy_map_from_draft_conn(conn, question_id, question_for_meta, draft)
+    paper_question_id = _upsert_paper_link_from_draft_conn(conn, question_id, draft)
+    book_link_id = _upsert_book_link_from_draft_conn(conn, question_id, draft)
+    topic_link_id = _upsert_topic_link_from_draft_conn(conn, question_id, draft)
+    asset_result = _copy_draft_assets_to_question_conn(
+        conn, draft, question_id, copy_files=copy_assets, created_paths=created_asset_paths
+    )
+    revision_id = insert_question_revision_from_conn(
+        conn, question_id=question_id, change_source="draft_commit",
+        before=before, after=_question_snapshot_from_conn(conn, question_id),
+        operator=operator, note=f"draft_id={safe_draft_id}",
+    )
+    conn.execute(
+        """
+        UPDATE question_import_draft
+        SET review_status = ?, review_reason = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE draft_id = ?
+        """,
+        ("committed", f"已提交为正式题：{question_id}", safe_draft_id),
+    )
+    report_id = _insert_report_item_from_conn(
+        conn, str(draft.get("batch_id") or ""), report_index, safe_draft_id,
+        question_id, "committed", f"{proposed_action} -> {question_id}",
+        compact_json({"draft_id": safe_draft_id, "question_id": question_id, "revision_id": revision_id, "assets": asset_result, "book_link_id": book_link_id, "topic_link_id": topic_link_id}),
+    )
+    return {
+        "draft_id": safe_draft_id,
+        "status": "updated" if proposed_action == "update" else "inserted",
+        "question_id": question_id,
+        "revision_id": revision_id,
+        "asset_count": len(asset_result["inserted"]),
+        "asset_skipped_count": len(asset_result["skipped"]),
+        "asset_skipped": asset_result["skipped"],
+        "source_link_id": paper_question_id,
+        "book_link_id": book_link_id,
+        "topic_link_id": topic_link_id,
+        "legacy_file_path": legacy_file_path,
+        "report_id": report_id,
+        "message": f"草稿已提交为正式题：{question_id}",
+    }
+
+
+def commit_drafts_to_questions(
+    db_path: str | None,
+    draft_ids: list[str],
+    *,
+    operator: str = "streamlit_batch_import",
+    require_ready: bool = False,
+    copy_assets: bool = True,
+) -> dict[str, Any]:
+    """Preflight and commit a group of drafts in one transaction."""
+    safe_ids = [str(value or "").strip() for value in draft_ids if str(value or "").strip()]
+    if not safe_ids:
+        raise ValueError("draft_ids 不能为空")
+    with existing_database_connection(db_path) as conn:
+        drafts = []
+        validation_errors: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        seen_source_items: set[str] = set()
+        seen_stems: dict[str, str] = {}
+        seen_paper_positions: dict[tuple[str, str, str], str] = {}
+        for index, draft_id in enumerate(safe_ids, start=1):
+            draft = _get_draft_question_from_conn(conn, draft_id)
+            if not draft:
+                validation_errors.append({"draft_id": draft_id, "index": index, "errors": ["草稿不存在"]})
+                continue
+            status = str(draft.get("review_status") or "")
+            if status == "committed":
+                validation_errors.append({"draft_id": draft_id, "index": index, "errors": ["草稿已经提交过"]})
+                continue
+            if require_ready and status not in {"ready", "approved"}:
+                validation_errors.append({"draft_id": draft_id, "index": index, "errors": [f"草稿状态必须是 ready/approved，当前为：{status}"]})
+                continue
+            validation = validate_draft_question(_draft_row_to_input(draft))
+            if validation.get("errors"):
+                validation_errors.append({"draft_id": draft_id, "index": index, "errors": list(validation["errors"])})
+            if validation.get("warnings"):
+                warnings.append({"draft_id": draft_id, "index": index, "warnings": list(validation["warnings"])})
+            source_item_id = str(draft.get("source_item_id") or "").strip()
+            if source_item_id and source_item_id in seen_source_items:
+                warnings.append({"draft_id": draft_id, "index": index, "warnings": ["本批 source_item_id 重复"]})
+            if source_item_id:
+                seen_source_items.add(source_item_id)
+            from services.question_service import normalize_question_text
+
+            normalized_stem = normalize_question_text(str(draft.get("stem_tex") or ""))
+            if normalized_stem:
+                previous_draft_id = seen_stems.get(normalized_stem)
+                if previous_draft_id:
+                    warnings.append({"draft_id": draft_id, "index": index, "warnings": [f"题干与本批草稿相同：{previous_draft_id}；是否同一来源请人工确认"]})
+                else:
+                    existing_question = conn.execute(
+                        "SELECT question_id, stem_tex FROM question WHERE stem_tex IS NOT NULL AND stem_tex != ?",
+                        ("",),
+                    ).fetchall()
+                    target_question_id = str(draft.get("target_question_id") or "").strip()
+                    for question_row in existing_question:
+                        if str(question_row[0]) == target_question_id:
+                            continue
+                        if normalize_question_text(str(question_row[1] or "")) == normalized_stem:
+                            warnings.append({"draft_id": draft_id, "index": index, "warnings": [f"题干与正式题目 {question_row[0]} 相同；来源位置未确认，不自动阻断"]})
+                            break
+                    seen_stems[normalized_stem] = draft_id
+            extra = _draft_extra(draft)
+            if extra.get("source_kind") == "试卷":
+                question_number = str(extra.get("detected_question_number") or "").strip()
+                paper_standard_id = str(extra.get("paper_standard_id") or "").strip()
+                paper_identity = paper_standard_id or "|".join(
+                    str(extra.get(key) or "").strip()
+                    for key in ("detected_year", "paper_series", "track", "detected_source")
+                )
+                position_key = (paper_identity, question_number, str(extra.get("sub_number") or "").strip())
+                if paper_identity and question_number:
+                    previous_draft_id = seen_paper_positions.get(position_key)
+                    if previous_draft_id:
+                        validation_errors.append({"draft_id": draft_id, "index": index, "errors": [f"本批试卷位置冲突：与草稿 {previous_draft_id} 使用相同题号 {question_number}"]})
+                    else:
+                        seen_paper_positions[position_key] = draft_id
+                if question_number and paper_standard_id:
+                    paper_row = conn.execute(
+                        "SELECT paper_id FROM paper_standard_catalog WHERE paper_standard_id = ?",
+                        (paper_standard_id,),
+                    ).fetchone()
+                    if paper_row and conn.execute(
+                        "SELECT 1 FROM paper_question WHERE paper_id = ? AND question_number = ? AND sub_number = ? LIMIT 1",
+                        (paper_row["paper_id"], question_number, str(extra.get("sub_number") or "")),
+                    ).fetchone():
+                        # An existing source position is a reusable relation, not a
+                        # duplicate question. The conflict is resolved below by
+                        # linking the draft to the occupying question.
+                        pass
+                source_conflicts = find_paper_position_conflict(db_path, extra)
+                if source_conflicts:
+                    draft["_reuse_question_id"] = str(source_conflicts[0].get("question_id") or "")
+                    warnings.append({"draft_id": draft_id, "index": index, "warnings": [f"将复用已有题目：{draft['_reuse_question_id']}，仅新增来源关系"]})
+            drafts.append((index, draft))
+
+        if validation_errors:
+            return {"status": "blocked", "committed": [], "skipped": [], "failed": [], "validation_errors": validation_errors, "warnings": warnings, "message": "本批预检未通过，未写入正式题库"}
+
+        created_asset_paths: list[Path] = []
+        current_draft_id = ""
+        current_index = 0
+        try:
+            results = []
+            for index, draft in drafts:
+                current_index = index
+                current_draft_id = str(draft.get("draft_id") or "")
+                results.append(
+                    _commit_draft_to_question_conn(
+                        conn, draft, operator=operator, copy_assets=copy_assets,
+                        report_index=index, created_asset_paths=created_asset_paths,
+                    )
+                )
+            batch_ids = {str(draft.get("batch_id") or "") for _, draft in drafts if draft.get("batch_id")}
+            summary = compact_json({"committed": len(results), "warnings": len(warnings)})
+            for batch_id in batch_ids:
+                conn.execute("UPDATE import_batch SET finished_at = ?, summary = ? WHERE batch_id = ?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), summary, batch_id))
+            return {
+                "status": "committed", "committed": [item for item in results if item.get("status") in {"inserted", "updated"}],
+                "skipped": [item for item in results if item.get("status") == "skipped"], "failed": [],
+                "validation_errors": [], "warnings": warnings, "results": results,
+                "question_ids": [str(item.get("question_id") or "") for item in results if item.get("question_id")],
+                "revision_ids": [str(item.get("revision_id") or "") for item in results if item.get("revision_id")],
+                "message": f"整批提交完成：{len(results)} 条，其中 {len(warnings)} 条提醒",
+            }
+        except Exception as exc:
+            conn.rollback()
+            for asset_path in created_asset_paths:
+                try:
+                    asset_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            for asset_path in created_asset_paths:
+                try:
+                    asset_path.parent.rmdir()
+                except OSError:
+                    pass
+            return {
+                "status": "failed", "committed": [], "skipped": [],
+                "failed": [{"draft_id": current_draft_id, "index": current_index, "error": str(exc)}],
+                "validation_errors": [], "warnings": warnings,
+                "message": f"整批提交失败，已回滚：{exc}",
+            }

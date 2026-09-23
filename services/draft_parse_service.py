@@ -545,7 +545,7 @@ def source_label(source_kind: str, year: str, source_name: str, question_number:
     if label:
         return label
     return " · ".join(
-        part
+        str(part or "").strip()
         for part in [source_kind, year, source_name, question_number]
         if str(part or "").strip()
     ) or "手动录入草稿"
@@ -561,4 +561,3 @@ def join_number_and_sub_number(number: str, sub_number: str) -> str:
     if f"({sub_text})" in number_text or f"（{sub_text}）" in number_text:
         return number_text
     return f"{number_text}({sub_text})"
-

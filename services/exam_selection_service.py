@@ -310,6 +310,9 @@ def select_exam_rows(
             + sample_questions(candidates, hard_count, difficulty_range=hard_range)
         )
 
+    if len(selected_rows) < target_count:
+        selected_rows += pick_rows(candidates, target_count - len(selected_rows))
+
     selected_rows = selected_rows[:target_count]
     return {
         "selected_rows": selected_rows,

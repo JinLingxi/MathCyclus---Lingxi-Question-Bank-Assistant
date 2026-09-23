@@ -26,6 +26,8 @@ from services.asset_service import (
     collect_asset_reference_issues,
     delete_asset,
     get_asset,
+    is_tikz_derived_asset,
+    normalize_asset_alias,
     update_asset_fields,
 )
 from services.question_db_service import QuestionListFilters, list_questions_page
@@ -65,6 +67,24 @@ def main() -> None:
         raise SystemExit(f"数据库不存在：{source_db}")
 
     checks: list[dict[str, Any]] = []
+    naming_samples = {
+        "figure_01": normalize_asset_alias("figure_01", fallback="figure_01"),
+        "solution_figure_02": normalize_asset_alias("Solution Figure 02", fallback="figure_02"),
+    }
+    checks.append(
+        check(
+            "asset_alias_naming",
+            naming_samples == {"figure_01": "figure_01", "solution_figure_02": "solution_figure_02"},
+            naming_samples,
+        )
+    )
+    checks.append(
+        check(
+            "tikz_asset_is_excluded",
+            is_tikz_derived_asset({"file_path": "chapters/数列/2024/题目 相关图/figure_01.png"}),
+            "related TikZ auxiliary path",
+        )
+    )
     with tempfile.TemporaryDirectory(prefix="mathcyclus_asset_smoke_") as tmp_dir:
         tmp_root = Path(tmp_dir)
         temp_db = tmp_root / source_db.name

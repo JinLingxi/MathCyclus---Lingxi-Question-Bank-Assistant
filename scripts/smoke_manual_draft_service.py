@@ -88,6 +88,7 @@ def main() -> None:
                         "role": "source",
                         "source_path": str(asset_source),
                         "caption": "smoke 来源图",
+                        "extra": {"page_number": 3, "pixel_bbox": [10, 20, 110, 120]},
                     }
                 ],
                 "extra": {"source_kind": "manual_smoke"},
@@ -117,7 +118,8 @@ def main() -> None:
         checks.append(
             check(
                 "draft_asset_persisted",
-                len(draft.get("assets") or []) == 1,
+                len(draft.get("assets") or []) == 1
+                and json.loads(draft["assets"][0].get("extra_json") or "{}").get("page_number") == 3,
                 draft.get("assets"),
             )
         )

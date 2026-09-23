@@ -1,0 +1,8 @@
+请为下面的 LaTeX problem 生成答案与解析。
+
+{mode_instructions}
+
+严格只输出 JSON，且只包含 answer_tex 和 solutions_tex 两个字段。两个字段必须分别是完整的 \begin{{answer}}...\end{{answer}} 和 \begin{{solutions}}...\end{{solutions}} 环境。禁止输出 Markdown 代码块或额外解释。保持数学内容使用标准 LaTeX，换行使用真实换行。
+
+problem_tex：
+{problem_tex}

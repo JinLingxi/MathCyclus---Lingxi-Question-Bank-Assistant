@@ -113,6 +113,54 @@ CREATE TABLE IF NOT EXISTS paper_question (
     UNIQUE(paper_id, question_id, question_number, sub_number)
 );
 
+CREATE TABLE IF NOT EXISTS paper_standard_catalog (
+    paper_standard_id TEXT PRIMARY KEY,
+    paper_id TEXT UNIQUE REFERENCES paper(paper_id) ON DELETE SET NULL,
+    year INTEGER,
+    paper_series TEXT NOT NULL,
+    track TEXT NOT NULL DEFAULT '',
+    paper_name TEXT NOT NULL,
+    source_name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'confirmed',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(year, paper_series, track, paper_name)
+);
+
+CREATE TABLE IF NOT EXISTS paper_alias (
+    paper_alias_id TEXT PRIMARY KEY,
+    paper_standard_id TEXT NOT NULL REFERENCES paper_standard_catalog(paper_standard_id) ON DELETE CASCADE,
+    alias_name TEXT NOT NULL,
+    alias_type TEXT NOT NULL DEFAULT 'historical',
+    source TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(paper_standard_id, alias_name)
+);
+
+CREATE TABLE IF NOT EXISTS paper_match_review (
+    paper_match_review_id TEXT PRIMARY KEY,
+    batch_id TEXT,
+    draft_id TEXT,
+    recognized_year INTEGER,
+    recognized_series TEXT NOT NULL DEFAULT '',
+    recognized_track TEXT NOT NULL DEFAULT '',
+    recognized_name TEXT NOT NULL DEFAULT '',
+    suggested_standard_id TEXT REFERENCES paper_standard_catalog(paper_standard_id) ON DELETE SET NULL,
+    suggested_score REAL,
+    decision TEXT NOT NULL DEFAULT 'pending',
+    confirmed_standard_id TEXT REFERENCES paper_standard_catalog(paper_standard_id) ON DELETE SET NULL,
+    confirmed_year INTEGER,
+    confirmed_series TEXT NOT NULL DEFAULT '',
+    confirmed_track TEXT NOT NULL DEFAULT '',
+    confirmed_name TEXT NOT NULL DEFAULT '',
+    operator TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS book (
     book_id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -267,6 +315,7 @@ CREATE TABLE IF NOT EXISTS question_import_draft_asset (
     sort_order INTEGER NOT NULL DEFAULT 0,
     review_status TEXT NOT NULL DEFAULT 'needs_review',
     note TEXT NOT NULL DEFAULT '',
+    extra_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -300,11 +349,17 @@ CREATE TABLE IF NOT EXISTS legacy_question_map (
 CREATE INDEX IF NOT EXISTS idx_question_legacy_id ON question(legacy_id);
 CREATE INDEX IF NOT EXISTS idx_question_difficulty ON question(difficulty);
 CREATE INDEX IF NOT EXISTS idx_question_updated_at ON question(updated_at);
+CREATE INDEX IF NOT EXISTS idx_legacy_question_filters ON legacy_question_map(detected_year, detected_chapter, detected_source, detected_question_number);
 CREATE INDEX IF NOT EXISTS idx_question_knowledge_area_area ON question_knowledge_area(knowledge_area_id);
+CREATE INDEX IF NOT EXISTS idx_question_knowledge_area_question ON question_knowledge_area(question_id, knowledge_area_id);
 CREATE INDEX IF NOT EXISTS idx_question_equivalence_a ON question_equivalence(question_id_a);
 CREATE INDEX IF NOT EXISTS idx_question_equivalence_b ON question_equivalence(question_id_b);
 CREATE INDEX IF NOT EXISTS idx_paper_year ON paper(year);
 CREATE INDEX IF NOT EXISTS idx_paper_question_question ON paper_question(question_id);
+CREATE INDEX IF NOT EXISTS idx_paper_question_paper_order ON paper_question(paper_id, display_order, question_number, sub_number);
+CREATE INDEX IF NOT EXISTS idx_paper_standard_lookup ON paper_standard_catalog(year, paper_series, track, paper_name);
+CREATE INDEX IF NOT EXISTS idx_paper_alias_name ON paper_alias(alias_name);
+CREATE INDEX IF NOT EXISTS idx_paper_match_review_decision ON paper_match_review(decision, updated_at);
 CREATE INDEX IF NOT EXISTS idx_book_exercise_question ON book_exercise_question(question_id);
 CREATE INDEX IF NOT EXISTS idx_topic_question_question ON topic_question(question_id);
 CREATE INDEX IF NOT EXISTS idx_question_asset_question ON question_asset(question_id);
@@ -312,6 +367,7 @@ CREATE INDEX IF NOT EXISTS idx_question_revision_question ON question_revision(q
 CREATE INDEX IF NOT EXISTS idx_import_report_batch ON import_report_item(batch_id);
 CREATE INDEX IF NOT EXISTS idx_question_import_draft_batch ON question_import_draft(batch_id);
 CREATE INDEX IF NOT EXISTS idx_question_import_draft_status ON question_import_draft(review_status);
+CREATE INDEX IF NOT EXISTS idx_draft_batch_status_updated ON question_import_draft(batch_id, review_status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_question_import_draft_target ON question_import_draft(target_question_id);
 CREATE INDEX IF NOT EXISTS idx_question_import_draft_asset_draft ON question_import_draft_asset(draft_id);
 
@@ -320,13 +376,17 @@ INSERT OR IGNORE INTO question_type(question_type_id, code, name, description) V
     (2, 'multiple_choice', '多选题', '含多个正确选项的选择题'),
     (3, 'fill_blank', '填空题', '填空、求值或简答型非解答题'),
     (4, 'solution', '解答题', '需要完整过程书写的解答题'),
-    (5, 'other', '其他', '暂不能归类的题型');
+    (5, 'other', '其他', '暂不能归类的题型'),
+    (6, 'true_false', '判断题', '判断命题正误的题目');
 
 INSERT OR IGNORE INTO app_meta(key, value) VALUES
     ('app_name', 'MathCyclus'),
-    ('schema_version', '2'),
+    ('schema_version', '5'),
     ('schema_baseline', '20260903');
 
 INSERT OR IGNORE INTO schema_migration(version, name, checksum) VALUES
     (1, 'schema_version_baseline', ''),
-    (2, 'topic_intro_fields', '');
+    (2, 'topic_intro_fields', ''),
+    (3, 'paper_catalog_matching', ''),
+    (4, 'draft_asset_crop_metadata', '767bc1ff13350fb250eca2099c087aaa1efacc4c38a35e35fa7ef24071a1fd09'),
+    (5, 'runtime_query_indexes', '');

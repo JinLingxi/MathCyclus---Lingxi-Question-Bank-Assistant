@@ -54,6 +54,12 @@ data/indexes/*
 !data/backups/
 data/backups/*
 !data/backups/.gitkeep
+!data/imports/
+data/imports/*
+!data/imports/.gitkeep
+!data/imports/pdf_jobs/
+data/imports/pdf_jobs/*
+!data/imports/pdf_jobs/.gitkeep
 db/seed/*
 !db/seed/.gitkeep
 reports/*
@@ -139,3 +145,12 @@ tiku/
 
 # One-off local maintenance scripts
 fix_codex_config.py
+
+# Local cleanup ledger for generated reports, backups, and temporary artifacts
+本地中间文件清理记录.md
+LOCAL_CLEANUP_LEDGER.md
+
+# 本地维护的高考数学试卷标准名录（含人工整理数据，不上传 GitHub）
+高考数学试卷年份_试卷名称.xlsx
+试卷标准名录.xlsx
+docs/planning/paper_catalog_g_existing_*.csv

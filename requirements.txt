@@ -24,3 +24,4 @@ python-dotenv==0.21.0
 requests==2.32.3
 Pillow==10.4.0
 PyMuPDF==1.24.10
+opencv-python-headless==4.10.0.84

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
+import sqlite3
 from dataclasses import dataclass
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +13,8 @@ from services.database_service import readonly_database_connection, resolve_data
 
 
 _SEARCH_FIELDS = (
+    "q.question_id",
+    "q.legacy_id",
     "q.stem_tex",
     "q.answer_tex",
     "q.solution_tex",
@@ -23,12 +28,64 @@ _SEARCH_FIELDS = (
     "l.detected_topic",
 )
 
+_SEARCH_EXISTS_CLAUSES = (
+    (
+        """
+        EXISTS (
+            SELECT 1
+            FROM question_type qt
+            WHERE qt.question_type_id = q.question_type_id
+              AND (qt.code LIKE ? OR qt.name LIKE ?)
+        )
+        """,
+        2,
+    ),
+    (
+        """
+        EXISTS (
+            SELECT 1
+            FROM question_knowledge_area qka
+            JOIN knowledge_area ka ON ka.knowledge_area_id = qka.knowledge_area_id
+            WHERE qka.question_id = q.question_id
+              AND ka.name LIKE ?
+        )
+        """,
+        1,
+    ),
+    (
+        """
+        EXISTS (
+            SELECT 1
+            FROM paper_question pq
+            JOIN paper p ON p.paper_id = pq.paper_id
+            WHERE pq.question_id = q.question_id
+              AND (
+                p.paper_name LIKE ?
+                OR p.source_name LIKE ?
+                OR p.track LIKE ?
+                OR p.paper_series LIKE ?
+                OR CAST(p.year AS TEXT) LIKE ?
+                OR pq.question_number LIKE ?
+                OR pq.sub_number LIKE ?
+              )
+        )
+        """,
+        7,
+    ),
+)
+
+_KEYWORD_PREFIX_PATTERN = re.compile(
+    r"^(?:id|ID|题目ID|旧ID|标签|tag|tags|知识点|来源|试卷|题号)\s*[:：]\s*(?P<term>.+)$"
+)
+
 
 @dataclass(frozen=True)
 class QuestionListFilters:
     keyword: str = ""
     year: int | None = None
     chapter: str = ""
+    source_kind: str = ""
+    paper_series: str = ""
     source: str = ""
     question_number: str = ""
     question_type_id: int | None = None
@@ -43,6 +100,11 @@ def _safe_limit(value: int) -> int:
 
 def _safe_offset(value: int) -> int:
     return max(0, int(value or 0))
+
+
+def _fts_query(value: str) -> str:
+    """Quote a term for FTS5 while keeping punctuation literal."""
+    return '"' + str(value).replace('"', '""') + '"'
 
 
 def get_question_bank_availability(db_path: str | None = None) -> dict[str, Any]:
@@ -108,7 +170,17 @@ def get_question_bank_availability(db_path: str | None = None) -> dict[str, Any]
 def _split_keyword_terms(keyword: str) -> list[str]:
     """Split exact-search text into non-empty terms; slash means AND."""
     normalized = str(keyword or "").replace("／", "/")
-    return [term.strip() for term in normalized.split("/") if term.strip()]
+    terms: list[str] = []
+    for raw_term in normalized.split("/"):
+        term = raw_term.strip()
+        if not term:
+            continue
+        prefix_match = _KEYWORD_PREFIX_PATTERN.match(term)
+        if prefix_match:
+            term = prefix_match.group("term").strip()
+        if term:
+            terms.append(term)
+    return terms
 
 
 def _where_with_extra_condition(where_sql: str, condition: str) -> str:
@@ -117,22 +189,77 @@ def _where_with_extra_condition(where_sql: str, condition: str) -> str:
     return f"WHERE ({condition})"
 
 
+@contextmanager
+def _query_connection(db_path: str | None, connection: sqlite3.Connection | None):
+    """Reuse a caller-owned read connection when a page needs two queries."""
+    if connection is not None:
+        yield connection
+        return
+    with readonly_database_connection(db_path) as conn:
+        yield conn
+
+
 def _build_where(filters: QuestionListFilters) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
 
     for term in _split_keyword_terms(filters.keyword):
+        like = f"%{term}%"
+        # Trigram FTS handles longer substring searches efficiently. Keep
+        # paper and knowledge-area relations as SQL predicates because they
+        # are maintained in separate normalized tables.
+        if len(term) >= 3:
+            term_clauses = [
+                "q.question_id IN (SELECT qs.question_id FROM question_search qs "
+                "WHERE qs.search_text MATCH ?)",
+            ]
+            params.append(_fts_query(term))
+            extra_exists = _SEARCH_EXISTS_CLAUSES
+        else:
+            term_clauses = [f"{field} LIKE ?" for field in _SEARCH_FIELDS]
+            params.extend([like] * len(_SEARCH_FIELDS))
+            extra_exists = _SEARCH_EXISTS_CLAUSES
+        for exists_sql, placeholder_count in extra_exists:
+            term_clauses.append(exists_sql)
+            params.extend([like] * placeholder_count)
         clauses.append(
             "("
-            + " OR ".join(f"{field} LIKE ?" for field in _SEARCH_FIELDS)
+            + " OR ".join(term_clauses)
             + ")"
         )
-        like = f"%{term}%"
-        params.extend([like] * len(_SEARCH_FIELDS))
 
     if filters.year is not None:
         clauses.append("l.detected_year = ?")
         params.append(filters.year)
+
+    if filters.source_kind:
+        source_kind_exists = {
+            "试卷": "EXISTS (SELECT 1 FROM paper_question pq WHERE pq.question_id = q.question_id)",
+            "教材": "EXISTS (SELECT 1 FROM book_exercise_question beq WHERE beq.question_id = q.question_id)",
+            "专题": "EXISTS (SELECT 1 FROM topic_question tq WHERE tq.question_id = q.question_id)",
+            "未标记来源": (
+                "NOT EXISTS (SELECT 1 FROM paper_question pq WHERE pq.question_id = q.question_id) "
+                "AND NOT EXISTS (SELECT 1 FROM book_exercise_question beq WHERE beq.question_id = q.question_id) "
+                "AND NOT EXISTS (SELECT 1 FROM topic_question tq WHERE tq.question_id = q.question_id)"
+            ),
+            "其他": (
+                "NOT EXISTS (SELECT 1 FROM paper_question pq WHERE pq.question_id = q.question_id) "
+                "AND NOT EXISTS (SELECT 1 FROM book_exercise_question beq WHERE beq.question_id = q.question_id) "
+                "AND NOT EXISTS (SELECT 1 FROM topic_question tq WHERE tq.question_id = q.question_id)"
+            ),
+        }.get(filters.source_kind)
+        if source_kind_exists:
+            clauses.append(source_kind_exists)
+
+    if filters.paper_series:
+        if filters.paper_series == "__UNMARKED_SOURCE__":
+            clauses.append("NOT EXISTS (SELECT 1 FROM paper_question pq WHERE pq.question_id = q.question_id)")
+        else:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM paper_question pq JOIN paper p ON p.paper_id = pq.paper_id "
+                "WHERE pq.question_id = q.question_id AND p.paper_series = ?)"
+            )
+            params.append(filters.paper_series)
 
     if filters.chapter:
         clauses.append("l.detected_chapter = ?")
@@ -162,6 +289,8 @@ def _build_where(filters: QuestionListFilters) -> tuple[str, list[Any]]:
 def list_questions(
     db_path: str | None = None,
     filters: QuestionListFilters | None = None,
+    *,
+    _connection: sqlite3.Connection | None = None,
 ) -> list[dict]:
     """Return paginated question summaries from SQLite."""
     filters = filters or QuestionListFilters()
@@ -178,6 +307,7 @@ def list_questions(
             q.note,
             q.usage_count,
             q.stem_tex,
+            q.choices_json,
             q.answer_tex,
             q.solution_tex,
             q.created_at,
@@ -194,7 +324,7 @@ def list_questions(
         ORDER BY q.question_id
         LIMIT ? OFFSET ?
     """
-    with readonly_database_connection(db_path) as conn:
+    with _query_connection(db_path, _connection) as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
@@ -202,6 +332,8 @@ def list_questions(
 def count_questions(
     db_path: str | None = None,
     filters: QuestionListFilters | None = None,
+    *,
+    _connection: sqlite3.Connection | None = None,
 ) -> int:
     """Count questions matching filters."""
     filters = filters or QuestionListFilters()
@@ -212,7 +344,7 @@ def count_questions(
         LEFT JOIN legacy_question_map l ON l.question_id = q.question_id
         {where_sql}
     """
-    with readonly_database_connection(db_path) as conn:
+    with _query_connection(db_path, _connection) as conn:
         return int(conn.execute(sql, params).fetchone()[0])
 
 
@@ -235,7 +367,9 @@ def list_questions_page(
         limit=safe_limit,
         offset=safe_offset,
     )
-    total = count_questions(db_path, normalized_filters)
+    with readonly_database_connection(db_path) as conn:
+        total = count_questions(db_path, normalized_filters, _connection=conn)
+        items = list_questions(db_path, normalized_filters, _connection=conn)
     page_count = (total + safe_limit - 1) // safe_limit if total else 0
     return {
         "total": total,
@@ -243,7 +377,7 @@ def list_questions_page(
         "offset": safe_offset,
         "page": safe_offset // safe_limit + 1 if total else 0,
         "page_count": page_count,
-        "items": list_questions(db_path, normalized_filters),
+        "items": items,
     }
 
 
@@ -301,6 +435,25 @@ def list_question_filter_options(
                 list(params),
             ).fetchall()
         ]
+        paper_series_sql = _where_with_extra_condition(
+            where_sql,
+            "p.paper_series != ''",
+        )
+        paper_series = [
+            str(row[0])
+            for row in conn.execute(
+                f"""
+                SELECT DISTINCT p.paper_series
+                FROM paper_question pq
+                JOIN paper p ON p.paper_id = pq.paper_id
+                JOIN question q ON q.question_id = pq.question_id
+                LEFT JOIN legacy_question_map l ON l.question_id = q.question_id
+                {paper_series_sql}
+                ORDER BY p.paper_series
+                """,
+                list(params),
+            ).fetchall()
+        ]
         difficulty_sql = _where_with_extra_condition(where_sql, "q.difficulty IS NOT NULL")
         difficulties = [
             int(row[0])
@@ -347,6 +500,8 @@ def list_question_filter_options(
         "years": years,
         "chapters": chapters,
         "sources": sources,
+        "source_kinds": ["试卷", "教材", "专题", "未标记来源", "其他"],
+        "paper_series": paper_series,
         "difficulties": difficulties,
         "question_types": question_types,
         "all_question_types": all_question_types,

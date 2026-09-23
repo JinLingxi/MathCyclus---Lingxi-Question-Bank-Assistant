@@ -6,6 +6,7 @@ load_dotenv()
 
 # ================= 配置与常量 =================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+APP_DATA_VERSION = "sqlite-v1"
 CHAPTERS_DIR = os.path.join(BASE_DIR, "chapters")
 CSV_INDEX_PATH = os.path.join(BASE_DIR, "utils", "题库索引表.csv")
 

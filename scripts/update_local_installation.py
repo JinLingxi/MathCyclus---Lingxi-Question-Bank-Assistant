@@ -25,6 +25,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_BACKUP_FILES = [
     ".env",
     "ocr_prompt.txt",
+    "tags_prompt.txt",
+    "solution_prompt.txt",
+    "cloze_prompt.txt",
+    "exam_polish_prompt.txt",
     ".streamlit/secrets.toml",
 ]
 
