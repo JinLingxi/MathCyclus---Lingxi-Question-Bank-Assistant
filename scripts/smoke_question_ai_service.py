@@ -93,6 +93,18 @@ def main() -> int:
                 "flattened_choices_recovered": recovered.get("choices") == ["$1$", "$2$", "$3$", "$4$"],
             }
         )
+        wrapped_choices = ai_service.normalize_question_structure_result(
+            {
+                "stem_tex": "求函数值",
+                "choices": [r"\choice{{$1$}}", r"\choice{\frac{1}{2}}"],
+            }
+        )
+        checks.update(
+            {
+                "choice_commands_unwrapped": wrapped_choices.get("choices") == ["$1$", r"$\frac{1}{2}$"],
+                "question_type_inferred_from_choices": wrapped_choices.get("question_type_id") == 1,
+            }
+        )
         for name, ok in checks.items():
             print(f"{name}={'ok' if ok else 'failed'}")
         print(f"status={'ok' if all(checks.values()) else 'failed'}")

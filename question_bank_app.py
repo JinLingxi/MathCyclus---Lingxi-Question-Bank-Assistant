@@ -5091,9 +5091,11 @@ def _sqlite_apply_document_job_to_batch(job_result: dict, entry_mode: str):
         if item.get("status") == "succeeded" and isinstance(item.get("result"), dict)
     }
     for question in questions:
-        ai_result = queue_results.get(str(question.get("source_item_id") or "")) or {}
+        question_extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
+        ai_result = queue_results.get(str(question.get("source_item_id") or "")) or (
+            question_extra.get("ai_result") if isinstance(question_extra.get("ai_result"), dict) else {}
+        )
         if ai_result:
-            question_extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
             ai_result = normalize_question_structure_result(
                 ai_result,
                 question_number=str(question_extra.get("detected_question_number") or ""),
@@ -5124,8 +5126,7 @@ def _sqlite_apply_document_job_to_batch(job_result: dict, entry_mode: str):
                 normalized["source_path"] = str((job_dir / source_path).resolve())
             normalized_assets.append(normalized)
         question["assets"] = normalized_assets
-        question_extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
-        has_ai_result = bool(ai_result)
+        has_ai_result = bool(ai_result) or str(question.get("recognition_status") or "") == "ai_succeeded"
         restored_stem, restored_aliases = ensure_question_asset_placeholders(
             question.get("stem_tex") if has_ai_result else "",
             normalized_assets,
@@ -5182,25 +5183,48 @@ def _sqlite_refine_document_pages(
     """Recognize each PDF page once, then map returned TeX blocks to questions."""
     from services.ai_service import ensure_question_asset_placeholders, normalize_question_structure_result, recognize_document_page_tex
     from services.document_ai_queue_service import (
+        classify_queue_error,
         create_or_refresh_queue,
         finish_queue_item,
         load_queue,
+        skip_queue_item,
         set_queue_status,
         update_queue_progress,
     )
-    from services.pdf_import_service import load_pdf_import_job
+    from services.pdf_import_service import load_pdf_import_job, write_json
 
     loaded = load_pdf_import_job(job_id, jobs_root=jobs_root)
     payload = loaded["draft_payload"]
     manifest = loaded["manifest"]
     questions = [item for item in payload.get("questions") or [] if isinstance(item, dict)]
     pages = {int(item.get("page_number") or 0): item for item in payload.get("pages") or [] if isinstance(item, dict)}
+    unassigned_blocks_by_page: dict[int, list[dict[str, Any]]] = {}
+    for block in payload.get("unassigned_blocks") or []:
+        if isinstance(block, dict):
+            page_number = int(block.get("page_number") or 0)
+            if page_number > 0:
+                unassigned_blocks_by_page.setdefault(page_number, []).append(block)
     queue = create_or_refresh_queue(job_id, jobs_root=jobs_root)
-    pending_ids = only_source_item_ids or {
-        str(item.get("source_item_id") or "")
-        for item in questions
-        if str(item.get("recognition_status") or "pending_ai") != "ai_succeeded"
+    queue_items = {
+        str(item.get("source_item_id") or ""): item
+        for item in queue.get("items") or []
+        if isinstance(item, dict)
     }
+    if only_source_item_ids is not None:
+        pending_ids = set(only_source_item_ids)
+    else:
+        pending_ids = {
+            str(item.get("source_item_id") or "")
+            for item in questions
+            if queue_items.get(str(item.get("source_item_id") or ""), {}).get("status") not in {"succeeded", "skipped"}
+            and str(item.get("recognition_status") or "pending_ai") != "ai_succeeded"
+        }
+    if only_source_item_ids is None:
+        pending_ids.update(
+            source_item_id
+            for source_item_id, item in queue_items.items()
+            if item.get("kind") == "unassigned_page" and item.get("status") in {"pending", "failed"}
+        )
     page_to_questions: dict[int, list[dict[str, Any]]] = {}
     for question in questions:
         source_item_id = str(question.get("source_item_id") or "")
@@ -5212,13 +5236,46 @@ def _sqlite_refine_document_pages(
         for page_number in range(start, end + 1):
             page_to_questions.setdefault(page_number, []).append(question)
 
+    unassigned_by_page: dict[int, list[dict[str, Any]]] = {}
+    for item in queue_items.values():
+        source_item_id = str(item.get("source_item_id") or "")
+        if item.get("kind") != "unassigned_page" or source_item_id not in pending_ids:
+            continue
+        page_number = int(item.get("page_number") or 0)
+        if page_number > 0:
+            unassigned_by_page.setdefault(page_number, []).append(item)
+
+    # A preamble block on a page that already has mapped questions is not a
+    # separate AI task. Mark it skipped so it cannot keep the queue pending.
+    for page_number, task_items in list(unassigned_by_page.items()):
+        if page_to_questions.get(page_number):
+            for task in task_items:
+                skip_queue_item(
+                    job_id,
+                    str(task.get("source_item_id") or ""),
+                    reason="该页已有题号候选，未归属文本保留给人工查看。",
+                    jobs_root=jobs_root,
+                )
+            unassigned_by_page.pop(page_number, None)
+
     counts = {"succeeded": 0, "failed": 0, "pages": 0}
     completed_ids: set[str] = set()
+
+    def persist_checkpoint() -> None:
+        """Persist page results so pause/crash recovery never loses draft edits."""
+        payload["questions"] = questions
+        payload["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        write_json(jobs_root / job_id / "draft_payload.json", payload)
+        manifest["provenance"] = payload.get("provenance") or manifest.get("provenance") or {}
+        manifest["updated_at"] = payload["updated_at"]
+        write_json(jobs_root / job_id / "job_manifest.json", manifest)
+
     set_queue_status(job_id, "running", jobs_root=jobs_root)
     queue_state = load_queue(job_id, jobs_root=jobs_root)
     elapsed_before = float(queue_state.get("elapsed_seconds") or 0)
     run_started = time.monotonic()
-    total_pages = len(page_to_questions)
+    page_numbers = sorted(set(page_to_questions) | set(unassigned_by_page))
+    total_pages = len(page_numbers)
     update_queue_progress(
         job_id,
         current_page=0,
@@ -5226,7 +5283,9 @@ def _sqlite_refine_document_pages(
         elapsed_seconds=elapsed_before,
         jobs_root=jobs_root,
     )
-    for page_number, page_questions in sorted(page_to_questions.items()):
+    for page_number in page_numbers:
+        page_questions = page_to_questions.get(page_number, [])
+        page_tasks = unassigned_by_page.get(page_number, [])
         queue_state = load_queue(job_id, jobs_root=jobs_root)
         if queue_state.get("status") != "running" or queue_state.get("pause_requested"):
             update_queue_progress(
@@ -5234,6 +5293,7 @@ def _sqlite_refine_document_pages(
                 elapsed_seconds=elapsed_before + time.monotonic() - run_started,
                 jobs_root=jobs_root,
             )
+            persist_checkpoint()
             return counts
         page = pages.get(page_number) or {}
         image_path = jobs_root / job_id / str(page.get("image_path") or "")
@@ -5313,6 +5373,97 @@ def _sqlite_refine_document_pages(
             finish_queue_item(job_id, source_item_id, result=normalized, jobs_root=jobs_root)
             counts["succeeded"] += 1
             completed_ids.add(source_item_id)
+        for task in page_tasks:
+            task_id = str(task.get("source_item_id") or "")
+            if not task_id:
+                continue
+            if result.get("error"):
+                finish_queue_item(job_id, task_id, error=str(result.get("error") or "页面识别失败"), jobs_root=jobs_root)
+                counts["failed"] += 1
+                continue
+            if not parsed_by_number:
+                skip_queue_item(
+                    job_id,
+                    task_id,
+                    reason="页面未识别出可拆分的题目，原始文本保留给人工处理。",
+                    jobs_root=jobs_root,
+                )
+                continue
+            block = (unassigned_blocks_by_page.get(page_number) or [{}])[0]
+            generated_ids: list[str] = []
+            inherited_source_type = str(
+                (manifest.get("source") or {}).get("source_type")
+                or payload.get("source_type")
+                or "pdf_misc"
+            )
+            inherited_source_kind = {
+                "pdf_paper": "试卷",
+                "pdf_book": "教材",
+                "pdf_topic": "专题",
+                "pdf_misc": "未标记来源",
+            }.get(inherited_source_type, "未标记来源")
+            for generated_index, (number, parsed) in enumerate(sorted(parsed_by_number.items()), start=1):
+                normalized = normalize_question_structure_result(parsed, question_number=number)
+                safe_number = re.sub(r"[^0-9A-Za-z_-]+", "_", number).strip("_") or f"{generated_index:03d}"
+                source_item_id = f"page_{page_number:03d}_ai_q_{safe_number}"
+                if any(str(item.get("source_item_id") or "") == source_item_id for item in questions):
+                    continue
+                question_extra = {
+                    "source_kind": inherited_source_kind,
+                    "source_type": inherited_source_type,
+                    "source_metadata": dict(payload.get("source_metadata") or {}),
+                    "question_number": number,
+                    "page_start": page_number,
+                    "page_end": page_number,
+                    "source_page_images": [f"pages/page_{page_number:03d}.png"],
+                    "splitter": "page_ai_unassigned_v1",
+                    "ai_generated_from_page": page_number,
+                    "ai_provenance": {
+                        "page_number": page_number,
+                        "model_name": str(result.get("model_name") or ""),
+                        "prompt_file": str(result.get("prompt_file") or "ocr_prompt.txt"),
+                        "prompt_sha256": str(result.get("prompt_sha256") or ""),
+                        "recognizer_version": str(result.get("recognizer_version") or "page_v1"),
+                        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                    },
+                    "ai_result": dict(normalized),
+                }
+                if normalized.get("topics"):
+                    question_extra["detected_topic"] = "，".join(str(topic).strip() for topic in normalized["topics"] if str(topic).strip())
+                generated_question = {
+                    "source_item_id": source_item_id,
+                    "source_label": f"第 {number} 题 · AI 从 PDF 第 {page_number} 页生成",
+                    "proposed_action": "insert",
+                    "review_status": "needs_review",
+                    "review_reason": "页面原先未识别到题号，已由页面 AI 拆题；正式入库前仍需人工二次审核。",
+                    "question_type": normalized.get("question_type") or "other",
+                    "question_type_id": normalized.get("question_type_id"),
+                    "stem_tex": normalized.get("stem_tex") or "",
+                    "choices": normalized.get("choices") or [],
+                    "answer_tex": normalized.get("answer_tex") or "",
+                    "solution_tex": normalized.get("solution_tex") or "",
+                    "difficulty": normalized.get("difficulty"),
+                    "tags": normalized.get("tags") or [],
+                    "note": "",
+                    "official_flag": False,
+                    "raw_source_text": str(block.get("raw_text") or ""),
+                    "confidence": {"question_split": 0.55, "stem_tex": 0.75},
+                    "validation": {"status": "needs_review", "errors": [], "warnings": ["AI 从未分配页面生成，需人工复核。"]},
+                    "extra": question_extra,
+                    "assets": [],
+                    "recognition_status": "ai_succeeded",
+                    "recognizer_version": str(result.get("recognizer_version") or "page_v1"),
+                }
+                questions.append(generated_question)
+                generated_ids.append(source_item_id)
+            counts["succeeded"] += len(generated_ids)
+            finish_queue_item(
+                job_id,
+                task_id,
+                result={"generated_question_ids": generated_ids, "page_number": page_number},
+                jobs_root=jobs_root,
+            )
+        persist_checkpoint()
     update_queue_progress(
         job_id,
         current_page=total_pages,
@@ -5320,14 +5471,10 @@ def _sqlite_refine_document_pages(
         elapsed_seconds=elapsed_before + time.monotonic() - run_started,
         jobs_root=jobs_root,
     )
-    set_queue_status(job_id, "completed", jobs_root=jobs_root)
-    from services.pdf_import_service import write_json
-    payload["questions"] = questions
-    payload["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-    write_json(jobs_root / job_id / "draft_payload.json", payload)
-    manifest["provenance"] = payload.get("provenance") or manifest.get("provenance") or {}
-    manifest["updated_at"] = payload["updated_at"]
-    write_json(jobs_root / job_id / "job_manifest.json", manifest)
+    persist_checkpoint()
+    queue_after = load_queue(job_id, jobs_root=jobs_root)
+    has_failures = any(item.get("status") == "failed" for item in queue_after.get("items") or [])
+    set_queue_status(job_id, "paused" if has_failures else "completed", jobs_root=jobs_root)
     return counts
 
 
@@ -5387,11 +5534,14 @@ def _render_sqlite_document_ai_queue(entry_mode: str) -> None:
     finished = int(summary["finished"])
     elapsed_seconds = int(float(queue.get("elapsed_seconds") or 0))
     elapsed_text = f"{elapsed_seconds // 60:02d}:{elapsed_seconds % 60:02d}"
+    unassigned_count = sum(1 for item in queue.get("items") or [] if item.get("kind") == "unassigned_page")
+    if unassigned_count:
+        st.info(f"当前任务包含 {unassigned_count} 个未分配页面任务；AI 会尝试从整页内容拆出新的草稿候选，结果仍需人工审核。")
     current_page = int(queue.get("current_page") or 0)
     total_pages = int(queue.get("total_pages") or 0)
     page_text = f"页面 {current_page}/{total_pages}" if total_pages else "页面进度待开始"
     st.progress(
-        finished / max(1, total),
+        current_page / max(1, total_pages),
         text=f"{page_text} · 已处理 {finished}/{total} 题 · 成功 {summary['succeeded']} · 失败 {summary['failed']} · 已用时 {elapsed_text}",
     )
     if summary["status"] == "running":
@@ -5578,6 +5728,36 @@ def _render_sqlite_entry_ai_recognition_panel(entry_mode: str):
         item for item in (uploaded_files or [])
         if os.path.splitext(item.name)[1].lower() in {".png", ".jpg", ".jpeg"}
     ]
+    pdf_page_start = None
+    pdf_page_end = None
+    if pdf_uploads:
+        selected_pdf = pdf_uploads[0]
+        try:
+            import fitz
+            with fitz.open(stream=selected_pdf.getvalue(), filetype="pdf") as pdf_document:
+                selected_pdf_page_count = pdf_document.page_count
+        except Exception as exc:
+            selected_pdf_page_count = 0
+            st.warning(f"无法读取 PDF 页数：{exc}")
+        if selected_pdf_page_count:
+            range_key = f"{selected_pdf.name}_{selected_pdf.size}"
+            range_cols = st.columns([1, 0.2, 1, 1.4], gap="small")
+            with range_cols[0]:
+                pdf_page_start = st.number_input(
+                    "起始页", min_value=1, max_value=selected_pdf_page_count,
+                    value=1, step=1, key=f"sqlite_entry_pdf_page_start_{range_key}",
+                )
+            with range_cols[1]:
+                st.markdown("<div style='padding-top: 1.9rem; text-align: center'>-</div>", unsafe_allow_html=True)
+            with range_cols[2]:
+                pdf_page_end = st.number_input(
+                    "结束页", min_value=1, max_value=selected_pdf_page_count,
+                    value=selected_pdf_page_count, step=1, key=f"sqlite_entry_pdf_page_end_{range_key}",
+                )
+            with range_cols[3]:
+                st.caption(f"PDF 共 {selected_pdf_page_count} 页，默认识别全部页面")
+            if pdf_page_start > pdf_page_end:
+                st.warning("起始页不能大于结束页。")
     clipboard_images = list(st.session_state.get("sqlite_entry_clipboard_images") or [])
     if clipboard_images or image_uploads:
         st.markdown("**图片预览**")
@@ -5836,6 +6016,8 @@ def _render_sqlite_entry_ai_recognition_panel(entry_mode: str):
                         source_metadata=metadata,
                         render_dpi=180,
                         original_name=uploaded_pdf.name,
+                        page_start=pdf_page_start,
+                        page_end=pdf_page_end,
                     )
                     _sqlite_apply_document_job_to_batch(job_result, entry_mode)
                     refine_result = _sqlite_refine_document_pages(
@@ -6007,6 +6189,41 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
             key="sqlite_pdf_import_uploader",
             label_visibility="collapsed",
         )
+        pdf_page_count = None
+        if uploaded_pdf is not None:
+            try:
+                import fitz
+                with fitz.open(stream=uploaded_pdf.getvalue(), filetype="pdf") as pdf_document:
+                    pdf_page_count = pdf_document.page_count
+            except Exception as exc:
+                st.warning(f"无法读取 PDF 页数：{exc}")
+        if pdf_page_count:
+            range_cols = st.columns([1, 0.25, 1, 1.3])
+            with range_cols[0]:
+                pdf_page_start = st.number_input(
+                    "起始页",
+                    min_value=1,
+                    max_value=pdf_page_count,
+                    value=1,
+                    step=1,
+                    key="sqlite_pdf_import_page_start",
+                )
+            with range_cols[1]:
+                st.markdown("<div style='padding-top: 1.9rem; text-align: center'>-</div>", unsafe_allow_html=True)
+            with range_cols[2]:
+                pdf_page_end = st.number_input(
+                    "结束页",
+                    min_value=1,
+                    max_value=pdf_page_count,
+                    value=pdf_page_count,
+                    step=1,
+                    key="sqlite_pdf_import_page_end",
+                )
+            with range_cols[3]:
+                st.caption(f"共 {pdf_page_count} 页；默认导入全部页面")
+        else:
+            pdf_page_start = None
+            pdf_page_end = None
         source_type = st.selectbox(
             "来源类型",
             list(source_type_labels),
@@ -6068,6 +6285,8 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
                         render_dpi=render_dpi,
                         original_name=uploaded_pdf.name,
                         parser_mode=parser_mode,
+                        page_start=pdf_page_start,
+                        page_end=pdf_page_end,
                     )
                 st.session_state["sqlite_pdf_import_selected_job"] = result["job_id"]
                 st.toast(f"已生成 {result['question_candidate_count']} 个候选", icon="✅")
@@ -7038,13 +7257,23 @@ def _install_duplicate_preview_client_script() -> None:
             win.__mcDuplicatePreviewGlobalBound = true;
             const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
             const panelForId = (id) => {
-                const escaped = win.CSS && win.CSS.escape ? win.CSS.escape(id) : id.replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
-                const marker = doc.querySelector('.mc-duplicate-preview-anchor[data-question-id="' + escaped + '"]');
-                return marker ? marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
+                const markers = Array.from(doc.querySelectorAll('.mc-duplicate-preview-anchor'));
+                const marker = markers.find((item) => item.dataset.questionId === String(id));
+                if (!marker) return null;
+                return marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]')
+                    || marker.closest('div[data-testid="stVerticalBlock"]')
+                    || marker.parentElement;
+            };
+            const openPanel = (panel) => {
+                if (!panel) return;
+                panel.classList.add('mc-duplicate-preview-open');
+                panel.setAttribute('data-duplicate-preview-open', '1');
             };
             const setupPanels = () => {
                 doc.querySelectorAll('.mc-duplicate-preview-anchor').forEach((marker) => {
-                    const panel = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                    const panel = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]')
+                        || marker.closest('div[data-testid="stVerticalBlock"]')
+                        || marker.parentElement;
                     if (!panel || panel.dataset.duplicatePanelBound === '1') return;
                     panel.dataset.duplicatePanelBound = '1';
                     panel.classList.add('mc-duplicate-preview-panel');
@@ -7096,7 +7325,7 @@ def _install_duplicate_preview_client_script() -> None:
                 if (!link) return;
                 event.preventDefault(); event.stopPropagation();
                 const panel = panelForId(link.dataset.duplicatePreviewId || '');
-                if (panel) panel.classList.add('mc-duplicate-preview-open');
+                openPanel(panel);
             };
             win.__mcDuplicatePreviewCloseHandler = (event) => {
                 const close = event.target && event.target.closest ? event.target.closest('.mc-duplicate-preview-close') : null;
@@ -20496,6 +20725,9 @@ def render_ai_data_factory_tool():
             metric_cols[2].metric("题目草稿", str(len(loaded.get("draft_payload", {}).get("questions") or [])))
             metric_cols[3].metric("AI 已处理", f"{summary['finished']}/{summary['total']}")
             elapsed_seconds = int(float(queue.get("elapsed_seconds") or 0))
+            unassigned_count = sum(1 for item in queue.get("items") or [] if item.get("kind") == "unassigned_page")
+            if unassigned_count:
+                st.info(f"当前任务包含 {unassigned_count} 个未分配页面任务；AI 会尝试从整页内容拆出新的草稿候选，结果仍需人工审核。")
             metric_cols[4].metric("已用时", f"{elapsed_seconds // 60:02d}:{elapsed_seconds % 60:02d}")
             st.caption(
                 f"解析器：{manifest.get('parser', {}).get('name') or '未知'} · "
@@ -20506,7 +20738,7 @@ def render_ai_data_factory_tool():
             total_pages = int(queue.get("total_pages") or 0)
             if summary["total"]:
                 st.progress(
-                    summary["finished"] / max(1, summary["total"]),
+                    current_page / max(1, total_pages),
                     text=f"页面级 AI 队列：{summary['status']} · 页面 {current_page}/{total_pages or '—'} · 成功 {summary['succeeded']} · 失败 {summary['failed']}",
                 )
             question_by_id = {
@@ -20571,6 +20803,8 @@ def render_ai_data_factory_tool():
                         extra = question.get("extra") if isinstance(question.get("extra"), dict) else {}
                         item_col, action_col = st.columns([4, 1], gap="small", vertical_alignment="center")
                         with item_col:
+                            if failed_item.get("kind") == "unassigned_page":
+                                st.caption(f"PDF 第 {failed_item.get('page_number') or '—'} 页 · 未分配页面任务")
                             st.markdown(
                                 f"**第 {html.escape(str(failed_item.get('question_number') or '—'))} 题** · "
                                 f"第 {html.escape(str(extra.get('page_start') or '—'))} 页 · "
@@ -23141,13 +23375,17 @@ def render_duplicate_question_preview_panel(question_id: str) -> None:
                         const id = link.dataset.duplicatePreviewId;
                         const panel = doc.querySelector(`.mc-duplicate-preview-anchor[data-question-id="${CSS.escape(id)}"]`);
                         if (panel) {
-                            const wrapper = panel.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                            const wrapper = panel.closest('div[data-testid="stVerticalBlockBorderWrapper"]')
+                                || panel.closest('div[data-testid="stVerticalBlock"]')
+                                || panel.parentElement;
                             if (wrapper) wrapper.classList.add('mc-duplicate-preview-open');
                         }
                     });
                 });
                 doc.querySelectorAll('.mc-duplicate-preview-anchor').forEach((marker) => {
-                    const panel = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                    const panel = marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]')
+                        || marker.closest('div[data-testid="stVerticalBlock"]')
+                        || marker.parentElement;
                     if (!panel || panel.dataset.duplicatePanelBound === '1') return;
                     panel.dataset.duplicatePanelBound = '1'; panel.classList.add('mc-duplicate-preview-panel');
                     const grip = doc.createElement('div'); grip.className = 'mc-duplicate-preview-resize-grip'; panel.appendChild(grip);

@@ -52,6 +52,13 @@ const candidates = await api.findSimilarQuestions({
   max_results: 10,
 });
 console.log(candidates.algorithm, candidates.items);
+
+const paperMatch = await api.matchPaper({
+  year: "2024",
+  paper_series: "G",
+  paper_name: "全国 I 卷",
+});
+console.log(paperMatch.match.status, paperMatch.match.candidates);
 ```
 
 也可以直接在浏览器控制台使用 `fetch`。所有写请求都要带：
@@ -74,8 +81,10 @@ Content-Type: application/json
 | `GET` | `/api/v1/drafts/{id}/review-events` | 查看审核事件 |
 | `GET` | `/api/v1/batches` | 查看录题批次 |
 | `GET` | `/api/v1/batches/{id}` | 查看批次汇总和草稿 |
+| `POST` | `/api/v1/batches/{id}/validate` | 一次性校验批次内草稿、查重和试卷位置冲突；只读 |
 | `GET` | `/api/v1/questions/search` | 查询正式题库，用于人工比对 |
 | `POST` | `/api/v1/questions/similarity` | 按统一相似度算法返回候选题；只读 |
+| `POST` | `/api/v1/papers/match` | 按年份、卷别、文理赛道和试卷名称匹配标准试卷；只读，非精确命中必须人工确认 |
 | `GET` | `/api/v1/questions/{id}` | 查看正式题目详情 |
 
 API 不接受 `review_status=approved`，即使请求中带了这个字段也会降为待审核。人工审核完成后，仍在题库网页中批准并正式入库。

@@ -61,6 +61,20 @@ def main() -> int:
             if similarity["items"]:
                 assert {"score", "channel", "reasons"}.issubset(similarity["items"][0])
 
+            status, paper_match = request(
+                base,
+                "/api/v1/papers/match",
+                method="POST",
+                body={
+                    "year": "2024",
+                    "paper_series": "G",
+                    "paper_name": "全国 I 卷",
+                },
+            )
+            assert status == 200
+            assert paper_match["algorithm"] == "paper_catalog_match_v1"
+            assert "match" in paper_match and "candidates" in paper_match["match"]
+
             status, created = request(
                 base,
                 "/api/v1/drafts",
@@ -87,6 +101,17 @@ def main() -> int:
                 body={"updates": {"note": "api smoke"}},
             )
             assert status == 200 and "note" in updated["changed_fields"]
+
+            status, batch_validation = request(
+                base,
+                f"/api/v1/batches/{created['batch_id']}/validate",
+                method="POST",
+                body={},
+            )
+            assert status == 200
+            assert batch_validation["draft_count"] == 1
+            assert batch_validation["human_review_required"] is True
+            assert batch_validation["results"][0]["draft_id"] == draft_id
 
             status, events = request(base, f"/api/v1/drafts/{draft_id}/review-events")
             assert status == 200 and events["items"]

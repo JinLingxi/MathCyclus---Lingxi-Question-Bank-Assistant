@@ -77,6 +77,23 @@ def main() -> int:
             db_path=FORMAL_DB,
             jobs_root=temp_root / "jobs",
         )
+        unmarked_drafts, _ = split_pages_into_question_drafts(
+            [{"page_number": 1, "raw_text": "1. Unmarked source question", "layout_blocks": [], "image_candidates": []}],
+            source_type="pdf_misc",
+        )
+        create_pdf_import_job(
+            source_pdf,
+            jobs_root=temp_root / "jobs",
+            job_id="pdf_misc_smoke",
+            source_type="pdf_misc",
+        )
+        misc_refresh = refresh_pdf_import_source_metadata(
+            "pdf_misc_smoke",
+            {"source_name": "Smoke Paper Reclassified", "year": 2026, "paper_series": "G"},
+            db_path=FORMAL_DB,
+            jobs_root=temp_root / "jobs",
+        )
+        misc_payload = json.loads((temp_root / "jobs" / "pdf_misc_smoke" / "draft_payload.json").read_text(encoding="utf-8"))
         refreshed_draft = json.loads((job_dir / "draft_payload.json").read_text(encoding="utf-8"))
         checks = [
             check("source_metadata_refresh", refreshed_draft.get("source_metadata", {}).get("source_name") == "Smoke Paper Revised", refresh_result),
@@ -84,6 +101,19 @@ def main() -> int:
                 item.get("extra", {}).get("detected_source") == "Smoke Paper Revised"
                 for item in refreshed_draft.get("questions", [])
             )),
+            check(
+                "unmarked_source_fallback",
+                bool(unmarked_drafts)
+                and unmarked_drafts[0].get("extra", {}).get("source_kind") == "未标记来源"
+                and unmarked_drafts[0].get("extra", {}).get("source_type") == "pdf_misc",
+            ),
+            check(
+                "unmarked_source_can_be_reclassified",
+                misc_refresh.get("match_status") in {"new_paper", "needs_confirmation", "exact"}
+                and bool(misc_payload.get("questions"))
+                and misc_payload["questions"][0].get("extra", {}).get("source_kind") == "试卷"
+                and misc_payload["questions"][0].get("extra", {}).get("source_type") == "pdf_paper",
+            ),
         ]
         manifest = json.loads((job_dir / "job_manifest.json").read_text(encoding="utf-8"))
         draft = json.loads((job_dir / "draft_payload.json").read_text(encoding="utf-8"))
@@ -163,7 +193,7 @@ def main() -> int:
         )
         listed_jobs = list_pdf_import_jobs(temp_root / "jobs")
         loaded_job = load_pdf_import_job("pdf_smoke_job", temp_root / "jobs")
-        checks.append(check("job_listed", len(listed_jobs) == 1 and listed_jobs[0]["job_id"] == "pdf_smoke_job", listed_jobs))
+        checks.append(check("job_listed", any(item.get("job_id") == "pdf_smoke_job" for item in listed_jobs), listed_jobs))
         checks.append(check("job_loaded", loaded_job["draft_payload"]["job_id"] == "pdf_smoke_job"))
         first_candidate_id = draft["questions"][0]["source_item_id"]
         incomplete_ready = update_pdf_question_candidate(

@@ -31,7 +31,7 @@ def main() -> int:
         pdf = root / "sample.pdf"
         with fitz.open() as document:
             page = document.new_page()
-            page.insert_text((72, 72), "I. Choice Questions\n1. First question\n2. Second question")
+            page.insert_text((72, 72), "1. First question\n2. Second question")
             document.save(pdf)
         create_pdf_import_job(pdf, jobs_root=root / "jobs", job_id="queue_smoke", source_type="pdf_paper")
         queue = create_or_refresh_queue("queue_smoke", jobs_root=root / "jobs")

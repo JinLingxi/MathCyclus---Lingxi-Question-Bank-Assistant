@@ -42,15 +42,15 @@ def main() -> int:
         update_pdf_question_candidate(
             "retry_job",
             ids[0],
-            {"question_type_id": 4, "stem_tex": "x+1=2", "answer_tex": "1", "solution_tex": "solve", "review_status": "ready"},
+            {"question_type_id": 4, "stem_tex": "x+1=2", "answer_tex": "1", "solution_tex": "solve", "review_status": "approved"},
             jobs_root=jobs_root,
         )
         payload = load_pdf_import_job("retry_job", jobs_root)["draft_payload"]
         for item in payload["questions"]:
             if item["source_item_id"] == ids[1]:
                 item["stem_tex"] = ""
-                item["review_status"] = "ready"
-                item["validation"] = {"status": "ready", "errors": [], "warnings": []}
+                item["review_status"] = "approved"
+                item["validation"] = {"status": "approved", "errors": [], "warnings": []}
         (jobs_root / "retry_job" / "draft_payload.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         first = commit_pdf_import_candidates("retry_job", ids, db_path=db_path, jobs_root=jobs_root)
         assert len(first["committed"]) == 1 and len(first["failed"]) == 1, first
@@ -59,7 +59,7 @@ def main() -> int:
         payload = load_pdf_import_job("retry_job", jobs_root)["draft_payload"]
         for item in payload["questions"]:
             if item["source_item_id"] == failed_id:
-                item.update({"stem_tex": "x+2=3", "answer_tex": "1", "solution_tex": "solve", "review_status": "ready"})
+                item.update({"stem_tex": "x+2=3", "answer_tex": "1", "solution_tex": "solve", "review_status": "approved"})
         (jobs_root / "retry_job" / "draft_payload.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         second = retry_failed_pdf_import_candidates("retry_job", db_path=db_path, jobs_root=jobs_root)
         assert len(second["committed"]) == 1 and not second["failed"], second

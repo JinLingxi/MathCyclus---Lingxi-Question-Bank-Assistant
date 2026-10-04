@@ -99,12 +99,51 @@ def _normalize_tex_text(value: object) -> str:
     )
 
 
+def _unwrap_choice_command(value: object) -> str:
+    """Store choice bodies without a duplicated ``\\choice`` wrapper."""
+    text = _normalize_tex_text(value)
+    if not text.startswith("\\choice"):
+        return text
+    brace_index = text.find("{", len("\\choice"))
+    if brace_index < 0:
+        return text
+    depth = 0
+    end_index = -1
+    for index in range(brace_index, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                end_index = index
+                break
+    if end_index < 0 or text[end_index + 1:].strip():
+        return text
+    inner = text[brace_index + 1:end_index].strip()
+    # Some models return ``\\choice{{$x$}}``. Remove only that extra outer
+    # pair, preserving braces belonging to TeX commands such as ``\\frac``.
+    if inner.startswith("{") and inner.endswith("}"):
+        nested_depth = 0
+        closes_at = -1
+        for index, char in enumerate(inner):
+            if char == "{":
+                nested_depth += 1
+            elif char == "}":
+                nested_depth -= 1
+                if nested_depth == 0:
+                    closes_at = index
+                    break
+        if closes_at == len(inner) - 1:
+            inner = inner[1:-1].strip()
+    return inner
+
+
 def _looks_like_standalone_math(text: str) -> bool:
     return bool(_LATEX_COMMAND_RE.search(text) or _MATH_TOKEN_RE.search(text)) and not _CJK_RE.search(text)
 
 
 def _normalize_choice_tex(value: object) -> str:
-    text = _LEADING_CHOICE_LABEL_RE.sub("", _normalize_tex_text(value), count=1).strip()
+    text = _LEADING_CHOICE_LABEL_RE.sub("", _unwrap_choice_command(value), count=1).strip()
     if text and "$" not in text and _looks_like_standalone_math(text):
         return f"${text}$"
     return text
@@ -157,6 +196,12 @@ def normalize_question_structure_result(data: dict, *, question_number: str = ""
         for choice in (_normalize_choice_tex(item) for item in raw_choices)
         if choice
     ]
+    try:
+        normalized_type = int(normalized.get("question_type_id"))
+    except (TypeError, ValueError):
+        normalized_type = 0
+    if normalized_type not in {1, 2, 3, 4, 5, 6}:
+        normalized["question_type_id"] = 1 if len(normalized["choices"]) >= 2 else 5
     normalized["answer_tex"] = _normalize_tex_text(normalized.get("answer_tex"))
     normalized["solution_tex"] = _normalize_tex_text(normalized.get("solution_tex"))
     normalized["recognizer_version"] = 2

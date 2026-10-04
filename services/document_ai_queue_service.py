@@ -90,6 +90,25 @@ def _question_fingerprint(question: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _unassigned_page_task(block: dict[str, Any]) -> dict[str, Any]:
+    page_number = int(block.get("page_number") or 0)
+    source_item_id = f"page_{page_number:03d}_unassigned"
+    raw_text = str(block.get("raw_text") or "")
+    raw = json.dumps(
+        {"source_item_id": source_item_id, "page_number": page_number, "raw_text": raw_text},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "source_item_id": source_item_id,
+        "question_number": "",
+        "page_number": page_number,
+        "kind": "unassigned_page",
+        "fingerprint": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+    }
+
+
 def _queue_path(job_id: str, jobs_root: str | Path = DEFAULT_JOBS_ROOT) -> Path:
     return resolve_job_dir(job_id, jobs_root) / QUEUE_FILE_NAME
 
@@ -148,7 +167,12 @@ def create_or_refresh_queue(
         fingerprint = _question_fingerprint(question)
         old = existing_by_id.get(source_item_id) or {}
         preserve = old.get("fingerprint") == fingerprint and old.get("status") in ITEM_STATUSES
-        preserved_status = old.get("status") if preserve else "pending"
+        recognition_status = str(question.get("recognition_status") or "")
+        preserved_status = (
+            "succeeded"
+            if old.get("status") == "succeeded" or recognition_status == "ai_succeeded"
+            else old.get("status") if preserve else "pending"
+        )
         if preserved_status == "running":
             preserved_status = "pending"
         items.append(
@@ -157,6 +181,37 @@ def create_or_refresh_queue(
                 "source_item_id": source_item_id,
                 "question_number": str(extra.get("question_number") or index + 1),
                 "fingerprint": fingerprint,
+                "status": preserved_status,
+                "attempts": int(old.get("attempts") or 0) if preserve else 0,
+                "error": str(old.get("error") or "") if preserve else "",
+                "result": dict(old.get("result") or {}) if preserve else {},
+                "updated_at": str(old.get("updated_at") or "") if preserve else "",
+                "heartbeat_at": str(old.get("heartbeat_at") or "") if preserve else "",
+                "error_category": str(old.get("error_category") or "") if preserve else "",
+                "retryable": bool(old.get("retryable", False)) if preserve else False,
+            }
+        )
+    for block in loaded["draft_payload"].get("unassigned_blocks") or []:
+        if not isinstance(block, dict):
+            continue
+        task = _unassigned_page_task(block)
+        source_item_id = task["source_item_id"]
+        old = existing_by_id.get(source_item_id) or {}
+        preserve = old.get("fingerprint") == task["fingerprint"] and old.get("status") in ITEM_STATUSES
+        # A completed page task remains complete across payload refreshes. The
+        # unassigned block can gain harmless metadata after AI generation;
+        # that must not cause the same page request to run again.
+        preserved_status = old.get("status") if (preserve or old.get("status") == "succeeded") else "pending"
+        if preserved_status == "running":
+            preserved_status = "pending"
+        items.append(
+            {
+                "index": len(items),
+                "source_item_id": source_item_id,
+                "question_number": "",
+                "page_number": task["page_number"],
+                "kind": "unassigned_page",
+                "fingerprint": task["fingerprint"],
                 "status": preserved_status,
                 "attempts": int(old.get("attempts") or 0) if preserve else 0,
                 "error": str(old.get("error") or "") if preserve else "",
@@ -376,6 +431,41 @@ def finish_queue_item(
             error=error,
             jobs_root=jobs_root,
         )
+
+
+def skip_queue_item(
+    job_id: str,
+    source_item_id: str,
+    *,
+    reason: str,
+    jobs_root: str | Path = DEFAULT_JOBS_ROOT,
+) -> dict[str, Any]:
+    """Mark a non-question page task as intentionally skipped."""
+    path = _queue_path(job_id, jobs_root)
+    with _queue_lock(path):
+        queue = load_queue(job_id, jobs_root=jobs_root)
+        if not queue:
+            raise FileNotFoundError("AI queue does not exist")
+        target = next((item for item in queue.get("items") or [] if item.get("source_item_id") == source_item_id), None)
+        if target is None:
+            raise KeyError(f"AI queue item does not exist: {source_item_id}")
+        target.update(
+            {
+                "status": "skipped",
+                "error": "",
+                "error_category": "",
+                "retryable": False,
+                "result": {"skipped": True, "reason": str(reason or "")},
+                "heartbeat_at": _utc_now(),
+                "updated_at": _utc_now(),
+            }
+        )
+        active_items = [item for item in queue.get("items") or [] if item.get("status") in {"pending", "running"}]
+        queue["status"] = "paused" if active_items else "completed"
+        queue["heartbeat_at"] = _utc_now()
+        queue["updated_at"] = _utc_now()
+        write_json(path, queue)
+    return queue
 
 
 def touch_queue_item(

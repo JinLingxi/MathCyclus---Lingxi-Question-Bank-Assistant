@@ -258,6 +258,29 @@ class LocalApiHandler(BaseHTTPRequestHandler):
                 "algorithm": "gaokao_web_bind_sim_v1",
             }
 
+        if path == f"{API_PREFIX}/papers/match" and method == "POST":
+            body = self._read_json()
+            from services.paper_catalog_service import match_paper
+
+            try:
+                threshold = float(body.get("similarity_threshold", 0.55))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("similarity_threshold 必须是 0 到 1 之间的数字") from exc
+            result = match_paper(
+                str(server.db_path),
+                year=body.get("year"),
+                paper_series=str(body.get("paper_series") or "G"),
+                track=str(body.get("track") or ""),
+                paper_name=str(body.get("paper_name") or body.get("source_name") or ""),
+                limit=_safe_int(body.get("limit", 5), 5, minimum=1, maximum=20),
+                similarity_threshold=max(0.0, min(1.0, threshold)),
+            )
+            return {
+                "match": result,
+                "human_review_required": result.get("status") != "exact",
+                "algorithm": "paper_catalog_match_v1",
+            }
+
         parts = [unquote(part) for part in path.split("/") if part]
         if len(parts) >= 4 and parts[:3] == ["api", "v1", "drafts"]:
             draft_id = parts[3]
@@ -300,6 +323,36 @@ class LocalApiHandler(BaseHTTPRequestHandler):
                 raise KeyError(f"批次不存在：{batch_id}")
             summary["drafts"] = list_draft_questions(str(server.db_path), batch_id=batch_id, limit=200)
             return summary
+
+        if len(parts) == 5 and parts[:3] == ["api", "v1", "batches"] and parts[4] == "validate" and method == "POST":
+            batch_id = parts[3]
+            summary = summarize_batch(str(server.db_path), batch_id)
+            if not summary.get("batch"):
+                raise KeyError(f"批次不存在：{batch_id}")
+            drafts = list_draft_questions(str(server.db_path), batch_id=batch_id, limit=200)
+            results = []
+            for item in drafts:
+                draft_id = str(item.get("draft_id") or "")
+                draft = get_draft_question(str(server.db_path), draft_id)
+                validation = validate_existing_draft(str(server.db_path), draft_id)
+                extra = _parse_json_object(draft.get("extra_json"))
+                validation["content_matches"] = find_question_content_matches(
+                    str(server.db_path),
+                    str(draft.get("stem_tex") or ""),
+                    choices=draft.get("choices_json"),
+                    question_type_id=draft.get("question_type_id"),
+                    max_results=5,
+                )
+                validation["paper_position_conflicts"] = find_paper_position_conflict(
+                    str(server.db_path), extra,
+                )
+                results.append(validation)
+            return {
+                "batch_id": batch_id,
+                "draft_count": len(results),
+                "results": results,
+                "human_review_required": True,
+            }
 
         if len(parts) == 4 and parts[:3] == ["api", "v1", "questions"] and method == "GET":
             question_id = parts[3]

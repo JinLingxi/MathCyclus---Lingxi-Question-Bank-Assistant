@@ -8,13 +8,16 @@
     * { box-sizing: border-box; }
     body { margin: 0; padding: 8px 0 4px; color: #334155; background: transparent; }
     .shell { display: grid; gap: 7px; }
-    .canvas-wrap { position: relative; width: 100%; overflow: hidden; border: 1px solid rgba(109, 40, 217, .18); border-radius: 10px; background: #f8fafc; }
-    canvas { display: block; width: 100%; height: auto; max-height: 360px; object-fit: contain; cursor: crosshair; touch-action: none; }
+    .canvas-wrap { position: relative; width: 100%; max-height: 420px; overflow: auto; border: 1px solid rgba(109, 40, 217, .18); border-radius: 10px; background: #f8fafc; overscroll-behavior: contain; }
+    canvas { display: block; width: auto; max-width: none; height: auto; cursor: crosshair; touch-action: none; }
     .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .toolbar-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .hint { font-size: 12px; color: #64748b; line-height: 1.35; }
     button { border: 1px solid rgba(109, 40, 217, .26); border-radius: 8px; padding: 6px 10px; background: #f5f3ff; color: #5b21b6; font-weight: 700; cursor: pointer; }
     button:hover { background: #ede9fe; }
     button:disabled { opacity: .55; cursor: default; }
+    .zoom-button { min-width: 34px; padding-inline: 8px; }
+    .zoom-label { min-width: 48px; text-align: center; }
     .coords { font-variant-numeric: tabular-nums; color: #475569; font-size: 12px; }
   </style>
 </head>
@@ -24,6 +27,12 @@
     <div class="toolbar">
       <span class="hint">拖动裁剪框内部移动，拖动四角调整大小；长图可滚动查看。</span>
       <span class="coords" id="coords">等待原图</span>
+      <span class="toolbar-group">
+        <button id="zoomOut" class="zoom-button" type="button" disabled title="缩小" aria-label="缩小">−</button>
+        <button id="zoomReset" class="zoom-label" type="button" disabled title="适应宽度" aria-label="适应宽度">适应</button>
+        <button id="zoomIn" class="zoom-button" type="button" disabled title="放大" aria-label="放大">＋</button>
+        <button id="reset" type="button" disabled title="重置为整页" aria-label="重置为整页">重置</button>
+      </span>
       <button id="apply" type="button" disabled>应用拖拽坐标</button>
     </div>
   </div>
@@ -33,28 +42,51 @@
       const ctx = canvas.getContext("2d");
       const coords = document.getElementById("coords");
       const apply = document.getElementById("apply");
-      const state = { image: null, bbox: [0, 0, 1, 1], scale: 1, mode: "", start: null, original: null };
+      const zoomOut = document.getElementById("zoomOut");
+      const zoomReset = document.getElementById("zoomReset");
+      const zoomIn = document.getElementById("zoomIn");
+      const reset = document.getElementById("reset");
+      const state = { image: null, bbox: [0, 0, 1, 1], scale: 1, baseScale: 1, zoom: 1, mode: "", start: null, initial: null };
+      const MIN_BOX_SIZE = 8;
       const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
       const normalize = (box) => {
         const [x0, y0, x1, y1] = box.map(Number);
+        if (!state.image || ![x0, y0, x1, y1].every(Number.isFinite)) return [0, 0, 0, 0];
+        const width = state.image.naturalWidth, height = state.image.naturalHeight;
+        let left = clamp(Math.min(x0, x1), 0, width), right = clamp(Math.max(x0, x1), 0, width);
+        let top = clamp(Math.min(y0, y1), 0, height), bottom = clamp(Math.max(y0, y1), 0, height);
+        if (right - left < MIN_BOX_SIZE) {
+          const center = (left + right) / 2;
+          left = clamp(center - MIN_BOX_SIZE / 2, 0, Math.max(0, width - MIN_BOX_SIZE));
+          right = Math.min(width, left + MIN_BOX_SIZE);
+        }
+        if (bottom - top < MIN_BOX_SIZE) {
+          const center = (top + bottom) / 2;
+          top = clamp(center - MIN_BOX_SIZE / 2, 0, Math.max(0, height - MIN_BOX_SIZE));
+          bottom = Math.min(height, top + MIN_BOX_SIZE);
+        }
         return [
-          clamp(Math.min(x0, x1), 0, state.image.naturalWidth),
-          clamp(Math.min(y0, y1), 0, state.image.naturalHeight),
-          clamp(Math.max(x0, x1), 0, state.image.naturalWidth),
-          clamp(Math.max(y0, y1), 0, state.image.naturalHeight)
+          Math.round(left), Math.round(top), Math.round(right), Math.round(bottom)
         ];
       };
       const distanceToCorner = (point, corner) => Math.hypot(point.x - corner.x, point.y - corner.y);
       const canvasPoint = (event) => {
         const rect = canvas.getBoundingClientRect();
-        return { x: (event.clientX - rect.left) / state.scale, y: (event.clientY - rect.top) / state.scale };
+        const scaleX = canvas.width / Math.max(1, rect.width);
+        const scaleY = canvas.height / Math.max(1, rect.height);
+        return { x: (event.clientX - rect.left) * scaleX, y: (event.clientY - rect.top) * scaleY };
       };
-      const toImageBox = (pointBox) => pointBox.map(value => value / state.scale);
+      const toImagePoint = (point) => ({ x: point.x / state.scale, y: point.y / state.scale });
+      const updateControls = () => {
+        const ready = Boolean(state.image);
+        [zoomOut, zoomReset, zoomIn, reset, apply].forEach(button => { button.disabled = !ready; });
+        zoomReset.textContent = ready ? `${Math.round(state.zoom * 100)}%` : "适应";
+      };
       const draw = () => {
         if (!state.image) return;
-        const maxWidth = Math.max(240, canvas.parentElement.clientWidth);
-        const maxHeight = 360;
-        state.scale = Math.min(1, maxWidth / state.image.naturalWidth, maxHeight / state.image.naturalHeight);
+        const maxWidth = Math.max(240, canvas.parentElement.clientWidth - 2);
+        state.baseScale = Math.min(1, maxWidth / state.image.naturalWidth);
+        state.scale = state.baseScale * state.zoom;
         canvas.width = Math.max(1, Math.round(state.image.naturalWidth * state.scale));
         canvas.height = Math.max(1, Math.round(state.image.naturalHeight * state.scale));
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -68,7 +100,7 @@
         ctx.fillStyle = "#6d28d9";
         [[x0,y0],[x1,y0],[x0,y1],[x1,y1]].forEach(([x,y]) => { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); });
         coords.textContent = state.bbox.map(value => Math.round(value)).join("，");
-        apply.disabled = false;
+        updateControls();
       };
       const send = () => {
         window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:setComponentValue", value: { bbox: state.bbox.map(value => Math.round(value)) } }, "*");
@@ -88,30 +120,47 @@
       canvas.addEventListener("pointermove", (event) => {
         if (!state.start) return;
         const point = canvasPoint(event), start = state.start, original = start.bbox.slice();
-        const delta = toImageBox([point.x - start.point.x, point.y - start.point.y]);
+        const imagePoint = toImagePoint(point);
+        const startImagePoint = toImagePoint(start.point);
+        const delta = [imagePoint.x - startImagePoint.x, imagePoint.y - startImagePoint.y];
         let next = original.slice();
-        if (state.mode === "draw") next = normalize([start.point.x / state.scale, start.point.y / state.scale, point.x / state.scale, point.y / state.scale]);
+        if (state.mode === "draw") next = normalize([startImagePoint.x, startImagePoint.y, imagePoint.x, imagePoint.y]);
         if (state.mode === "move") next = normalize([original[0] + delta[0], original[1] + delta[1], original[2] + delta[0], original[3] + delta[1]]);
-        if (state.mode.includes("n")) next[0] = point.x / state.scale;
-        if (state.mode.includes("s")) next[3] = point.y / state.scale;
-        if (state.mode.includes("w")) next[0] = point.x / state.scale;
-        if (state.mode.includes("e")) next[2] = point.x / state.scale;
+        if (state.mode.includes("n")) next[1] = imagePoint.y;
+        if (state.mode.includes("s")) next[3] = imagePoint.y;
+        if (state.mode.includes("w")) next[0] = imagePoint.x;
+        if (state.mode.includes("e")) next[2] = imagePoint.x;
         state.bbox = normalize(next); draw();
       });
       const release = () => { state.start = null; state.mode = ""; };
       canvas.addEventListener("pointerup", release); canvas.addEventListener("pointercancel", release);
       apply.addEventListener("click", send);
+      zoomOut.addEventListener("click", () => { state.zoom = clamp(state.zoom / 1.25, 0.75, 4); draw(); });
+      zoomIn.addEventListener("click", () => { state.zoom = clamp(state.zoom * 1.25, 0.75, 4); draw(); });
+      zoomReset.addEventListener("click", () => { state.zoom = 1; draw(); });
+      reset.addEventListener("click", () => {
+        if (!state.image) return;
+        state.bbox = [0, 0, state.image.naturalWidth, state.image.naturalHeight];
+        state.zoom = 1;
+        draw();
+      });
       window.addEventListener("resize", draw);
       window.addEventListener("message", (event) => {
         const data = event.data || {};
         if (!data.isStreamlitMessage || data.type !== "streamlit:render") return;
         const args = data.args || {};
         const image = new Image();
-        image.onload = () => { state.image = image; state.bbox = normalize(args.bbox || [0, 0, image.naturalWidth, image.naturalHeight]); draw(); };
+        image.onload = () => {
+          state.image = image;
+          state.initial = Array.isArray(args.bbox) ? args.bbox.slice(0, 4) : null;
+          state.zoom = 1;
+          state.bbox = normalize(args.bbox || [0, 0, image.naturalWidth, image.naturalHeight]);
+          draw();
+        };
         image.src = args.image_data || "";
       });
       window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 }, "*");
-      window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: 430 }, "*");
+      window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: 470 }, "*");
     })();
   </script>
 </body>

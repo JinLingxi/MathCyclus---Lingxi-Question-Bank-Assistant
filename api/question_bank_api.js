@@ -89,6 +89,12 @@ export class MathCyclusApi {
     return this.request(`/api/v1/batches/${encodeURIComponent(batchId)}`);
   }
 
+  validateBatch(batchId) {
+    return this.request(`/api/v1/batches/${encodeURIComponent(batchId)}/validate`, {
+      method: "POST",
+    });
+  }
+
   searchQuestions(filters = {}) {
     return this.request("/api/v1/questions/search", { params: filters });
   }
@@ -97,6 +103,13 @@ export class MathCyclusApi {
     return this.request("/api/v1/questions/similarity", {
       method: "POST",
       body: { stem_tex, choices, question_type_id, minimum_score, max_results },
+    });
+  }
+
+  matchPaper({ year = "", paper_series = "G", track = "", paper_name = "", limit = 5, similarity_threshold = 0.55 } = {}) {
+    return this.request("/api/v1/papers/match", {
+      method: "POST",
+      body: { year, paper_series, track, paper_name, limit, similarity_threshold },
     });
   }
 

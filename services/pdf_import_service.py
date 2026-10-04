@@ -490,7 +490,13 @@ def refresh_pdf_import_source_metadata(
     source["metadata"] = existing_metadata
     payload["source_metadata"] = dict(normalized)
     match_result: dict[str, Any] = {"status": "not_applicable", "candidates": []}
-    if str(source.get("source_type") or payload.get("source_type") or "") == "pdf_paper":
+    source_type = str(source.get("source_type") or payload.get("source_type") or "pdf_misc")
+    paper_like = source_type == "pdf_paper" or (
+        source_type == "pdf_misc"
+        and bool(normalized.get("source_name") or normalized.get("paper_standard_id"))
+    )
+    if paper_like:
+        source["metadata"]["source_kind"] = "试卷"
         from services.paper_catalog_service import match_paper
         from services.paper_catalog_service import get_standard_paper
 
@@ -517,6 +523,10 @@ def refresh_pdf_import_source_metadata(
     for candidate in questions:
         extra = candidate.setdefault("extra", {})
         extra["source_metadata"] = dict(normalized)
+        extra["source_type"] = "pdf_paper" if paper_like else source_type
+        extra["source_kind"] = "试卷" if paper_like else (
+            "教材" if source_type == "pdf_book" else "专题" if source_type == "pdf_topic" else "未标记来源"
+        )
         if normalized.get("year") or normalized.get("year_or_volume"):
             extra["detected_year"] = normalized.get("year") or normalized.get("year_or_volume")
         if normalized.get("source_name"):
@@ -1013,6 +1023,12 @@ def split_pages_into_question_drafts(
     unassigned_blocks: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
     sequence = 0
+    source_kind_label = {
+        "pdf_paper": "试卷",
+        "pdf_book": "教材",
+        "pdf_topic": "专题",
+        "pdf_misc": "未标记来源",
+    }.get(str(source_type or ""), "未标记来源")
     image_candidates_by_page = {
         int(page.get("page_number") or 0): [
             dict(item) for item in page.get("image_candidates") or [] if isinstance(item, dict)
@@ -1133,7 +1149,8 @@ def split_pages_into_question_drafts(
                         "warnings": ["题型、选项、答案和解析尚未识别。"],
                     },
                     "extra": {
-                        "source_kind": source_type,
+                        "source_kind": source_kind_label,
+                        "source_type": source_type,
                         "source_metadata": dict(source_metadata or {}),
                         "question_number": question_number,
                         "splitter": "numbered_line_v1",
@@ -1222,7 +1239,8 @@ def split_pages_into_question_drafts(
                     "warnings": ["未识别题号；题型、选项、答案和解析尚未识别。"],
                 },
                 "extra": {
-                    "source_kind": source_type,
+                    "source_kind": source_kind_label,
+                    "source_type": source_type,
                     "source_metadata": dict(source_metadata or {}),
                     "question_number": "",
                     "page_start": page_number,
@@ -1284,6 +1302,8 @@ def create_pdf_import_job(
     parser_mode: str = "auto",
     pipeline_code: str = "math_exam_hybrid",
     ai_mode: str = "page_gpt",
+    page_start: int | None = None,
+    page_end: int | None = None,
 ) -> dict[str, Any]:
     source_path = Path(source_pdf).resolve()
     if not source_path.is_file():
@@ -1294,7 +1314,23 @@ def create_pdf_import_job(
         raise ValueError(f"不支持的 PDF 来源类型：{source_type}")
     if not 72 <= int(render_dpi) <= 300:
         raise ValueError("render_dpi 必须在 72 到 300 之间。")
+    with fitz.open(source_path) as source_document:
+        source_page_count = source_document.page_count
+    normalized_page_start = 1 if page_start is None else int(page_start)
+    normalized_page_end = source_page_count if page_end is None else int(page_end)
+    if source_page_count < 1:
+        raise ValueError("PDF has no pages to import.")
+    if not 1 <= normalized_page_start <= source_page_count:
+        raise ValueError(f"page_start must be between 1 and {source_page_count}.")
+    if not 1 <= normalized_page_end <= source_page_count:
+        raise ValueError(f"page_end must be between 1 and {source_page_count}.")
+    if normalized_page_start > normalized_page_end:
+        raise ValueError("page_start cannot be greater than page_end.")
     normalized_metadata = dict(source_metadata or {})
+    normalized_metadata.setdefault("page_start", normalized_page_start)
+    normalized_metadata.setdefault("page_end", normalized_page_end)
+    if source_type == "pdf_misc":
+        normalized_metadata.setdefault("source_kind", "未标记来源")
     try:
         json.dumps(normalized_metadata, ensure_ascii=False)
     except (TypeError, ValueError) as exc:
@@ -1419,6 +1455,8 @@ def create_pdf_import_job(
             document_metadata = {str(key): value for key, value in (document.metadata or {}).items()}
             for page_index, page in enumerate(document):
                 page_number = page_index + 1
+                if not normalized_page_start <= page_number <= normalized_page_end:
+                    continue
                 image_name = f"page_{page_number:03d}.png"
                 image_path = pages_dir / image_name
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
@@ -1540,6 +1578,9 @@ def create_pdf_import_job(
                 "updated_at": utc_now(),
                 "document": {
                     "page_count": len(pages),
+                    "source_page_count": source_page_count,
+                    "page_start": normalized_page_start,
+                    "page_end": normalized_page_end,
                     "metadata": document_metadata,
                 },
                 "draft_summary": {
@@ -1570,6 +1611,9 @@ def create_pdf_import_job(
         "draft_payload_path": str(draft_path),
         "import_report_path": str(report_path),
         "page_count": len(pages),
+        "source_page_count": source_page_count,
+        "page_start": normalized_page_start,
+        "page_end": normalized_page_end,
         "question_candidate_count": len(question_drafts),
         "asset_id": asset_id,
         "pipeline": pipeline_config,
