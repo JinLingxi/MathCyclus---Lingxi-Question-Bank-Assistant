@@ -57,7 +57,6 @@ render_ai_data_factory_tool()
             checks = {
                 "factory_render_has_no_exception": not app.exception,
                 "review_entry_visible": "打开草稿审核" in labels,
-                "api_entry_visible": "进入 API 状态与客户端面板" in labels,
                 "asset_pipeline_copy_visible": any("Asset" in item and "Pipeline" in item for item in markdown),
                 "elapsed_metric_visible": "已用时" in metrics,
             }

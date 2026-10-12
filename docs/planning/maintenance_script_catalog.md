@@ -21,7 +21,6 @@
 `export_relation_summary.py`、`init_local_workspace.py`、`local_data_bundle.py`、
 `migrate_schema.py`、`precommit_database_audit.py`、
 `promote_preview_to_database.py`、`rebuild_preview_pipeline.py`、
-`rebuild_status.py`、`release_readiness.py`、`run_local_api.py`、
 `scan_tex_library.py`、`update_local_installation.py`。
 
 其中 `promote_preview_to_database.py` 虽然是长期入口，但属于正式写库操作，不能当作普通检查脚本运行。
@@ -44,7 +43,6 @@
 
 ## C. Smoke 与发布回归脚本
 
-所有 `scripts/smoke_*.py` 都属于回归检查，包括数据库服务、PDF 导入、草稿审核、相似度、Local API、发布包和 UI smoke。它们应保持在仓库中，并由 `scripts/release_readiness.py` 按快慢分组调用。
 
 Smoke 脚本的判断原则是：优先使用临时目录或临时数据库，检查正式数据库内容不变；如果某个 smoke 需要真实数据，应在脚本说明中明确写出。
 

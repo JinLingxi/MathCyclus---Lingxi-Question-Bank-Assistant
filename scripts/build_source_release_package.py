@@ -24,7 +24,6 @@ INCLUDE_FILES = [
     "question_bank_app.py",
     "启动程序.bat",
     "启动程序.py",
-    "启动本地录题API.bat",
     "MathCyclus_book.cls",
     "main.tex",
 ]

@@ -167,3 +167,15 @@ LOCAL_CLEANUP_LEDGER.md
 高考数学试卷年份_试卷名称.xlsx
 试卷标准名录.xlsx
 docs/planning/paper_catalog_g_existing_*.csv
+
+# Personal agent setup, ingestion state and local workflow proposals
+/.agents/
+/.ingestion/
+/MathCyclus_Codex_录题工作流优化方案.md
+/MathCyclus_新对话录题规则*.md
+/MathCyclus_AI_Batch_*
+
+# Temporary test workspaces and accidental shell output
+/mathcyclus_ai_exchange_smoke_*/
+/mathcyclus_v11_accept_*/
+/$null

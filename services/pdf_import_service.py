@@ -972,6 +972,91 @@ def commit_pdf_import_candidates(
     }
 
 
+def auto_commit_pdf_import_candidates(
+    job_id: str,
+    candidate_ids: list[str] | None = None,
+    *,
+    db_path: str | Path,
+    jobs_root: str | Path = DEFAULT_JOBS_ROOT,
+    operator: str = "local_codex",
+) -> dict[str, Any]:
+    """Commit only candidates that pass the machine-only import policy.
+
+    The policy is intentionally strict: page-level AI recognition must have
+    succeeded, required fields must be present, and the existing question and
+    paper-position checks must be clear. Candidates that fail remain in the PDF
+    job with a reason instead of being silently written to SQLite.
+    """
+    from services.import_service import find_paper_position_conflict, find_question_content_matches
+
+    loaded = load_pdf_import_job(job_id, jobs_root)
+    payload = loaded["draft_payload"]
+    questions = [item for item in payload.get("questions") or [] if isinstance(item, dict)]
+    wanted = {str(value).strip() for value in (candidate_ids or []) if str(value).strip()}
+    selected = [
+        item for item in questions
+        if not wanted or str(item.get("source_item_id") or "") in wanted
+    ]
+    if not selected:
+        raise ValueError("没有找到可自动入库的 PDF 题目候选。")
+
+    blocked: list[dict[str, Any]] = []
+    ready_ids: list[str] = []
+    database_path = str(db_path)
+    for candidate in selected:
+        source_item_id = str(candidate.get("source_item_id") or "")
+        if candidate.get("commit_status") == "committed":
+            continue
+        errors = list(validate_question_candidate(candidate).get("errors") or [])
+        warnings = list(validate_question_candidate(candidate).get("warnings") or [])
+        if str(candidate.get("recognition_status") or "") != "ai_succeeded":
+            errors.append("页面 AI 尚未成功识别")
+        if warnings:
+            errors.extend(warnings)
+        extra = candidate.get("extra") if isinstance(candidate.get("extra"), dict) else {}
+        matches = find_question_content_matches(
+            database_path,
+            str(candidate.get("stem_tex") or ""),
+            choices=candidate.get("choices"),
+            question_type_id=candidate.get("question_type_id"),
+            max_results=5,
+        )
+        if matches:
+            errors.append(f"检测到 {len(matches)} 个现有题目相似候选")
+        conflicts = find_paper_position_conflict(database_path, extra)
+        if conflicts:
+            errors.append("检测到相同试卷位置冲突")
+        if errors:
+            candidate["commit_status"] = "blocked"
+            candidate["commit_error"] = "；".join(errors)
+            _append_pdf_import_event(payload, source_item_id, "auto_commit_blocked", status="failed", message=candidate["commit_error"])
+            blocked.append({"source_item_id": source_item_id, "errors": errors})
+            continue
+        candidate["review_status"] = "approved"
+        candidate["review_reason"] = "自动入库策略校验通过"
+        candidate["auto_commit_eligible"] = True
+        ready_ids.append(source_item_id)
+
+    if not ready_ids:
+        job_dir = loaded["job_dir"]
+        payload["updated_at"] = utc_now()
+        write_json(job_dir / "draft_payload.json", payload)
+        return {"job_id": job_id, "committed": [], "blocked": blocked, "writes_formal_database": False}
+
+    payload["updated_at"] = utc_now()
+    write_json(loaded["job_dir"] / "draft_payload.json", payload)
+    result = commit_pdf_import_candidates(
+        job_id,
+        ready_ids,
+        db_path=db_path,
+        jobs_root=jobs_root,
+        operator=operator,
+    )
+    result["blocked"] = blocked
+    result["auto_policy"] = "page_ai_strict_v1"
+    return result
+
+
 def list_pdf_import_failed_candidates(
     job_id: str,
     *,

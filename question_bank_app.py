@@ -20545,7 +20545,7 @@ def render_ai_data_factory_tool():
         @media (max-width: 900px) { .mc-factory-flow { grid-template-columns:1fr 1fr; } .mc-factory-banner { align-items:flex-start; flex-direction:column; } }
         </style>
         <div class="mc-factory-banner">
-          <div><strong>一套任务，两种入口</strong><br><span>项目内上传大 PDF，或由 GPT / JS API 送入草稿；最终都在这里完成页面进度、查重和人工审核。</span></div>
+          <div><strong>本地录题流程</strong><br><span>上传 PDF，生成逐题草稿，跟踪进度、检查重复并进行人工审核。</span></div>
           <span>正式题库写入：人工批准后</span>
         </div>
         <div class="mc-factory-flow">
@@ -20558,8 +20558,7 @@ def render_ai_data_factory_tool():
         """,
         unsafe_allow_html=True,
     )
-
-    tab_new, tab_jobs, tab_api, tab_notes = st.tabs(["新建任务", "任务中心", "API 接力", "流程说明"])
+    tab_new, tab_jobs, tab_notes = st.tabs(["新建任务", "任务中心", "流程说明"])
     with tab_new:
         source_mode = st.radio(
             "资源方式",
@@ -20824,18 +20823,6 @@ def render_ai_data_factory_tool():
                     }
                 )
 
-    with tab_api:
-        st.markdown("#### API 接力录题")
-        st.caption("API 生成的草稿与 PDF Job 使用同一套 QuestionDraft 审核闸门。")
-        if st.button("进入 API 状态与客户端面板", key="factory_open_api", use_container_width=True):
-            st.session_state["tools_subpage"] = "local_api"
-            st.rerun()
-        st.code("GPT / 浏览器 JS → 本地 API → QuestionDraft → 查重与来源匹配 → 人工审核 → 正式题库", language="text")
-        st.markdown(
-            '<div class="mc-factory-status"><strong>推荐分工</strong><br>大 PDF 用本页创建 Job，页面级 AI 负责批量识别；少量补录或 GPT 客户端识别结果走本地 API。两边都只能生成草稿，不能自动批准。</div>',
-            unsafe_allow_html=True,
-        )
-
     with tab_notes:
         st.markdown(
             """
@@ -20848,119 +20835,6 @@ def render_ai_data_factory_tool():
             5. 只有人工批准且内容 hash 未变化的草稿才能进入正式题库。
 
             当前页面已经支持大 PDF 的 Job、Asset 标识、本机路径读取、页面级队列、暂停、恢复和失败重试；
-            后续再增加真正的分片上传和跨电脑 API 资源上传。
-            """
-        )
-
-
-def render_local_api_tool():
-    """Show the local draft API status and safe browser-client entry point."""
-    def _clear_local_api_token():
-        st.session_state.pop("local_api_token", None)
-
-    st.markdown("### 🔌 本地录题 API")
-    st.caption("让本地网页、浏览器脚本或 GPT 辅助工具把识别结果送入草稿区；批准与正式入库仍必须人工完成。")
-
-    st.markdown(
-        """
-        <div class="mc-maintenance-note">
-            <strong>权限边界</strong><br>
-            本地 API 只允许创建、修改、校验和查询草稿。它不会提供批准草稿或写入正式题库的接口，
-            因此网页脚本即使误调用，也不能绕过“草稿审核与逐题确认”。
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    default_url = str(st.session_state.get("local_api_base_url") or "http://127.0.0.1:8765").rstrip("/")
-    base_url = st.text_input("API 地址", value=default_url, key="local_api_base_url")
-    token = st.text_input(
-        "本次 API token",
-        type="password",
-        key="local_api_token",
-        help="启动 API 的命令行窗口会显示本次 token。token 只保存在当前浏览器会话，不写入项目文件。",
-    )
-
-    check_col, clear_col = st.columns([1, 1], gap="small")
-    with check_col:
-        check_api = st.button("检查 API 状态", key="local_api_check", type="primary", use_container_width=True)
-    with clear_col:
-        if st.button("清空 token", key="local_api_clear_token", use_container_width=True, on_click=_clear_local_api_token):
-            st.rerun()
-
-    if check_api:
-        normalized_url = str(base_url or "").strip().rstrip("/")
-        if not normalized_url.startswith(("http://", "https://")):
-            st.error("API 地址必须以 http:// 或 https:// 开头。")
-        else:
-            try:
-                health_response = requests.get(f"{normalized_url}/health", timeout=3)
-                health_response.raise_for_status()
-                health_payload = health_response.json()
-                if health_payload.get("draft_only") is True:
-                    st.success("本地录题 API 正在运行，当前为草稿模式。")
-                else:
-                    st.warning("服务已响应，但不是 MathCyclus 草稿 API。")
-                migration = health_payload.get("migration") or {}
-                st.caption(
-                    f"数据库迁移：{migration.get('status', '未知')} · "
-                    f"题库路径：{health_payload.get('database', '未知')}"
-                )
-                if token.strip():
-                    auth_response = requests.get(
-                        f"{normalized_url}/api/v1/drafts?limit=1",
-                        headers={"Authorization": f"Bearer {token.strip()}"},
-                        timeout=3,
-                    )
-                    if auth_response.status_code == 200:
-                        st.caption("token 校验通过。")
-                    else:
-                        st.warning(f"服务可达，但 token 校验未通过（HTTP {auth_response.status_code}）。")
-                else:
-                    st.info("尚未填写 token；只能检查公开健康状态，调用草稿接口时仍需要 token。")
-            except requests.exceptions.RequestException as exc:
-                st.error(f"无法连接本地 API：{exc}")
-            except ValueError:
-                st.error("API 返回的不是有效 JSON，请确认端口对应的是 MathCyclus 本地 API。")
-
-    start_script = Path(BASE_DIR) / "启动本地录题API.bat"
-    js_path = Path(BASE_DIR) / "api" / "question_bank_api.js"
-    docs_path = Path(BASE_DIR) / "docs" / "api" / "local_draft_api.md"
-    st.markdown("#### 启动与调用")
-    st.code("双击项目根目录：启动本地录题API.bat", language="text")
-    st.caption("保持 API 窗口运行，在窗口中复制本次 token，再回到上方检查连接。普通 ChatGPT 网页需要通过本地辅助网页或浏览器扩展调用 JS。")
-
-    download_col, docs_col = st.columns([1, 1], gap="small")
-    with download_col:
-        if js_path.is_file():
-            st.download_button(
-                "下载 JS 客户端",
-                data=js_path.read_bytes(),
-                file_name="question_bank_api.js",
-                mime="text/javascript",
-                key="local_api_download_js",
-                use_container_width=True,
-            )
-    with docs_col:
-        if docs_path.is_file():
-            st.download_button(
-                "下载 API 使用说明",
-                data=docs_path.read_text(encoding="utf-8"),
-                file_name="local_draft_api.md",
-                mime="text/markdown",
-                key="local_api_download_docs",
-                use_container_width=True,
-            )
-
-    with st.expander("当前 API 能做什么", expanded=False):
-        st.markdown(
-            """
-            - 创建批量或单题草稿
-            - 修改题干、选项、来源、TeX 和图片引用
-            - 运行字段校验、完全重复/高度相似查找和同卷位置冲突检查
-            - 查询正式题库和查看审核事件
-
-            **不会通过 API 完成批准或正式入库。**
             """
         )
 
@@ -21007,6 +20881,7 @@ def render_runtime_capability_tool():
             detail = parser.get("detail") or {}
             if detail:
                 st.json(detail)
+
 
 
 def page_tools():
@@ -21083,12 +20958,6 @@ def page_tools():
             st.session_state["tools_subpage"] = None
             st.rerun()
         render_asset_audit_tool()
-        return
-    if st.session_state.get("tools_subpage") == "local_api":
-        if st.button("⬅️ 返回工具箱", type="secondary"):
-            st.session_state["tools_subpage"] = None
-            st.rerun()
-        render_local_api_tool()
         return
     if st.session_state.get("tools_subpage") == "ai_data_factory":
         if st.button("⬅️ 返回工具箱", type="secondary"):
@@ -21291,12 +21160,14 @@ def page_tools():
             st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
-    capability_col, _ = st.columns([1, 3])
-    with capability_col:
+
+    # 第三行：四列，与前两行网格对齐
+    r3_c1, r3_c2, r3_c3, r3_c4 = st.columns([1, 1, 1, 1])
+    with r3_c2:
         st.markdown(
             """
             <div class="tool-card tool-card-four">
-                <div class="tool-title">🧪 9. 运行能力诊断</div>
+                <div class="tool-title">🧪 10. 运行能力诊断</div>
                 <div class="tool-desc">集中检查 MinerU 云端、PyMuPDF、Pillow、OpenCV 和本地 OCR，并显示当前自动回退边界。</div>
             </div>
             """,

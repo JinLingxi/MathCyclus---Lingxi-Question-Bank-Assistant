@@ -22,7 +22,6 @@
 | 试卷来源、题目关系、重复题 | [database-and-source-model.md](database-and-source-model.md)、[task-roadmap.md](task-roadmap.md) | 区分来源位置冲突、完全相同、相似和变式 |
 | TeX、答案、解析、图片引用 | [tex-and-assets.md](tex-and-assets.md) | 预览、花括号、choices、questionasset、TikZ |
 | 数据库、迁移、批量清洗 | [database-and-source-model.md](database-and-source-model.md)、[维护脚本目录](../planning/maintenance_script_catalog.md) | 备份、dry-run、审计、可回滚 |
-| 本地 API、GPT 辅助录题 | [question-entry-workflow.md](question-entry-workflow.md)、[Local Draft API](../api/local_draft_api.md) | API 只能生成草稿，不能绕过人工审核入库 |
 | GitHub 同步、部署、安装包 | [hard-rules.md](hard-rules.md)、[发布文件清单](../planning/release_file_checklist.md) | 私有数据隔离、白名单发布包、依赖检查 |
 | 后续功能规划 | [task-roadmap.md](task-roadmap.md)、[当前未完成事项](../planning/unfinished_tasks.md) | 不把历史规划误当成当前未完成项 |
 
