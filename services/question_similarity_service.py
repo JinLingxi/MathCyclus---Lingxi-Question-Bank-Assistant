@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from functools import lru_cache
 from collections import Counter
 from typing import Any
 
@@ -30,6 +31,45 @@ SENSITIVE_LATEX_COMMANDS = {
 }
 
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+_VARIABLE_RE = re.compile(r"[A-Za-z]+")
+_GREEK_COMMANDS = {
+    "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon", "theta", "vartheta",
+    "lambda", "mu", "nu", "xi", "pi", "varpi", "rho", "sigma", "tau", "phi",
+    "varphi", "psi", "omega",
+}
+_NON_VARIABLE_WORDS = {
+    "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan",
+    "sinh", "cosh", "tanh", "log", "lg", "ln", "lim", "max", "min", "exp",
+    "det", "dim", "mod", "sup", "inf", "arg", "ker", "deg", "cdot", "times",
+    "left", "right", "begin", "end", "text", "mathrm", "mathbf", "mathbb",
+    "frac", "dfrac", "tfrac", "sqrt", "overline", "underline", "boldsymbol",
+}
+_TEXT_COMMAND_RE = re.compile(r"\\(?:text|textrm|textsf|texttt|mbox|operatorname)\s*\{[^{}]*\}")
+_RELATION_RE = re.compile(
+    r"\\(?:leqslant|geqslant|notin|subseteq|supseteq|parallel|perp|neq|leq|geq|le|ge|ne|in|subset|supset)"
+    r"(?![A-Za-z])|<=|>=|!=|==|<|>|=|≤|≥|≠|≈|∈|∉|⊂|⊆|⊃|⊇|∥|⊥"
+)
+_RELATION_ALIASES = {
+    r"\le": "<=", r"\leq": "<=", r"\leqslant": "<=", "≤": "<=",
+    r"\ge": ">=", r"\geq": ">=", r"\geqslant": ">=", "≥": ">=",
+    r"\ne": "!=", r"\neq": "!=", "≠": "!=",
+    r"\in": "∈", "∈": "∈", r"\notin": "∉", "∉": "∉",
+    r"\subset": "⊂", "⊂": "⊂", r"\subseteq": "⊆", "⊆": "⊆",
+    r"\supset": "⊃", "⊃": "⊃", r"\supseteq": "⊇", "⊇": "⊇",
+    r"\parallel": "∥", "∥": "∥", r"\perp": "⊥", "⊥": "⊥",
+}
+_CONDITION_RE = re.compile(
+    r"\\(?:forall|exists|nexists)"
+    r"|有且仅有|对任意|不存在|不超过|不少于|不大于|不小于|"
+    r"至少(?:一个|一)?|至多(?:一个|一)?|任意|任一|所有|每个|存在"
+)
+_INTERVAL_MEMBERSHIP_RE = re.compile(
+    r"(?:\\in|∈)\s*([\[(])\s*([^,]+?)\s*,\s*([^\]\)]+?)\s*([\]\)])"
+)
+_CONDITION_ALIASES = {
+    r"\forall": "对任意", r"\exists": "存在", r"\nexists": "不存在",
+    "至少一": "至少", "至少一个": "至少", "至多一": "至多", "至多一个": "至多",
+}
 _COMMAND_RE = re.compile(r"\\([A-Za-z@]+)")
 _IMAGE_COMMAND_RE = re.compile(
     r"\\(?:includegraphics|questionasset|includeimage|asset)\s*"
@@ -112,6 +152,12 @@ def extract_similarity_payload(
         type_id = int(question_type_id) if question_type_id not in (None, "") else None
     except (TypeError, ValueError):
         type_id = None
+    cached = _prepared_payload(str(stem or ""), tuple(choice_values), type_id)
+    return {**cached, "choices": list(cached["choices"])}
+
+
+@lru_cache(maxsize=32768)
+def _prepared_payload(stem, choice_values, type_id):
     stem_norm, image_count = normalize_similarity_text(stem)
     full_raw = str(stem or "")
     if type_id in SIM_CHOICE_TYPES or choice_values:
@@ -129,8 +175,111 @@ def extract_similarity_payload(
     }
 
 
-def _bigrams(value: str) -> set[str]:
-    return {value[index:index + 2] for index in range(len(value) - 1)} if len(value) >= 2 else set()
+@lru_cache(maxsize=32768)
+def _exact_text_signature(value: str) -> str:
+    # Exact classification ignores only known presentation differences.
+    # Ranking normalization intentionally discards more information.
+    text = _COMMENT_RE.sub("", unicodedata.normalize("NFKC", value))
+    text = re.sub(r"\\(?:dfrac|tfrac)(?![A-Za-z])", lambda _: r"\frac", text)
+    text = re.sub(r"\\(?:left|right)(?![A-Za-z])", "", text)
+    return re.sub(r"\s+", "", text)
+
+
+def _choice_signature(values: list[str]) -> tuple[str, ...]:
+    return tuple(_exact_text_signature(value) for value in values)
+
+
+def _semantic_differences(left: dict[str, Any], right: dict[str, Any]) -> list[dict[str, Any]]:
+    """Explain high-value content changes without interpreting their math."""
+    differences: list[dict[str, Any]] = []
+    left_numbers = Counter(_NUMBER_RE.findall(left["stem_raw"]))
+    right_numbers = Counter(_NUMBER_RE.findall(right["stem_raw"]))
+    if left_numbers != right_numbers:
+        only_left = list((left_numbers - right_numbers).elements())
+        only_right = list((right_numbers - left_numbers).elements())
+        differences.append({"kind": "numbers", "left": only_left[:8], "right": only_right[:8]})
+
+    def symbols(pattern: re.Pattern[str], text: str, aliases: dict[str, str]) -> Counter[str]:
+        return Counter(aliases.get(match.group(0), match.group(0)) for match in pattern.finditer(text))
+
+    left_relations = symbols(_RELATION_RE, left["stem_raw"], _RELATION_ALIASES)
+    right_relations = symbols(_RELATION_RE, right["stem_raw"], _RELATION_ALIASES)
+    if left_relations != right_relations:
+        differences.append({
+            "kind": "relations",
+            "left": list((left_relations - right_relations).elements())[:8],
+            "right": list((right_relations - left_relations).elements())[:8],
+        })
+
+    left_conditions = symbols(_CONDITION_RE, left["stem_raw"], _CONDITION_ALIASES)
+    right_conditions = symbols(_CONDITION_RE, right["stem_raw"], _CONDITION_ALIASES)
+    if left_conditions != right_conditions:
+        differences.append({
+            "kind": "conditions",
+            "left": list((left_conditions - right_conditions).elements())[:6],
+            "right": list((right_conditions - left_conditions).elements())[:6],
+        })
+
+    def intervals(text: str) -> list[tuple[str, str, str, str]]:
+        result = []
+        for match in _INTERVAL_MEMBERSHIP_RE.finditer(text):
+            start, _ = normalize_similarity_text(match.group(2))
+            end, _ = normalize_similarity_text(match.group(3))
+            result.append((match.group(1), start, end, match.group(4)))
+        return result
+
+    left_intervals = intervals(left["stem_raw"])
+    right_intervals = intervals(right["stem_raw"])
+    if left_intervals != right_intervals:
+        differences.append({
+            "kind": "intervals", "left": [list(value) for value in left_intervals[:4]],
+            "right": [list(value) for value in right_intervals[:4]],
+        })
+
+    def variable_symbols(text: str) -> set[str]:
+        text = _TEXT_COMMAND_RE.sub(" ", text)
+        greek = []
+
+        def keep_greek(match: re.Match[str]) -> str:
+            command = match.group(1)
+            if command in _GREEK_COMMANDS:
+                greek.append(command)
+            return " "
+
+        text = _COMMAND_RE.sub(keep_greek, text)
+        symbols = {
+            token for token in _VARIABLE_RE.findall(text)
+            if token.lower() not in _NON_VARIABLE_WORDS and len(token) == 1
+        }
+        return symbols | set(greek)
+
+    left_variables = variable_symbols(left["stem_raw"])
+    right_variables = variable_symbols(right["stem_raw"])
+    if left_variables != right_variables:
+        differences.append({
+            "kind": "variables",
+            "left": sorted(left_variables - right_variables)[:8],
+            "right": sorted(right_variables - left_variables)[:8],
+        })
+    return differences
+
+
+def _difference_reasons(differences: list[dict[str, Any]]) -> list[str]:
+    labels = {
+        "numbers": "数字内容存在变化",
+        "variables": "变量符号集合存在变化",
+        "relations": "关系符号有变化",
+        "conditions": "条件词有变化",
+        "intervals": "区间端点或开闭边界有变化",
+        "image_count": "配图数量有变化",
+        "visual_pending": "配图像素尚未比较，需人工查看",
+    }
+    return list(dict.fromkeys(labels[item["kind"]] for item in differences if item.get("kind") in labels))
+
+
+@lru_cache(maxsize=65536)
+def _bigrams(value: str) -> frozenset[str]:
+    return frozenset(value[index:index + 2] for index in range(len(value) - 1))
 
 
 def _bigram_stats(left: str, right: str) -> tuple[int, float, float]:
@@ -270,17 +419,64 @@ def score_question_pair(
     """Score one pair using the shared GaokaoWeb-compatible rule set."""
     left = extract_similarity_payload(left_stem, left_choices, left_question_type_id)
     right = extract_similarity_payload(right_stem, right_choices, right_question_type_id)
-    exact = (
+    same_stem = (
         left["stem_norm"]
         and left["stem_norm"] == right["stem_norm"]
         and left["image_count"] == right["image_count"]
     )
-    if exact:
+    question_types_match = left["question_type_id"] == right["question_type_id"]
+    option_lists_match = _choice_signature(left["choices"]) == _choice_signature(right["choices"])
+    choice_question = (
+        left["question_type_id"] in SIM_CHOICE_TYPES
+        or right["question_type_id"] in SIM_CHOICE_TYPES
+        or bool(left["choices"])
+        or bool(right["choices"])
+    )
+    visual_evidence_pending = left["full_image_count"] > 0 or right["full_image_count"] > 0
+    choices_match = not choice_question or option_lists_match
+    if same_stem and choices_match and question_types_match and not visual_evidence_pending:
+        differences = _semantic_differences(left, right)
+        if not differences and _exact_text_signature(left["stem_raw"]) == _exact_text_signature(right["stem_raw"]):
+            return {
+                "score": 1.0, "base_score": 1.0, "channel": "完全相同", "kind": "exact",
+                "ratio": 1.0, "cover": 1.0, "numf": 1.0, "template_score": 1.0,
+                "bigram_jaccard": 1.0, "bigram_containment": 1.0,
+                "choice_mode": "stem", "reasons": ["题干归一化后完全一致"], "warnings": [],
+                "differences": [],
+            }
+    if same_stem:
+        differences = _semantic_differences(left, right)
+        reasons = []
+        warnings = []
+        if choice_question and not option_lists_match:
+            reasons.append("题干完全相同，但选择题选项内容或顺序不同")
+            changed_positions = [index + 1 for index, pair in enumerate(zip(
+                _choice_signature(left["choices"]), _choice_signature(right["choices"])
+            )) if pair[0] != pair[1]]
+            if len(left["choices"]) != len(right["choices"]):
+                changed_positions.extend(range(min(len(left["choices"]), len(right["choices"])) + 1,
+                                               max(len(left["choices"]), len(right["choices"])) + 1))
+            differences.append({"kind": "choices", "positions": changed_positions[:8]})
+            warnings.append("选择题选项差异会改变题意或正确选项，请人工对照")
+        if not question_types_match:
+            reasons.append("题干与内容相同，但题型标记不同")
+        if visual_evidence_pending:
+            reasons.append("题文相同但配图像素未参与比较")
+            if left["full_image_count"] != right["full_image_count"]:
+                differences.append({"kind": "image_count", "left": left["full_image_count"], "right": right["full_image_count"]})
+            else:
+                differences.append({"kind": "visual_pending"})
+            warnings.append("检测到配图占位；图片路径不代表图片内容相同，请人工查看配图")
+        reasons.extend(_difference_reasons(differences))
+        if not reasons:
+            reasons.append("题干相同，仍需人工核对元数据")
         return {
-            "score": 1.0, "base_score": 1.0, "channel": "完全相同", "kind": "exact",
-            "ratio": 1.0, "cover": 1.0, "numf": 1.0, "template_score": 1.0,
-            "bigram_jaccard": 1.0, "bigram_containment": 1.0,
-            "choice_mode": "stem", "reasons": ["题干归一化后完全一致"], "warnings": [],
+            "score": 1.0, "base_score": 1.0, "channel": "题干相同，需核对差异",
+            "kind": "similar", "ratio": 1.0, "cover": 1.0, "numf": 1.0,
+            "template_score": 1.0, "bigram_jaccard": 1.0, "bigram_containment": 1.0,
+            "choice_mode": "stem+choices", "reasons": reasons,
+            "warnings": warnings,
+            "differences": differences,
         }
     candidates: list[dict[str, Any]] = []
     stem_score = _mode_score(left["stem_norm"], right["stem_norm"], left["stem_raw"], right["stem_raw"])
@@ -308,11 +504,14 @@ def score_question_pair(
             "base_score": best["score"], "score": best["score"], "channel": channel,
             "kind": "similar", "reasons": [], "warnings": [],
         })
+        differences = _semantic_differences(left, right)
         if best["numf"] < 0.5:
             result["warnings"].append("数字不完全一致")
             result["reasons"].append("题型结构接近但数字存在差异")
         if best["template_score"] > best["ratio"] + 0.12:
             result["reasons"].append("去数字后的题型结构接近")
+        result["differences"] = differences
+        result["reasons"].extend(_difference_reasons(differences))
         if not result["reasons"]:
             result["reasons"].append("题干结构接近")
         return result
@@ -321,6 +520,7 @@ def score_question_pair(
         "ratio": 0.0, "cover": 0.0, "numf": None, "template_score": None,
         "bigram_jaccard": 0.0, "bigram_containment": 0.0,
         "choice_mode": "stem", "reasons": [],
+        "differences": [],
         "warnings": ["题目过短、长度差异过大或未通过双字预筛"],
     }
 

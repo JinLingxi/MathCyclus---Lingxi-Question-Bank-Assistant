@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from services.database_service import readonly_database_connection, resolve_database_path, row_to_dict
+from services.read_cache_service import cached_database_read
 
 
 _SEARCH_FIELDS = (
@@ -348,6 +349,7 @@ def count_questions(
         return int(conn.execute(sql, params).fetchone()[0])
 
 
+@cached_database_read(maxsize=128)
 def list_questions_page(
     db_path: str | None = None,
     filters: QuestionListFilters | None = None,
@@ -383,6 +385,7 @@ def list_questions_page(
     }
 
 
+@cached_database_read(maxsize=128)
 def list_question_filter_options(
     db_path: str | None = None,
     filters: QuestionListFilters | None = None,
@@ -544,7 +547,14 @@ def get_question(db_path: str | None, question_id: str) -> dict:
     """
     with readonly_database_connection(db_path) as conn:
         row = conn.execute(sql, (question_id,)).fetchone()
-    return row_to_dict(row)
+    result = row_to_dict(row)
+    if result and not result.get("paper_series"):
+        from services.book_service import list_question_book_links
+        links = list_question_book_links(db_path, question_id)
+        if links:
+            from services.export_service import _apply_source_context
+            result = _apply_source_context("book", result, links[0], links[0])
+    return result
 
 
 def list_question_assets(db_path: str | None, question_id: str) -> list[dict]:
@@ -582,15 +592,18 @@ def list_question_papers(db_path: str | None, question_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+@cached_database_read(maxsize=256)
 def get_question_bundle(db_path: str | None, question_id: str) -> dict:
     """Return one question with all source links and assets for future UI cards."""
     from services.book_service import list_question_book_links
     from services.topic_service import list_question_topic_links
+    from services.knowledge_service import list_question_knowledge_areas
 
     return {
         "question": get_question(db_path, question_id),
         "assets": list_question_assets(db_path, question_id),
         "paper_links": list_question_papers(db_path, question_id),
         "book_links": list_question_book_links(db_path, question_id),
+        "knowledge_areas": list_question_knowledge_areas(db_path, question_id),
         "topic_links": list_question_topic_links(db_path, question_id),
     }

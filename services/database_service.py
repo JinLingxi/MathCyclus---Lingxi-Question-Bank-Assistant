@@ -22,6 +22,19 @@ def resolve_database_path(path: str | os.PathLike[str] | None = None) -> str:
     return os.path.abspath(target)
 
 
+def database_change_token(path=None):
+    """Invalidate read caches for checkpointed data and uncheckpointed WAL writes."""
+    db_path = resolve_database_path(path)
+    result = []
+    for name in (db_path, db_path + '-wal'):
+        try:
+            info = os.stat(name)
+            result.append((info.st_mtime_ns, info.st_ctime_ns, info.st_size))
+        except FileNotFoundError:
+            result.append(None)
+    return tuple(result)
+
+
 def connect_database(path: str | os.PathLike[str] | None = None) -> sqlite3.Connection:
     """Open a SQLite connection with project defaults."""
     db_path = resolve_database_path(path)

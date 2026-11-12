@@ -7,6 +7,20 @@ from typing import Any
 
 from services.database_service import readonly_database_connection, row_to_dict
 
+BOOK_SECTION_DESCENDANTS_SQL = """
+    WITH RECURSIVE selected_sections(section_id) AS (
+        SELECT section_id FROM book_section WHERE section_id = ?
+        UNION
+        SELECT child.section_id FROM book_section child
+        JOIN selected_sections parent ON child.parent_section_id = parent.section_id
+    ) SELECT section_id FROM selected_sections
+"""
+BOOK_QUESTION_ORDER_SQL = """
+    COALESCE(beq.page_number, s.page_start, 2147483647),
+    CASE WHEN beq.page_number IS NULL AND s.page_start IS NULL THEN s.sort_order ELSE 0 END,
+    beq.display_order, beq.exercise_number, beq.sub_number, beq.book_exercise_question_id
+"""
+
 
 @dataclass(frozen=True)
 class BookListFilters:
@@ -115,19 +129,27 @@ def get_book(db_path: str | None, book_id: str) -> dict:
 def list_book_sections(db_path: str | None, book_id: str) -> list[dict]:
     """Return the section tree rows for one book."""
     sql = """
+        WITH RECURSIVE descendants(ancestor_id, section_id, book_id) AS (
+            SELECT section_id, section_id, book_id FROM book_section WHERE book_id = ?
+            UNION
+            SELECT d.ancestor_id, child.section_id, d.book_id
+            FROM descendants d JOIN book_section child
+              ON child.parent_section_id = d.section_id AND child.book_id = d.book_id
+        )
         SELECT
             s.*,
             parent.title AS parent_title,
             COUNT(beq.book_exercise_question_id) AS question_link_count
         FROM book_section s
         LEFT JOIN book_section parent ON parent.section_id = s.parent_section_id
-        LEFT JOIN book_exercise_question beq ON beq.section_id = s.section_id
+        LEFT JOIN descendants d ON d.ancestor_id = s.section_id
+        LEFT JOIN book_exercise_question beq ON beq.section_id = d.section_id
         WHERE s.book_id = ?
         GROUP BY s.section_id
         ORDER BY s.sort_order, s.page_start, s.title
     """
     with readonly_database_connection(db_path) as conn:
-        rows = conn.execute(sql, (book_id,)).fetchall()
+        rows = conn.execute(sql, (book_id, book_id)).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -144,7 +166,7 @@ def list_book_questions(
     clauses = ["beq.book_id = ?"]
     params: list[Any] = [book_id]
     if section_id:
-        clauses.append("beq.section_id = ?")
+        clauses.append(f"beq.section_id IN ({BOOK_SECTION_DESCENDANTS_SQL})")
         params.append(section_id)
     params.extend([safe_limit, safe_offset])
     sql = f"""
@@ -164,7 +186,7 @@ def list_book_questions(
         JOIN question q ON q.question_id = beq.question_id
         LEFT JOIN legacy_question_map l ON l.question_id = q.question_id
         WHERE {" AND ".join(clauses)}
-        ORDER BY s.sort_order, beq.display_order, beq.page_number, beq.exercise_number, beq.sub_number
+        ORDER BY {BOOK_QUESTION_ORDER_SQL}
         LIMIT ? OFFSET ?
     """
     with readonly_database_connection(db_path) as conn:
@@ -177,7 +199,7 @@ def count_book_questions(db_path: str | None, book_id: str, section_id: str = ""
     clauses = ["book_id = ?"]
     params: list[Any] = [book_id]
     if section_id:
-        clauses.append("section_id = ?")
+        clauses.append(f"section_id IN ({BOOK_SECTION_DESCENDANTS_SQL})")
         params.append(section_id)
     with readonly_database_connection(db_path) as conn:
         return int(

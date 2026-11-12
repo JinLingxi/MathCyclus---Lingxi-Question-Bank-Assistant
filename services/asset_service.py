@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import mimetypes
 import re
 import shutil
@@ -43,6 +44,29 @@ def file_hash(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def asset_file_hash_matches(path: str | Path, expected: str) -> tuple[bool, str]:
+    """Validate current SHA-256 and historical truncated/full SHA-1 records."""
+    value = str(expected or "").strip().lower()
+    if not value:
+        return True, "unrecorded"
+    try:
+        with Path(path).open("rb") as source:
+            sha1 = hashlib.sha1()
+            sha256 = hashlib.sha256()
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                sha1.update(chunk)
+                sha256.update(chunk)
+    except OSError:
+        return False, "file_unreadable"
+    if len(value) == 64:
+        return sha256.hexdigest() == value, "sha256"
+    if len(value) == 40:
+        return sha1.hexdigest() == value, "sha1"
+    if len(value) == 16:
+        return sha1.hexdigest()[:16] == value, "sha1_legacy_truncated"
+    return False, "unsupported_hash_format"
+
+
 def make_asset_id(question_id: str, role: str, source_path: str | Path) -> str:
     raw = f"{question_id}\u241f{role}\u241f{Path(source_path).name}\u241f{file_hash(source_path)}"
     return "A" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:14]
@@ -53,12 +77,22 @@ def question_asset_dir(question_id: str, asset_root: str | Path | None = None) -
     return root / question_id
 
 
+def _asset_extra(asset: dict) -> dict:
+    if isinstance(asset.get("extra"), dict):
+        return asset["extra"]
+    try:
+        value = json.loads(asset.get("extra_json") or "{}")
+        return value if isinstance(value, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
 def preferred_asset_alias(asset: dict) -> str:
     """Return the stable default alias used by \\questionasset placeholders."""
     explicit_alias = str(asset.get("alias") or "").strip()
     if explicit_alias:
         return explicit_alias
-    extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+    extra = _asset_extra(asset)
     explicit_alias = str(extra.get("alias") or "").strip()
     if explicit_alias:
         return explicit_alias
@@ -103,7 +137,7 @@ def asset_aliases(asset: dict) -> set[str]:
         str(asset.get("draft_asset_id") or ""),
         str(asset.get("caption") or "").strip(),
     }
-    extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+    extra = _asset_extra(asset)
     aliases.add(str(extra.get("alias") or "").strip())
     for field in ["file_path", "source_path", "planned_file_path", "original_file_name"]:
         value = str(asset.get(field) or "").strip()
@@ -169,7 +203,18 @@ def collect_asset_reference_issues(
     tex_fields: tuple[str, ...] = ("stem_tex", "answer_tex", "solution_tex", "canonical_tex", "normalized_tex"),
 ) -> dict[str, object]:
     """Check TeX image refs against registered formal or draft assets."""
-    tex = "\n".join(str(record.get(field) or "") for field in tex_fields)
+    choices = record.get("choices", record.get("choices_json", []))
+    if isinstance(choices, str):
+        try:
+            choices = json.loads(choices)
+        except (ValueError, TypeError):
+            choices = [choices]
+    if isinstance(choices, dict):
+        choices = list(choices.values())
+    if not isinstance(choices, (list, tuple)):
+        choices = []
+    tex = "\n".join([*(str(record.get(field) or "") for field in tex_fields),
+                       *(str(choice) for choice in choices)])
     include_refs = list(dict.fromkeys(find_includegraphics_refs(tex)))
     questionasset_refs = list(dict.fromkeys(find_questionasset_refs(tex)))
     asset_alias_map: dict[str, dict] = {}
@@ -193,6 +238,8 @@ def collect_asset_reference_issues(
     ]
 
     missing_asset_files = []
+    integrity_issues = []
+    source_reviews = []
     unreferenced_assets = []
     tikz_derived_assets = []
     for asset in assets:
@@ -205,7 +252,33 @@ def collect_asset_reference_issues(
                 }
             )
             continue
-        if not resolve_asset_record_path(asset, project_root=project_root):
+        resolved_asset = resolve_asset_record_path(asset, project_root=project_root)
+        extra = asset.get("extra")
+        if not isinstance(extra, dict):
+            try:
+                extra = json.loads(asset.get("extra_json") or "{}")
+            except (ValueError, TypeError):
+                extra = {}
+        if isinstance(extra, dict) and "source_review" in extra:
+            from services.source_review_service import validate_source_review
+
+            review = validate_source_review(resolved_asset or "", extra, project_root=project_root or PROJECT_ROOT)
+            source_reviews.append({"asset_id": asset.get("asset_id") or asset.get("draft_asset_id") or "", **review})
+            if review["status"] != "verified":
+                integrity_issues.append({"reason": "source_review_" + review["status"],
+                                         "detail": review})
+        if resolved_asset and asset.get("file_hash"):
+            try:
+                matches, algorithm = asset_file_hash_matches(resolved_asset, str(asset["file_hash"]))
+                if not matches:
+                    integrity_issues.append({
+                        "asset_id": asset.get("asset_id") or asset.get("draft_asset_id") or "",
+                        "path": str(resolved_asset), "reason": "file_hash_mismatch",
+                        "hash_algorithm": algorithm,
+                    })
+            except OSError:
+                integrity_issues.append({"path": str(resolved_asset), "reason": "file_unreadable"})
+        if not resolved_asset:
             missing_asset_files.append(
                 {
                     "asset_id": asset.get("asset_id") or asset.get("draft_asset_id") or "",
@@ -228,9 +301,11 @@ def collect_asset_reference_issues(
         "missing_includegraphics": missing_includegraphics,
         "unresolved_questionasset": unresolved_questionasset,
         "missing_asset_files": missing_asset_files,
+        "integrity_issues": integrity_issues,
+        "source_reviews": source_reviews,
         "unreferenced_assets": unreferenced_assets,
         "tikz_derived_assets": tikz_derived_assets,
-        "has_blockers": bool(missing_includegraphics or unresolved_questionasset or missing_asset_files),
+        "has_blockers": bool(missing_includegraphics or unresolved_questionasset or missing_asset_files or integrity_issues),
     }
 
 

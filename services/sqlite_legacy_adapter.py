@@ -246,6 +246,7 @@ def sqlite_summary_to_legacy_row(
         "答案": answer_tex,
         "解析": solution_tex,
         "SQLite题目ID": str(summary.get("question_id") or ""),
+        "题型ID": summary.get("question_type_id"),
     }
     for header in LEGACY_CSV_HEADERS:
         row.setdefault(header, "")
@@ -344,6 +345,7 @@ def list_sqlite_legacy_rows(
     filters: QuestionListFilters | None = None,
     *,
     max_rows: int | None = None,
+    include_similarity_metadata: bool = False,
 ) -> list[dict[str, str]]:
     """Return SQLite summaries shaped like old CSV rows.
 
@@ -354,10 +356,11 @@ def list_sqlite_legacy_rows(
     filters = filters or QuestionListFilters()
     type_labels = _question_type_map(db_path)
     if max_rows is None:
-        return [
+        rows = [
             sqlite_summary_to_legacy_row(summary, question_type_labels=type_labels)
             for summary in list_questions(db_path, filters)
         ]
+        return enrich_similarity_metadata(rows, db_path) if include_similarity_metadata else rows
 
     target = count_questions(db_path, filters) if max_rows <= 0 else min(max_rows, count_questions(db_path, filters))
     rows: list[dict[str, str]] = []
@@ -369,6 +372,35 @@ def list_sqlite_legacy_rows(
             break
         rows.extend(sqlite_summary_to_legacy_row(summary, question_type_labels=type_labels) for summary in summaries)
         offset += len(summaries)
+    return enrich_similarity_metadata(rows, db_path) if include_similarity_metadata else rows
+
+
+def enrich_similarity_metadata(rows: list[dict], db_path: str | None = None) -> list[dict]:
+    """Attach scoring-only metadata without changing vector inputs or content."""
+    by_id = {str(row.get("SQLite题目ID") or ""): row for row in rows}
+    ids = [qid for qid in by_id if qid]
+    for row in rows:
+        row["关联知识板块"] = []
+        row["配图数量"] = 0
+    with readonly_database_connection(db_path) as conn:
+        conn.execute("BEGIN")
+        for start in range(0, len(ids), 500):
+            batch = ids[start:start + 500]
+            placeholders = ",".join("?" for _ in batch)
+            for item in conn.execute(f"""
+                SELECT qka.question_id,ka.name FROM question_knowledge_area qka
+                JOIN knowledge_area ka ON ka.knowledge_area_id=qka.knowledge_area_id
+                WHERE qka.question_id IN ({placeholders})
+                ORDER BY qka.question_id,qka.is_primary DESC,ka.sort_order,ka.name
+            """, batch):
+                by_id[item[0]]["关联知识板块"].append(item[1])
+            for item in conn.execute(f"""
+                SELECT question_id,count(*) FROM question_asset
+                WHERE question_id IN ({placeholders})
+                  AND role NOT IN ('answer','solution','analysis')
+                GROUP BY question_id
+            """, batch):
+                by_id[item[0]]["配图数量"] = item[1]
     return rows
 
 

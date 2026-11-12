@@ -1,6 +1,6 @@
 # MathCyclus AI 工作规范入口
 
-> 当前版本：2026-09-24。本文档目录是给 AI、队友和自动化工具使用的“先读什么”入口，不替代代码和数据库 schema。
+> 入口复核：2026-11-06。本文档目录是给 AI、队友和自动化工具使用的“先读什么”入口，不替代代码和数据库 schema。
 > 规则冲突时，以当前代码、`db/schema.sql`、正式迁移文件和本目录的硬规则为准；历史日志只用于追溯，不作为现行规则。
 
 ## 使用方式
@@ -24,6 +24,8 @@
 | 数据库、迁移、批量清洗 | [database-and-source-model.md](database-and-source-model.md)、[维护脚本目录](../planning/maintenance_script_catalog.md) | 备份、dry-run、审计、可回滚 |
 | GitHub 同步、部署、安装包 | [hard-rules.md](hard-rules.md)、[发布文件清单](../planning/release_file_checklist.md) | 私有数据隔离、白名单发布包、依赖检查 |
 | 后续功能规划 | [task-roadmap.md](task-roadmap.md)、[当前未完成事项](../planning/unfinished_tasks.md) | 不把历史规划误当成当前未完成项 |
+| 草稿存储、Git 忽略、并行录题与整理状态 | [本地数据边界与状态复核](local-data-boundaries-and-status.md) | 核对实际路径、已跟踪文件、备份范围及当前未验证项 |
+| 智能组卷、候选池与试题篮 | [smart-exam-workflow.md](smart-exam-workflow.md) | 全库筛选、配额/缺口、手选保留、ID 预览与导出资源 |
 
 ## 可直接套用的任务模板
 
@@ -39,6 +41,7 @@
 - 题目 OCR/TeX 输出细则：[ocr_prompt.txt](../../ocr_prompt.txt)。
 - 当前数据库结构：[db/schema.sql](../../db/schema.sql) 与 [db/migrations](../../db/migrations)。
 - 当前任务状态：[unfinished_tasks.md](../planning/unfinished_tasks.md)。
+- 本地数据边界及本轮文档复核：[local-data-boundaries-and-status.md](local-data-boundaries-and-status.md)。
 - 历史实施过程：[docs/logs](../logs) 和 [数据库重构实施规划](../planning/题库数据库重构实施规划.md)。
 - 运行脚本边界：[maintenance_script_catalog.md](../planning/maintenance_script_catalog.md)。
 - 发布与私有数据边界：[release_file_checklist.md](../planning/release_file_checklist.md)。
@@ -48,3 +51,6 @@
 - API Key、个人路径、真实题库内容、PDF、题目图片和数据库数据。
 - 每次运行产生的报告、日志和临时任务文件。
 - 尚未确认的个人偏好，或只适用于某一次数据清洗的决定。
+## 年度真题专用规范
+
+- [2020–2025 真题录入规范化](2020-2025-真题录入规范化.md)：规定年度真题的 TeX、来源页、题图、草稿状态和全量规范化验收方式。

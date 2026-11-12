@@ -12,17 +12,15 @@ from typing import Any
 from services.choice_format_service import wrap_choice_item
 from services.database_service import readonly_database_connection, row_to_dict
 from services.question_db_service import QuestionListFilters, count_questions, get_question, list_questions
-from services.asset_service import list_assets
+from services.book_service import BOOK_SECTION_DESCENDANTS_SQL, BOOK_QUESTION_ORDER_SQL
+from services.asset_service import (
+    list_assets, INCLUDE_GRAPHICS_PATTERN, QUESTION_ASSET_PATTERN,
+    find_includegraphics_refs, find_questionasset_refs, asset_aliases,
+    resolve_graphics_ref as _resolve_graphics_ref,
+    resolve_asset_record_path,
+)
 
 
-INCLUDE_GRAPHICS_PATTERN = re.compile(
-    r"\\includegraphics(?:\[[^\]]*\])?\{(?P<path>[^{}]+)\}",
-    re.MULTILINE,
-)
-QUESTION_ASSET_PATTERN = re.compile(
-    r"\\questionasset\{(?P<alias>[^{}]+)\}",
-    re.MULTILINE,
-)
 INVALID_FILENAME_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 SOURCE_KIND_LABELS = {
     "paper": "试卷",
@@ -142,18 +140,26 @@ def source_export_default_filename(source_kind: str, source: dict) -> str:
 
 
 def _book_position_label(relation: dict) -> str:
-    bits = []
+    bits = [_text(relation.get("section_title"))]
     page_number = relation.get("page_number")
     if page_number not in (None, ""):
-        bits.append(f"p{page_number}")
-    for key in ("column_name", "exercise_number"):
-        value = _text(relation.get(key))
+        bits.append(f"P{page_number}")
+    try:
+        detail = json.loads(relation.get("source_note") or '{}')
+    except (ValueError, TypeError):
+        detail = {}
+    if not isinstance(detail, dict):
+        detail = {}
+    if detail.get("position_label"):
+        return _text(detail["position_label"])
+    for key in ("column_name", "group_name", "exercise_number"):
+        value = _text(relation.get(key) or detail.get(key))
         if value:
             bits.append(value)
     sub_number = _text(relation.get("sub_number"))
     if sub_number:
         bits.append(f"({sub_number})")
-    return " ".join(bits)
+    return "·".join(bit for bit in bits if bit)
 
 
 def _topic_position_label(relation: dict) -> str:
@@ -203,9 +209,9 @@ def _apply_source_context(source_kind: str, question: dict, source: dict, relati
             {
                 "detected_year": source.get("volume") or source.get("grade") or question.get("detected_year") or "",
                 "paper_series": "BK",
-                "detected_source": _book_source_label(source),
+                "detected_source": source.get("title") or "",
                 "detected_question_number": _book_position_label(relation),
-                "detected_topic": relation.get("section_title") or relation.get("column_name") or question.get("detected_topic") or "",
+                "detected_topic": question.get("detected_topic") or question.get("detected_chapter") or "",
             }
         )
     else:
@@ -267,32 +273,6 @@ def question_to_legacy_tex(question: dict) -> str:
     return "\n".join(parts)
 
 
-def find_includegraphics_refs(tex: str) -> list[str]:
-    """Return includegraphics paths referenced in TeX."""
-    return [match.group("path").strip() for match in INCLUDE_GRAPHICS_PATTERN.finditer(tex or "")]
-
-
-def find_questionasset_refs(tex: str) -> list[str]:
-    """Return questionasset aliases referenced in TeX."""
-    return [match.group("alias").strip() for match in QUESTION_ASSET_PATTERN.finditer(tex or "")]
-
-
-def asset_aliases(asset: dict) -> set[str]:
-    """Return aliases that can identify one asset in TeX placeholders."""
-    file_path = asset.get("file_path") or ""
-    original_name = asset.get("original_file_name") or ""
-    aliases = {
-        str(asset.get("asset_id") or ""),
-        str(asset.get("caption") or "").strip(),
-        Path(file_path).stem,
-        Path(file_path).name,
-    }
-    if original_name:
-        aliases.add(Path(original_name).stem)
-        aliases.add(Path(original_name).name)
-    return {alias for alias in aliases if alias}
-
-
 def find_asset_by_alias(assets: list[dict], alias: str) -> dict:
     """Find a question asset by asset_id, file stem, or file name."""
     for asset in assets:
@@ -303,34 +283,30 @@ def find_asset_by_alias(assets: list[dict], alias: str) -> dict:
 
 def resolve_graphics_ref(ref: str, source_file: str | None, project_root: str | Path) -> Path | None:
     """Resolve an includegraphics reference against common legacy locations."""
-    root = Path(project_root)
-    candidates: list[Path] = []
-    ref_path = Path(ref)
-    if ref_path.is_absolute():
-        candidates.append(ref_path)
-    else:
-        if source_file:
-            candidates.append((root / source_file).parent / ref)
-        candidates.append(root / ref)
-        candidates.append(root / "chapters" / ref)
-
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
+    return _resolve_graphics_ref(ref, source_file=source_file, project_root=project_root)
 
 
 def resolve_asset_path(asset: dict, project_root: str | Path) -> Path | None:
     """Resolve a question_asset file path."""
-    file_path = asset.get("file_path") or ""
-    if not file_path:
-        return None
-    path = Path(file_path)
-    candidates = [path] if path.is_absolute() else [Path(project_root) / path]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
+    # Formal exports intentionally resolve file_path only. A draft source or
+    # planned path must not silently replace a missing formal asset.
+    return resolve_asset_record_path(asset, project_root=project_root, path_fields=("file_path",))
+
+
+def _copy_export_figure(source: Path, directory: Path) -> Path:
+    """Preserve existing export filenames and -2/-3 collision suffixes."""
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / source.name
+    if target.exists() and target.resolve() != source.resolve():
+        index = 2
+        while True:
+            candidate = directory / f"{source.stem}-{index}{source.suffix}"
+            if not candidate.exists():
+                target = candidate
+                break
+            index += 1
+    shutil.copy2(source, target)
+    return target
 
 
 def collect_graphics_export_status(question: dict, project_root: str | Path) -> list[dict[str, str]]:
@@ -396,21 +372,7 @@ def copy_graphics_for_export(
             copied.append({"ref": ref, "status": "missing", "output_path": ""})
             return match.group(0)
 
-        figures_dir.mkdir(parents=True, exist_ok=True)
-        target_name = resolved.name
-        target = figures_dir / target_name
-        if target.exists() and target.resolve() != resolved.resolve():
-            stem = resolved.stem
-            suffix = resolved.suffix
-            index = 2
-            while True:
-                candidate = figures_dir / f"{stem}-{index}{suffix}"
-                if not candidate.exists():
-                    target = candidate
-                    break
-                index += 1
-
-        shutil.copy2(resolved, target)
+        target = _copy_export_figure(resolved, figures_dir)
         new_ref = f"{figures_dir_name}/{target.name}"
         copied.append({"ref": ref, "status": "copied", "output_path": new_ref})
         return match.group(0).replace(ref, new_ref)
@@ -442,19 +404,7 @@ def copy_questionassets_for_export(
             copied.append({"ref": alias, "type": "questionasset", "status": "missing", "output_path": ""})
             return match.group(0)
 
-        figures_dir.mkdir(parents=True, exist_ok=True)
-        target = figures_dir / resolved.name
-        if target.exists() and target.resolve() != resolved.resolve():
-            stem = resolved.stem
-            suffix = resolved.suffix
-            index = 2
-            while True:
-                candidate = figures_dir / f"{stem}-{index}{suffix}"
-                if not candidate.exists():
-                    target = candidate
-                    break
-                index += 1
-        shutil.copy2(resolved, target)
+        target = _copy_export_figure(resolved, figures_dir)
         new_ref = f"{figures_dir_name}/{target.name}"
         copied.append(
             {
@@ -598,7 +548,7 @@ def _list_source_export_relations(
         clauses = ["beq.book_id = ?"]
         params: list[Any] = [source_id]
         if section_id:
-            clauses.append("beq.section_id = ?")
+            clauses.append(f"beq.section_id IN ({BOOK_SECTION_DESCENDANTS_SQL})")
             params.append(section_id)
         rows = conn.execute(
             f"""
@@ -609,7 +559,7 @@ def _list_source_export_relations(
             FROM book_exercise_question beq
             LEFT JOIN book_section s ON s.section_id = beq.section_id
             WHERE {" AND ".join(clauses)}
-            ORDER BY s.sort_order, beq.display_order, beq.page_number, beq.exercise_number, beq.sub_number, beq.question_id
+            ORDER BY {BOOK_QUESTION_ORDER_SQL}
             """,
             params,
         ).fetchall()

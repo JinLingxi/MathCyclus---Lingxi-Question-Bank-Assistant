@@ -95,6 +95,17 @@ def main() -> None:
                 created_at=yesterday,
                 updated_at=now,
             )
+            conn.execute(
+                "INSERT INTO knowledge_area(knowledge_area_id, name) VALUES (?, ?), (?, ?)",
+                ("KAF", "函数", "KAD", "导数"),
+            )
+            conn.execute(
+                """
+                INSERT INTO question_knowledge_area(question_id, knowledge_area_id, is_primary)
+                VALUES (?, ?, ?), (?, ?, ?)
+                """,
+                ("QSTATS001", "KAF", 1, "QSTATS001", "KAD", 0),
+            )
             insert_question(
                 conn,
                 question_id="QSTATSWK",
@@ -208,6 +219,7 @@ def main() -> None:
         assert_equal("difficulty_dist", stats["difficulty_dist"], {"0-2星 (基础)": 1, "5-6星 (压轴)": 1})
         assert_equal("tag_counts", stats["tag_counts"], {"函数": 1, "周期": 1, "导数": 1})
         assert_equal("subject_counts", stats["subject_counts"], {"函数": 1, "导数": 1})
+        assert_equal("subject_coverage_counts", stats["subject_coverage_counts"], {"函数": 1, "导数": 2})
         assert_equal("type_counts", stats["type_counts"], {"单选题": 1, "解答题": 1})
         assert_equal("paper_relation_count", stats["paper_relation_count"], 2)
         assert_equal("paper_linked_questions", stats["paper_linked_questions"], 2)

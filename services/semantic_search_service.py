@@ -1,8 +1,7 @@
 """Optional semantic search backed by an OpenAI-compatible embeddings endpoint.
 
-The CSV index remains the source of truth.  This module stores only a rebuildable
-derived index, so keyword search continues to work when embeddings are disabled
-or the embedding service is unavailable.
+SQLite is the source of truth for formal questions. Legacy CSV callers remain
+supported. This module stores only a rebuildable derived index.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from typing import Callable, Iterable
 
 from utils.core_config import BASE_DIR
 from services.question_similarity_service import SIM_MAIN_THRESHOLD, score_question_pair
+from services.formula_similarity_service import compare_formula_texts
 
 
 SEMANTIC_INDEX_PATH = os.path.join(BASE_DIR, "utils", "semantic_index.sqlite3")
@@ -37,6 +37,55 @@ SIMILARITY_WEIGHTS = {
     "knowledge": 0.04,
     "question_type": 0.03,
 }
+VERIFICATION_WEIGHTS = {
+    "gaokao_text": 0.65, "semantic": 0.10, "formula": 0.12,
+    "lexical": 0.08, "knowledge": 0.03, "question_type": 0.02,
+}
+SIMILARITY_MODES = {"recommendation": "同类题推荐", "verification": "同题／变式核对"}
+
+
+def _mode_weights(mode: str) -> dict:
+    if mode not in SIMILARITY_MODES:
+        raise ValueError("Unknown similarity mode")
+    return VERIFICATION_WEIGHTS if mode == "verification" else SIMILARITY_WEIGHTS
+
+
+def _comparison_details(left: dict, right: dict, gaokao: dict, semantic_score) -> dict:
+    labels = {
+        "numbers": "数字或参数不同", "variables": "变量符号不同",
+        "relations": "关系符号不同", "conditions": "条件词不同",
+        "intervals": "区间端点或开闭边界不同", "choices": "选项内容或顺序不同",
+        "image_count": "配图数量不同", "visual_pending": "配图内容尚未比较",
+    }
+    notes = []
+    for item in gaokao.get("differences") or []:
+        label = labels.get(item.get("kind"))
+        if label:
+            if item.get("kind") in {"numbers", "relations", "conditions", "variables"}:
+                label += f"：基准题 {', '.join(map(str, item.get('left') or [])) or '无'}；候选题 {', '.join(map(str, item.get('right') or [])) or '无'}"
+            notes.append(label)
+    if str(left.get("选项") or "").strip() != str(right.get("选项") or "").strip():
+        notes.append("选项内容或顺序不同")
+    left_type = left.get("题型ID") or left.get("question_type_id")
+    right_type = right.get("题型ID") or right.get("question_type_id")
+    if left_type is not None and right_type is not None and left_type != right_type:
+        notes.append(f"题型不同：{left.get('题型') or left_type} / {right.get('题型') or right_type}")
+    visual_pending = (bool(left.get("配图数量") or right.get("配图数量"))
+                      or left.get("包含TikZ绘图") == "是" or right.get("包含TikZ绘图") == "是"
+                      or any(item.get("kind") in {"visual_pending", "image_count"}
+                             for item in gaokao.get("differences") or []))
+    if visual_pending:
+        notes.append("配图内容尚未比较")
+    checked = ["题干与选项"]
+    unavailable = []
+    (checked if semantic_score is not None else unavailable).append(
+        "语义向量" if semantic_score is not None else "语义向量未参与")
+    if visual_pending:
+        unavailable.append("配图未比较，需人工查看")
+    if left_type is None or right_type is None:
+        unavailable.append("题型 ID 不完整")
+    return {"differences": list(dict.fromkeys(notes)), "checked": checked,
+            "unavailable": unavailable, "visual_pending": visual_pending}
 
 
 class SemanticSearchError(RuntimeError):
@@ -50,7 +99,7 @@ def _clear_query_cache() -> None:
 def _rows_cache_token(rows: list[dict]) -> str:
     payload = sorted(
         (
-            str(row.get("鐩稿鏂囦欢璺緞") or "").strip().replace("/", "\\"),
+            index_key(row),
             row_fingerprint(row),
         )
         for row in rows
@@ -127,11 +176,57 @@ def embedding_text(row: dict) -> str:
 
 
 def row_fingerprint(row: dict) -> str:
+    if str(row.get("SQLite题目ID") or "").strip():
+        return hashlib.sha256(embedding_text(row).encode("utf-8")).hexdigest()
     payload = {
         key: str(row.get(key, "") or "").strip()
         for key in ("文件名称", "相对文件路径", "知识板块", "题型", "标签", "题干", "选项")
     }
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def index_key(row: dict) -> str:
+    question_id = str(row.get("SQLite题目ID") or "").strip()
+    return f"sqlite://{question_id}" if question_id else _normalized_index_path(row.get("相对文件路径"))
+
+
+def load_sqlite_index_rows(db_path: str | None = None) -> list[dict]:
+    """Read the entire formal bank in one consistent, read-only snapshot."""
+    from services.database_service import readonly_database_connection
+    from services.sqlite_legacy_adapter import sqlite_summary_to_legacy_row
+    with readonly_database_connection(db_path) as conn:
+        conn.execute("BEGIN")
+        labels = {row[0]: row[1] for row in conn.execute("SELECT question_type_id,name FROM question_type")}
+        summaries = conn.execute("""
+            SELECT q.question_id,q.legacy_id,q.question_type_id,q.stem_tex,q.choices_json,
+                   q.tags_json,l.legacy_file_path,l.detected_chapter,l.detected_topic
+            FROM question q LEFT JOIN legacy_question_map l ON l.question_id=q.question_id
+            ORDER BY q.question_id
+        """).fetchall()
+        return [sqlite_summary_to_legacy_row(dict(row), question_type_labels=labels) for row in summaries]
+
+
+def coverage_status(rows: list[dict], model_name: str, *, sync_pending: bool = False) -> dict:
+    """Derive missing/changed work from current content, including bulk imports."""
+    valid = {index_key(row): row for row in rows if index_key(row) and embedding_text(row).strip()}
+    stored = {}
+    if os.path.exists(SEMANTIC_INDEX_PATH) or sync_pending:
+        with closing(_connect()) as conn:
+            stored = dict(conn.execute(
+                "SELECT relative_path,fingerprint FROM semantic_embeddings WHERE model_name=?",
+                (model_name.strip(),)))
+            pending = {key for key, row in valid.items() if stored.get(key) != row_fingerprint(row)}
+            if sync_pending:
+                # This is a derived queue; no cross-database writes in an import transaction.
+                conn.execute("DELETE FROM semantic_pending")
+                conn.executemany(
+                    "INSERT INTO semantic_pending(relative_path,reason,requested_at) VALUES (?,'source_changed',?)",
+                    [(key, time.time()) for key in sorted(pending)])
+                conn.commit()
+    else:
+        pending = set(valid)
+    return {"total": len(valid), "covered": len(valid)-len(pending), "pending": len(pending),
+            "unindexable": len(rows)-len(valid)}
 
 
 def _pack_vector(vector: Iterable[float]) -> tuple[bytes, int]:
@@ -238,7 +333,9 @@ def build_index(
     if not model_name.strip():
         raise SemanticSearchError("请先在 API 设置中填写 embedding 模型名")
 
-    valid_rows = [row for row in rows if (row.get("相对文件路径") or "").strip() and embedding_text(row).strip()]
+    model_name = model_name.strip()
+    valid_rows = list({index_key(row): row for row in rows
+                       if index_key(row) and embedding_text(row).strip()}.values())
     _clear_query_cache()
     with closing(_connect()) as conn:
         existing = {} if force else _existing_fingerprints(conn, model_name)
@@ -246,21 +343,13 @@ def build_index(
         if len(existing_dimensions) > 1:
             raise SemanticSearchError("语义索引中的向量维度不一致，请强制重建索引")
         expected_dimensions = next(iter(existing_dimensions), None)
-        current_paths = {row["相对文件路径"].strip() for row in valid_rows}
-        if current_paths:
-            placeholders = ",".join("?" for _ in current_paths)
-            conn.execute(
-                f"DELETE FROM semantic_embeddings WHERE relative_path NOT IN ({placeholders})",
-                tuple(current_paths),
-            )
-        else:
-            conn.execute("DELETE FROM semantic_embeddings")
+        current_paths = {index_key(row) for row in valid_rows}
 
         pending = [
             row for row in valid_rows
             if force
-            or row["相对文件路径"].strip() not in existing
-            or existing[row["相对文件路径"].strip()][0] != row_fingerprint(row)
+            or index_key(row) not in existing
+            or existing[index_key(row)][0] != row_fingerprint(row)
         ]
         total = len(pending)
         if progress:
@@ -275,7 +364,7 @@ def build_index(
                     expected_dimensions = dimensions
                 elif dimensions != expected_dimensions:
                     raise SemanticSearchError("embedding 返回的向量维度不一致，请强制重建索引")
-                relative_path = row["相对文件路径"].strip()
+                relative_path = index_key(row)
                 conn.execute(
                     """
                     INSERT INTO semantic_embeddings
@@ -289,17 +378,27 @@ def build_index(
                         vector = excluded.vector,
                         updated_at = excluded.updated_at
                     """,
-                    (relative_path, str(row.get("题目ID", "") or ""), row_fingerprint(row), model_name, dimensions, blob, now),
+                    (relative_path, str(row.get("SQLite题目ID") or row.get("题目ID") or ""), row_fingerprint(row), model_name, dimensions, blob, now),
                 )
+                conn.execute("DELETE FROM semantic_pending WHERE relative_path=?", (relative_path,))
+            # Release the SQLite write lock before the next network request.
+            conn.commit()
+            _clear_query_cache()
             if progress:
                 progress(min(offset + len(batch), total), total)
+        # Avoid a variable-count limit for large banks. Retire old entries only
+        # after a complete pass, so a failed first request preserves the old index.
+        conn.execute("CREATE TEMP TABLE desired_semantic_paths(path TEXT PRIMARY KEY)")
+        conn.executemany("INSERT INTO desired_semantic_paths VALUES (?)", [(path,) for path in current_paths])
+        removed = conn.execute("""DELETE FROM semantic_embeddings
+            WHERE NOT EXISTS (SELECT 1 FROM desired_semantic_paths d WHERE d.path=relative_path)""").rowcount
         conn.execute("DELETE FROM semantic_pending")
         conn.execute(
             "INSERT INTO semantic_meta(key, value) VALUES('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (str(SEMANTIC_INDEX_VERSION),),
         )
         conn.commit()
-        return {"total": len(valid_rows), "updated": total, "removed": max(0, len(existing) - len(current_paths))}
+        return {"total": len(valid_rows), "updated": total, "removed": removed}
 
 
 def invalidate_path(relative_path: str) -> None:
@@ -321,13 +420,11 @@ def refresh_pending(rows: list[dict], base_url: str, api_key: str, model_name: s
     """Refresh invalidated rows without rebuilding the complete index."""
     if not rows or not model_name.strip():
         return {"pending": 0, "updated": 0, "missing": 0}
-    row_by_path = {
-        str(row.get("相对文件路径") or "").strip().replace("/", "\\"): row
-        for row in rows
-        if str(row.get("相对文件路径") or "").strip()
-    }
+    row_by_path = {index_key(row): row for row in rows if index_key(row)}
     with closing(_connect()) as conn:
         pending_paths = [item[0] for item in conn.execute("SELECT relative_path FROM semantic_pending ORDER BY requested_at")]
+    sqlite_scope = any(row.get("SQLite题目ID") for row in rows)
+    pending_paths = [path for path in pending_paths if path.startswith("sqlite://") == sqlite_scope]
     missing_paths = [path for path in pending_paths if path not in row_by_path]
     if missing_paths:
         with closing(_connect()) as conn:
@@ -346,7 +443,7 @@ def refresh_pending(rows: list[dict], base_url: str, api_key: str, model_name: s
             now = time.time()
             for row, vector in zip(batch, vectors):
                 blob, dimensions = _pack_vector(vector)
-                relative_path = str(row.get("相对文件路径") or "").strip().replace("/", "\\")
+                relative_path = index_key(row)
                 conn.execute(
                     """
                     INSERT INTO semantic_embeddings
@@ -360,7 +457,7 @@ def refresh_pending(rows: list[dict], base_url: str, api_key: str, model_name: s
                         vector = excluded.vector,
                         updated_at = excluded.updated_at
                     """,
-                    (relative_path, str(row.get("题目ID", "") or ""), row_fingerprint(row), model_name, dimensions, blob, now),
+                    (relative_path, str(row.get("SQLite题目ID") or row.get("题目ID") or ""), row_fingerprint(row), model_name, dimensions, blob, now),
                 )
                 conn.execute("DELETE FROM semantic_pending WHERE relative_path = ?", (relative_path,))
                 updated += 1
@@ -405,14 +502,17 @@ def search(
             raise SemanticSearchError("语义索引包含多个 embedding 模型，请重建索引")
         if model_name.strip() != indexed_models[0]:
             raise SemanticSearchError("当前 embedding 模型与索引不一致，请重建索引")
-        stored = conn.execute("SELECT relative_path, dimensions, vector FROM semantic_embeddings").fetchall()
+        stored = conn.execute("SELECT relative_path, dimensions, vector, fingerprint FROM semantic_embeddings").fetchall()
     vectors = request_embeddings(base_url, api_key, model_name, [query.strip()])
     query_vector = vectors[0]
     query_norm = math.sqrt(sum(value * value for value in query_vector)) or 1.0
-    row_by_path = {(row.get("相对文件路径") or "").replace("/", "\\"): row for row in rows}
-    for relative_path, dimensions, blob in stored:
-        row = row_by_path.get(relative_path.replace("/", "\\"))
+    row_by_path = {key: row for row in rows
+                   for key in (index_key(row), _normalized_index_path(row.get("相对文件路径"))) if key}
+    for relative_path, dimensions, blob, fingerprint in stored:
+        row = row_by_path.get(relative_path) or row_by_path.get(_normalized_index_path(relative_path))
         if not row:
+            continue
+        if row_fingerprint(row) != fingerprint:
             continue
         if len(query_vector) != dimensions:
             raise SemanticSearchError("查询向量与语义索引维度不一致，请重建索引")
@@ -507,8 +607,11 @@ def combined_similarity_score(
     reference_row: dict,
     candidate_row: dict,
     semantic_score: float | None,
+    *,
+    mode: str = "recommendation",
 ) -> dict:
     """Combine GaokaoWeb text scoring with embedding and local signals."""
+    weights = _mode_weights(mode)
     reference_text = _row_similarity_text(reference_row)
     candidate_text = _row_similarity_text(candidate_row)
     gaokao = score_question_pair(
@@ -520,21 +623,26 @@ def combined_similarity_score(
         right_question_type_id=candidate_row.get("题型ID") or candidate_row.get("question_type_id"),
         allow_sub=True,
     )
+    formula = compare_formula_texts(reference_text, candidate_text)
+    formula_score = (formula[mode + "_score"] if formula["complete"] else
+                     _set_similarity(_formula_features(reference_text), _formula_features(candidate_text)))
     components = {
         "gaokao_text": gaokao.get("score"),
         "semantic": None if semantic_score is None else max(0.0, min(1.0, float(semantic_score))),
-        "formula": _set_similarity(_formula_features(reference_text), _formula_features(candidate_text)),
+        "formula": formula_score,
         "lexical": _lexical_similarity(reference_text, candidate_text),
-        "knowledge": _metadata_similarity(reference_row.get("知识板块"), candidate_row.get("知识板块")),
+        "knowledge": (_set_similarity(set(reference_row["关联知识板块"]), set(candidate_row["关联知识板块"]))
+                      if reference_row.get("关联知识板块") and candidate_row.get("关联知识板块")
+                      else _metadata_similarity(reference_row.get("知识板块"), candidate_row.get("知识板块"))),
         "question_type": _metadata_similarity(reference_row.get("题型"), candidate_row.get("题型")),
     }
     available_weight = sum(
-        SIMILARITY_WEIGHTS[name]
+        weights[name]
         for name, value in components.items()
         if value is not None
     )
     score = sum(
-        SIMILARITY_WEIGHTS[name] * value
+        weights[name] * value
         for name, value in components.items()
         if value is not None
     ) / (available_weight or 1.0)
@@ -551,10 +659,22 @@ def combined_similarity_score(
     if components["lexical"] is not None and components["lexical"] >= 0.28:
         reasons.append("题干表述接近")
     if not reasons:
-        reasons.append("语义接近")
+        reasons.append("语义向量参与排序" if semantic_score is not None else "按本地可用特征排序")
+    comparison = _comparison_details(reference_row, candidate_row, gaokao, semantic_score)
+    comparison["formula"] = formula
+    comparison["differences"].extend(formula["differences"])
+    if formula["complete"]:
+        comparison["checked"].append("公式结构")
+    if formula["complete"] and formula["exact"]:
+        reasons.append("公式表达式一致（不含等价变形推导）")
+    if not formula["complete"] and (formula["left_count"] or formula["right_count"]):
+        comparison["unavailable"].append("部分公式未完成结构解析，使用基础符号比较")
+    if gaokao.get("kind") == "exact" and comparison["visual_pending"]:
+        gaokao = {**gaokao, "kind": "similar", "channel": "题文一致，配图待核对",
+                  "warnings": [*(gaokao.get("warnings") or []), "配图内容尚未比较"]}
     gaokao_score = gaokao.get("score")
     relationship_kind = None
-    if gaokao.get("kind") == "exact":
+    if gaokao.get("kind") == "exact" and not comparison["visual_pending"]:
         relationship_kind = "same_question"
     elif gaokao_score is not None and float(gaokao_score) >= SIM_MAIN_THRESHOLD:
         relationship_kind = "similar_question"
@@ -568,6 +688,10 @@ def combined_similarity_score(
         "relationship_score": 1.0 if relationship_kind == "same_question" else gaokao_score,
         "components": components,
         "reason": " · ".join(reasons),
+        "comparison": comparison,
+        "mode": mode,
+        "effective_weights": {name: weights[name] / (available_weight or 1.0)
+                              for name, value in components.items() if value is not None},
     }
 
 
@@ -576,29 +700,32 @@ def search_similar_row(
     rows: list[dict],
     model_name: str,
     top_k: int = 200,
+    *,
+    mode: str = "recommendation",
 ) -> list[dict]:
     """Rank rows with embeddings when available and always keep a local fallback."""
+    _mode_weights(mode)
     if not rows:
         return []
     reference_id = str(reference_row.get("SQLite题目ID") or reference_row.get("题目ID") or "").strip()
-    reference_path = _normalized_index_path(reference_row.get("相对文件路径"))
+    reference_path = index_key(reference_row)
     if not model_name.strip() or not os.path.exists(SEMANTIC_INDEX_PATH):
-        return _rank_local_similarity(reference_row, rows, reference_id, reference_path, top_k)
+        return _rank_local_similarity(reference_row, rows, reference_id, reference_path, top_k, mode=mode)
 
     with closing(_connect()) as conn:
         indexed_models = [row[0] for row in conn.execute(
             "SELECT DISTINCT model_name FROM semantic_embeddings"
         ).fetchall()]
         if not indexed_models or len(indexed_models) != 1 or indexed_models[0] != model_name.strip():
-            return _rank_local_similarity(reference_row, rows, reference_id, reference_path, top_k)
+            return _rank_local_similarity(reference_row, rows, reference_id, reference_path, top_k, mode=mode)
         stored = conn.execute(
-            "SELECT relative_path, question_id, dimensions, vector FROM semantic_embeddings"
+            "SELECT relative_path, question_id, dimensions, vector, fingerprint FROM semantic_embeddings"
         ).fetchall()
 
     vectors_by_path = {}
     vectors_by_id = {}
-    for path, question_id, dimensions, blob in stored:
-        entry = (int(dimensions), blob)
+    for path, question_id, dimensions, blob, fingerprint in stored:
+        entry = (int(dimensions), blob, fingerprint)
         normalized_path = _normalized_index_path(path)
         if normalized_path:
             vectors_by_path[normalized_path] = entry
@@ -610,8 +737,8 @@ def search_similar_row(
     reference_dimensions = None
     reference_vector = None
     reference_norm = 1.0
-    if reference_entry:
-        reference_dimensions, reference_blob = reference_entry
+    if reference_entry and reference_entry[2] == row_fingerprint(reference_row):
+        reference_dimensions, reference_blob, _ = reference_entry
         reference_vector = _unpack_vector(reference_blob, reference_dimensions)
         reference_norm = math.sqrt(sum(value * value for value in reference_vector)) or 1.0
 
@@ -619,7 +746,7 @@ def search_similar_row(
     seen_keys = set()
     for row in rows:
         row_id = str(row.get("SQLite题目ID") or row.get("题目ID") or "").strip()
-        row_path = _normalized_index_path(row.get("相对文件路径"))
+        row_path = index_key(row)
         if (reference_id and row_id == reference_id) or (reference_path and row_path == reference_path):
             continue
         entry = vectors_by_id.get(row_id) or vectors_by_path.get(row_path)
@@ -628,13 +755,13 @@ def search_similar_row(
             continue
         seen_keys.add(unique_key)
         semantic_score = None
-        if entry and reference_vector:
-            dimensions, blob = entry
+        if entry and reference_vector and entry[2] == row_fingerprint(row):
+            dimensions, blob, _ = entry
             if dimensions == reference_dimensions:
                 vector = _unpack_vector(blob, dimensions)
                 denominator = reference_norm * (math.sqrt(sum(value * value for value in vector)) or 1.0)
                 semantic_score = sum(left * right for left, right in zip(reference_vector, vector)) / denominator
-        ranking = combined_similarity_score(reference_row, row, semantic_score)
+        ranking = combined_similarity_score(reference_row, row, semantic_score, mode=mode)
         scored.append({
             "row": row,
             "score": ranking["score"],
@@ -646,9 +773,12 @@ def search_similar_row(
             "relationship_score": ranking.get("relationship_score"),
             "components": ranking["components"],
             "reason": ranking["reason"],
+            "comparison": ranking["comparison"],
+            "mode": mode,
+            "effective_weights": ranking["effective_weights"],
             "path": row.get("相对文件路径", ""),
         })
-    scored.sort(key=lambda item: item["score"], reverse=True)
+    _sort_similarity_results(scored, mode)
     return scored[: max(1, int(top_k))]
 
 
@@ -658,15 +788,17 @@ def _rank_local_similarity(
     reference_id: str,
     reference_path: str,
     top_k: int,
+    *,
+    mode: str = "recommendation",
 ) -> list[dict]:
     """Use the shared text rule when embedding configuration is unavailable."""
     scored = []
     for index, row in enumerate(rows):
         row_id = str(row.get("SQLite题目ID") or row.get("题目ID") or "").strip()
-        row_path = _normalized_index_path(row.get("相对文件路径"))
+        row_path = index_key(row)
         if (reference_id and row_id == reference_id) or (reference_path and row_path == reference_path):
             continue
-        ranking = combined_similarity_score(reference_row, row, None)
+        ranking = combined_similarity_score(reference_row, row, None, mode=mode)
         scored.append({
             "row": row,
             "score": ranking["score"],
@@ -678,8 +810,20 @@ def _rank_local_similarity(
             "relationship_score": ranking.get("relationship_score"),
             "components": ranking["components"],
             "reason": ranking["reason"],
+            "comparison": ranking["comparison"],
+            "mode": mode,
+            "effective_weights": ranking["effective_weights"],
             "path": row.get("相对文件路径", ""),
             "_index": index,
         })
-    scored.sort(key=lambda item: (-item["score"], item.get("_index", 0)))
+    _sort_similarity_results(scored, mode)
     return scored[: max(1, int(top_k))]
+
+
+def _sort_similarity_results(scored: list[dict], mode: str) -> None:
+    def key(item):
+        if mode == "verification":
+            group = {"same_question": 2, "similar_question": 1}.get(item.get("relationship_kind"), 0)
+            return (group, float(item.get("gaokao_score") or 0), item["score"])
+        return (item["score"],)
+    scored.sort(key=key, reverse=True)

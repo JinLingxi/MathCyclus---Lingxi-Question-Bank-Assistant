@@ -1,0 +1,73 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{mathcyclus-handout}[2026/11/03 Optional handout and training styles]
+\newif\ifMCmonochrome
+\newif\ifMCtraining
+\DeclareOption{monochrome}{\MCmonochrometrue}
+\DeclareOption{training}{\MCtrainingtrue}
+\ProcessOptions\relax
+\RequirePackage{amsmath,amssymb,graphicx,enumitem,xparse,etoolbox}
+% Textbook item markers use the CJK font rather than Latin Modern.
+\ifdefined\xeCJKDeclareCharClass
+  \xeCJKDeclareCharClass{CJK}{"2460->"2473}
+\fi
+\RequirePackage[export]{adjustbox}
+\let\MCOriginalIncludeGraphics\includegraphics
+\RenewDocumentCommand{\includegraphics}{s O{} m}{%
+  \adjustbox{max width=\linewidth,max height=0.85\textheight}{%
+    \IfBooleanTF{#1}{\MCOriginalIncludeGraphics*[#2]{#3}}{\MCOriginalIncludeGraphics[#2]{#3}}%
+  }%
+}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{geometry}
+\geometry{a4paper,margin=22mm,headheight=15pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+% Give mixed CJK prose and unbreakable inline formulae a second line-breaking pass.
+\setlength{\emergencystretch}{2em}
+\tolerance=9999
+\definecolor{MCaccent}{HTML}{345F70}
+\definecolor{MCwarn}{HTML}{8A4B32}
+\ifMCmonochrome
+  \colorlet{MCaccent}{black!75}
+  \colorlet{MCwarn}{black!75}
+\fi
+% Semantic environments are independent of any future icon package.
+% Lucide is deliberately not loaded until its actual API can be verified.
+\tcbset{mcbox/.style={enhanced,breakable,sharp corners,boxrule=0pt,
+  leftrule=1.2pt,colback=MCaccent!4!white,colframe=MCaccent,
+  coltitle=MCaccent,colbacktitle=MCaccent!4!white,
+  fonttitle=\bfseries,attach title to upper={\quad},
+  left=9pt,right=9pt,top=7pt,bottom=7pt,before skip=9pt,after skip=9pt}}
+\NewTColorBox{MCRecall}{O{知识回顾}}{mcbox,title={#1}}
+\NewTColorBox{MCMethod}{O{方法提示}}{mcbox,title={#1}}
+\NewTColorBox{MCWarning}{O{易错提醒}}{mcbox,title={#1},colframe=MCwarn,
+  coltitle=MCwarn,colback=MCwarn!4!white,colbacktitle=MCwarn!4!white}
+\NewTColorBox{MCExtension}{O{拓展思考}}{mcbox,title={#1},colback=white,colbacktitle=white}
+\newcounter{MCproblem}
+\NewDocumentEnvironment{problem}{m m m m m}{%
+  \refstepcounter{MCproblem}\par\addvspace{10pt}%
+  {\bfseries 第\theMCproblem 题}\quad
+  \ifstrequal{#2}{BK}{{\small【#3·#1｜#4】}\par\nobreak}{}%
+}{\par\addvspace{6pt}}
+\NewDocumentEnvironment{choices}{O{0}}{\begin{enumerate}[label=\Alph*.,leftmargin=2em,itemsep=2pt,topsep=3pt]}{\end{enumerate}}
+\NewDocumentCommand{\choice}{m}{\item #1}
+\ExplSyntaxOn
+\NewDocumentCommand{\MCIfContent}{+m +m}{%
+  \tl_set:Nn \l_tmpa_tl {#1}
+  \tl_remove_all:Nn \l_tmpa_tl {\par}
+  \tl_if_blank:VF \l_tmpa_tl {#2}
+}
+\ExplSyntaxOff
+\NewDocumentEnvironment{answer}{O{答案} +b}{%
+  \ifMCtraining\else
+    \MCIfContent{#2}{\par{\bfseries #1}\quad #2\par}%
+  \fi
+}{}
+\NewDocumentEnvironment{solutions}{O{解析} +b}{%
+  \ifMCtraining
+    \par\noindent\rule{0pt}{16mm}\par
+  \else
+    \MCIfContent{#2}{\par{\bfseries #1}\quad #2\par}%
+  \fi
+}{}
+\NewDocumentEnvironment{solution}{O{解析} +b}{\begin{solutions}[#1]#2\end{solutions}}{}

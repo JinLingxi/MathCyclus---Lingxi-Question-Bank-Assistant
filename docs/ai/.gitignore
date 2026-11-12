@@ -1,0 +1,14 @@
+# Local ingestion task material: retain on disk, exclude from source sync.
+# Exact filenames keep reusable tools and future scripts visible for review.
+/1997-1999-真题录入进度.md
+/2000-2004-真题录入进度.md
+/2005-2008-真题录入进度.md
+/2009-真题转写交付记录.md
+/2010-2024-真题录入进度.md
+/2010-真题转写交付记录.md
+/2011-真题转写交付记录.md
+/2012-真题转写交付记录.md
+/2015-2019-真题录入进度.md
+/2015-原书异常复核清单.md
+/2020-2025-真题录入规范化.md
+/2020-2025-重做方案.md

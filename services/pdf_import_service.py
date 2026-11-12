@@ -826,7 +826,12 @@ def commit_pdf_import_candidates(
     Warnings such as missing answers remain review warnings; hard validation
     errors are isolated to that candidate and do not roll back earlier commits.
     """
-    from services.import_service import commit_draft_to_question, create_manual_entry_draft
+    from services.import_service import (
+        commit_draft_to_question,
+        create_import_batch,
+        create_manual_entry_draft,
+        make_batch_id,
+    )
 
     loaded = load_pdf_import_job(job_id, jobs_root)
     job_dir = loaded["job_dir"]
@@ -851,6 +856,17 @@ def commit_pdf_import_candidates(
         for item in payload.get("questions", [])
     )
     _append_pdf_import_event(payload, "", "retry_started" if is_retry else "commit_started", message=f"candidate_count={len(wanted)}")
+    ingestion = dict(payload.get("ingestion") or {})
+    task_id = str(ingestion.get("task_id") or job_id)
+    root_batch_id = str(ingestion.get("root_batch_id") or "")
+    if not ingestion.get("root_batch_id"):
+        root_batch_id = create_import_batch(
+            str(db_path), "codex_task", f"pdf-import/{job_id}", "task", job_id,
+            summary=str(payload.get("summary") or f"Codex 录题任务 {job_id}"),
+            task_id=task_id, hierarchy_level=0, subset_label=str(payload.get("source_metadata", {}).get("source_name") or "未命名任务"),
+        )
+        ingestion.update({"task_id": task_id, "root_batch_id": root_batch_id, "subset_batches": {}})
+    subset_batches = dict(ingestion.get("subset_batches") or {})
     for source_item_id in wanted:
         candidate = candidates.get(source_item_id)
         if not candidate:
@@ -888,6 +904,21 @@ def commit_pdf_import_candidates(
             source_path = str(asset.get("source_path") or asset.get("file_path") or "").strip()
             if source_path and not Path(source_path).is_absolute():
                 asset["source_path"] = str((job_dir / source_path).resolve())
+            asset_extra = dict(asset.get("extra") or {})
+            if asset.get("alias"):
+                asset_extra["alias"] = str(asset["alias"])
+            page_number = int(asset.get("page_number") or 0)
+            bbox = asset.get("bbox") or []
+            if page_number > 0 and len(bbox) == 4:
+                # Manual crops use page pixels; extracted PDF blocks use points.
+                coordinate_space = "page_pixels" if asset.get("detector") in {"manual_crop", "manual_merge"} else "pdf_points"
+                asset_extra["source_region"] = {
+                    "source_path": str((job_dir / "source.pdf").resolve()),
+                    "page_index": page_number - 1, "box": bbox,
+                    "coordinate_space": coordinate_space,
+                    "anchor_id": source_item_id,
+                }
+            asset["extra"] = asset_extra
             draft_assets.append(asset)
         if str(candidate.get("review_status") or "") != "approved":
             failed.append({"source_item_id": source_item_id, "error": "PDF 候选必须经过人工二次审核并标记为 approved"})
@@ -909,11 +940,38 @@ def commit_pdf_import_candidates(
             "extra": extra,
             "assets": draft_assets,
         }
+        paper_key = str(extra.get("paper_standard_id") or "|".join(str(extra.get(key) or "").strip() for key in ("detected_year", "paper_series", "track", "detected_source"))) or "unassigned"
+        paper_label = str(extra.get("detected_source") or source_metadata.get("source_name") or "未确认试卷")
+        type_key = str(candidate.get("question_type_id") or "other")
+        subset_key = f"{paper_key}"
+        leaf_key = f"{paper_key}|type:{type_key}"
+        parent_id = subset_batches.get(subset_key)
+        if not parent_id:
+            parent_id = create_import_batch(
+                str(db_path), "codex_subset", f"pdf-import/{job_id}/{subset_key}", "subset", f"{job_id}-{subset_key}",
+                summary=paper_label, task_id=task_id, parent_batch_id=root_batch_id,
+                hierarchy_level=1, subset_key=subset_key, subset_label=paper_label,
+            )
+            subset_batches[subset_key] = parent_id
+        leaf_id = subset_batches.get(leaf_key)
+        if not leaf_id:
+            leaf_id = create_import_batch(
+                str(db_path), "codex_subset", f"pdf-import/{job_id}/{leaf_key}", "subset", f"{job_id}-{leaf_key}",
+                summary=f"{paper_label} · 题型 {type_key}", task_id=task_id, parent_batch_id=parent_id,
+                hierarchy_level=2, subset_key=leaf_key, subset_label=f"题型 {type_key}",
+            )
+            subset_batches[leaf_key] = leaf_id
         try:
             draft_result = create_manual_entry_draft(
                 str(db_path),
                 draft_payload,
                 source_path=f"pdf-import/{job_id}",
+                batch_id=leaf_id,
+                task_id=task_id,
+                parent_batch_id=parent_id,
+                hierarchy_level=2,
+                subset_key=leaf_key,
+                subset_label=f"{paper_label} · 题型 {type_key}",
             )
             from services.import_service import approve_draft_for_commit
             approve_draft_for_commit(
@@ -947,6 +1005,8 @@ def commit_pdf_import_candidates(
             _append_pdf_import_event(payload, source_item_id, "retry_failed" if is_retry else "commit_failed", status="failed", message=str(exc))
 
     payload["updated_at"] = utc_now()
+    ingestion["subset_batches"] = subset_batches
+    payload["ingestion"] = ingestion
     manifest["updated_at"] = utc_now()
     manifest.setdefault("commit_summary", {})["last_result"] = {
         "committed": len(committed),
@@ -1389,6 +1449,7 @@ def create_pdf_import_job(
     ai_mode: str = "page_gpt",
     page_start: int | None = None,
     page_end: int | None = None,
+    db_path: str | Path | None = None,
 ) -> dict[str, Any]:
     source_path = Path(source_pdf).resolve()
     if not source_path.is_file():
@@ -1431,8 +1492,10 @@ def create_pdf_import_job(
     pages_dir = job_dir / "pages"
     pages_dir.mkdir(parents=True)
     copied_pdf = job_dir / "source.pdf"
-    shutil.copy2(source_path, copied_pdf)
-    asset_sha256 = file_sha256(copied_pdf)
+    from services.source_pdf_storage_service import store_job_source, storage_root_for_jobs
+
+    source_storage = store_job_source(source_path, copied_pdf, root=storage_root_for_jobs(root))
+    asset_sha256 = source_storage["sha256"]
     asset_id = f"asset_{asset_sha256[:16]}"
     pipeline_config = {
         "code": str(pipeline_code or "math_exam_hybrid"),
@@ -1649,6 +1712,36 @@ def create_pdf_import_job(
             "unassigned_blocks": unassigned_blocks,
             "writes_formal_database": False,
         }
+        if db_path:
+            from services.import_service import create_import_batch
+            task_year = str(normalized_metadata.get("year") or normalized_metadata.get("year_or_volume") or "").strip()
+            source_name = str(normalized_metadata.get("source_name") or original_name or source_path.name).strip()
+            task_label = f"{task_year}年录题任务" if task_year else f"录题任务 · {source_name}"
+            task_batch_id = create_import_batch(
+                str(db_path),
+                import_type="codex_task",
+                source_path=f"pdf-import/{resolved_job_id}",
+                mode="task",
+                stamp=resolved_job_id,
+                summary=task_label,
+                task_id=resolved_job_id,
+                hierarchy_level=0,
+                subset_label=task_label,
+            )
+            subset_batches = {}
+            if source_type == "pdf_paper" and source_name:
+                paper_batch_id = create_import_batch(
+                    str(db_path), "codex_subset", f"pdf-import/{resolved_job_id}/paper", "subset",
+                    f"{resolved_job_id}-paper", summary=source_name, task_id=resolved_job_id,
+                    parent_batch_id=task_batch_id, hierarchy_level=1,
+                    subset_key=source_name, subset_label=source_name,
+                )
+                subset_batches[source_name] = paper_batch_id
+            draft_payload["ingestion"] = {
+                "task_id": resolved_job_id,
+                "root_batch_id": task_batch_id,
+                "subset_batches": subset_batches,
+            }
         write_json(draft_path, draft_payload)
         write_import_report(
             report_path,

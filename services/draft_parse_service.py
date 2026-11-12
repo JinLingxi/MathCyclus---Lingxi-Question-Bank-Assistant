@@ -138,10 +138,9 @@ def normalize_single_problem_structure(
         parts = full_text.split(r"\begin{choices}")
         for index in range(len(parts) - 1):
             prefix = parts[index].rstrip()
-            if prefix.endswith("()") or prefix.endswith("（）"):
-                prefix = prefix[:-2]
-            if not prefix.endswith(r"\hspace{1cm})"):
-                prefix += r" (\hspace{1cm})"
+            prefix = re.sub(r"\s*\(?\\hspace\{1cm\}\)?\s*[。.．.]?$", "", prefix)
+            prefix = re.sub(r"(?:\(\s*\)|（\s*）)\s*[。.．.]?$", "", prefix)
+            prefix = prefix.rstrip() + r" (\hspace{1cm})"
             parts[index] = prefix + "\n"
         full_text = r"\begin{choices}".join(parts)
 

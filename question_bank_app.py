@@ -29,6 +29,9 @@ from services.ai_service import extract_json_obj_from_text, normalize_chat_compl
 from services.file_service import atomic_write_text, backup_existing_file, file_change_token
 from services.prompt_service import load_prompt, prompt_values, save_prompt
 from services.operation_log import read_recent_operations, record_operation
+from services.database_service import database_change_token
+from services.smart_exam_service import question_ref, ref_question_id
+from services.question_text_format_service import question_display_note
 from services.question_service import (
     QuestionDuplicateError,
     create_question_file,
@@ -62,7 +65,6 @@ from services.draft_parse_service import (
     strip_problem_body as _service_strip_problem_body,
 )
 from utils.runtime_files import ensure_log_csv
-from utils.sortable_list import st_sortable_list
 
 def _compat_container(*, key=None, **kwargs):
     return st.container(**kwargs)
@@ -72,8 +74,250 @@ def _question_key(prefix: str, fpath: str) -> str:
     return hashlib.md5(f"{prefix}:{fpath}".encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
+def render_surface_quick_actions(surface: str, *, search_mode: str = "browse", scroll_target: str = ""):
+    """Render the shared search/top controls without relying on Streamlit DOM wrappers.
+
+    The controls intentionally stay in normal document flow.  Older versions tried to
+    make their parent Streamlit wrapper fixed-position, which could capture an entire
+    page when Streamlit changed its internal wrapper hierarchy.
+    """
+    safe_surface = re.sub(r"[^a-z0-9_-]", "-", str(surface or "surface").lower())
+    scroll_key = f"mc_quick_actions_scroll_{safe_surface}"
+    search_key = f"mc_quick_actions_search_{safe_surface}"
+
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] { overflow-x: hidden !important; }
+        [data-testid="stSidebar"] div[class*="st-key-mc_quick_actions_search_"],
+        [data-testid="stSidebar"] div[class*="st-key-mc_quick_actions_scroll_"] {
+            display: none !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }
+        .mc-surface-quick-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: .42rem;
+            margin: -.28rem 0 .7rem;
+        }
+        .mc-surface-quick-actions + div[data-testid="stHorizontalBlock"] {
+            justify-content: flex-end;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.mc-surface-quick-actions) {
+            margin-left: auto;
+            max-width: 20rem;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.mc-surface-quick-actions) div[data-testid="stButton"] > button {
+            min-height: 2.28rem !important;
+            border-radius: 9px !important;
+            padding: .28rem .72rem !important;
+            white-space: nowrap !important;
+            font-weight: 720 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""
+        <style>
+        /* The two controls belong to the page edge, beside the scrollbar.  Only
+           the individual keyed widget wrappers are fixed; no page container is
+           repositioned. */
+        div[class*="st-key-{search_key}_button"],
+        div[class*="st-key-{scroll_key}_button"] {{
+            display: none !important;
+            position: fixed !important;
+            right: 1rem !important;
+            z-index: 1200 !important;
+            width: 5.4rem !important;
+            margin: 0 !important;
+        }}
+        div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-{search_key}_button"]),
+        div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-{scroll_key}_button"]) {{
+            display: none !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            max-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+        }}
+        div[class*="st-key-{search_key}_button"] {{ top: calc(50% - 4.1rem) !important; }}
+        div[class*="st-key-{scroll_key}_button"] {{ top: calc(50% + .35rem) !important; }}
+        div[class*="st-key-{search_key}_button"] button,
+        div[class*="st-key-{scroll_key}_button"] button {{
+            min-height: 2.55rem !important;
+            padding: .3rem .35rem !important;
+            border-radius: .55rem !important;
+            white-space: nowrap !important;
+            background: rgba(255,255,255,.96) !important;
+            border: 1px solid rgba(109,40,217,.28) !important;
+            box-shadow: 0 6px 18px rgba(36,28,52,.12) !important;
+        }}
+        @media (max-width: 760px) {{
+            div[class*="st-key-{search_key}_button"],
+            div[class*="st-key-{scroll_key}_button"] {{ right: .45rem !important; width: 4.7rem !important; }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    # Keep the real Streamlit widgets in the sidebar so their existence never
+    # contributes height to the page title/content flow.  The visible controls
+    # are created in the parent document by the script below.
+    with st.sidebar:
+        if st.button("🔍 查找", key=f"{search_key}_button", use_container_width=True):
+            st.session_state[search_key] = True
+            st.session_state["advanced_search_panel_open"] = True
+            st.session_state["advanced_search_panel_collapsed"] = False
+            st.session_state["mc_quick_actions_scroll_target"] = scroll_target or ""
+            st.rerun()
+        if st.button("⬆️ 回到顶部", key=f"{scroll_key}_button", use_container_width=True):
+            st.session_state[scroll_key] = True
+            st.rerun()
+
+    # Streamlit's keyed wrapper class is not part of its public API and has
+    # changed between releases.  Find the two rendered buttons from the parent
+    # document and pin only those individual widgets beside the scrollbar.
+    components.html(
+        f"""
+        <script>
+        (() => {{
+            const doc = window.parent.document;
+            if ({str(safe_surface not in {"exam", "exam-browse"}).lower()}) {{
+                const staleBasket = doc.getElementById('mc-exam-basket-collapsed-button');
+                if (staleBasket) staleBasket.remove();
+            }}
+            const frame = window.frameElement;
+            if (frame) {{
+                frame.style.display = 'none';
+                const wrapper = frame.closest('[data-testid="stElementContainer"]');
+                if (wrapper) {{ wrapper.style.display = 'none'; wrapper.style.height = '0'; wrapper.style.minHeight = '0'; }}
+            }}
+            const searchKey = {json.dumps(search_key + "_button", ensure_ascii=False)};
+            const scrollKey = {json.dumps(scroll_key + "_button", ensure_ascii=False)};
+            const findHost = (key, label) => {{
+                const keyed = doc.querySelector('[class*="st-key-' + key + '"]');
+                if (keyed) return keyed;
+                const button = [...doc.querySelectorAll('button')].find((node) =>
+                    (node.innerText || '').replace(/\\s+/g, ' ').includes(label)
+                );
+                return button ? button.closest('div[data-testid="stButton"]') : null;
+            }};
+            const pin = () => {{
+                const searchHost = findHost(searchKey, '查找');
+                const topHost = findHost(scrollKey, '回到顶部');
+                if (!searchHost && !topHost) return;
+                [searchHost, topHost].forEach((host) => {{ if (host) host.style.display = 'none'; }});
+                const panelId = 'mc-floating-actions-{safe_surface}';
+                let panel = doc.getElementById(panelId);
+                if (!panel) {{
+                    panel = doc.createElement('div');
+                    panel.id = panelId;
+                    panel.setAttribute('role', 'toolbar');
+                    panel.setAttribute('aria-label', '页面快捷工具');
+                    Object.assign(panel.style, {{
+                        position: 'fixed', right: '1rem', top: '50%',
+                        transform: 'translateY(-50%)', display: 'flex',
+                        flexDirection: 'column', gap: '.55rem', zIndex: '2147483000',
+                    }});
+                    doc.body.appendChild(panel);
+                }}
+                const scrollPageTop = () => {{
+                    window.parent.scrollTo(0, 0);
+                    const parentDoc = window.parent.document;
+                    parentDoc.documentElement.scrollTop = 0;
+                    parentDoc.body.scrollTop = 0;
+                    parentDoc.querySelectorAll('div, section, main, [data-testid="stAppViewContainer"]').forEach((node) => {{
+                        if (node.scrollHeight > node.clientHeight) node.scrollTop = 0;
+                    }});
+                }};
+                const makeButton = (id, label, title, host, action) => {{
+                    let button = panel.querySelector('#' + id);
+                    if (!button) {{
+                        button = doc.createElement('button');
+                        button.id = id;
+                        button.type = 'button';
+                        button.title = title;
+                        button.innerText = label;
+                        Object.assign(button.style, {{
+                            width: '5.4rem', minHeight: '2.55rem', padding: '.3rem .35rem',
+                            borderRadius: '.55rem', border: '1px solid rgba(109,40,217,.28)',
+                            background: 'rgba(255,255,255,.97)', color: '#312e81',
+                            boxShadow: '0 6px 18px rgba(36,28,52,.14)',
+                            fontWeight: '700', cursor: 'pointer',
+                        }});
+                        panel.appendChild(button);
+                    }}
+                    button.onclick = () => {{
+                        if (action === 'scroll-top') {{ scrollPageTop(); return; }}
+                        const target = host && host.querySelector('button');
+                        if (target) target.click();
+                    }};
+                }};
+                makeButton('mc-floating-search-{safe_surface}', '🔍 查找', '打开查找', searchHost, 'search');
+                makeButton('mc-floating-top-{safe_surface}', '⬆️ 回到顶部', '回到页面顶部', topHost, 'scroll-top');
+            }};
+            pin();
+            window.parent.setTimeout(pin, 80);
+            window.parent.setTimeout(pin, 300);
+            const observerKey = '__mcQuickActionsObserver_' + searchKey;
+            if (window.parent[observerKey]) window.parent[observerKey].disconnect();
+            let pendingPin = false;
+            window.parent[observerKey] = new window.parent.MutationObserver(() => {{
+                if (pendingPin) return;
+                pendingPin = true;
+                window.parent.requestAnimationFrame(() => {{ pendingPin = false; pin(); }});
+            }});
+            window.parent[observerKey].observe(doc.body, {{childList: true, subtree: true}});
+        }})();
+        </script>
+        """,
+        height=1,
+    )
+
+    if st.session_state.pop(scroll_key, False) or st.session_state.pop(search_key, False):
+        target = st.session_state.pop("mc_quick_actions_scroll_target", "")
+        target_json = json.dumps(target, ensure_ascii=False)
+        components.html(
+            f"""
+            <script>
+            (() => {{
+                const win = window.parent;
+                const doc = win.document;
+                const selector = {target_json};
+                const scroll = () => {{
+                    if (selector) {{
+                        const node = doc.querySelector(selector);
+                        if (node) {{ node.scrollIntoView({{behavior: "auto", block: "start"}}); return; }}
+                    }}
+                    win.scrollTo(0, 0);
+                    doc.documentElement.scrollTop = 0;
+                    doc.body.scrollTop = 0;
+                    doc.querySelectorAll('div, section, main, [data-testid="stAppViewContainer"]').forEach((node) => {{
+                        if (node.scrollHeight > node.clientHeight) node.scrollTop = 0;
+                    }});
+                }};
+                win.setTimeout(scroll, 40);
+                win.setTimeout(scroll, 240);
+            }})();
+            </script>
+            """,
+            height=1,
+        )
+
+
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(APP_ROOT, ".env"))
+# The local .env is the project's source of truth. This avoids a stale
+# terminal/session variable silently selecting an old OCR endpoint.
+load_dotenv(os.path.join(APP_ROOT, ".env"), override=True)
 ensure_log_csv(APP_ROOT)
 
 _CROP_EDITOR_COMPONENT = components.declare_component(
@@ -184,7 +428,22 @@ _INLINE_PREVIEW_HTML_PATTERN = re.compile(
 
 def _render_preview_with_inline_assets(preview_markdown: str) -> None:
     """Render asset fragments outside Markdown so they cannot become source text."""
-    text = str(preview_markdown or "")
+    from utils.preview_layout import display_style_math
+    text = display_style_math(preview_markdown)
+    choice_block = re.compile(r'<!--mc-choices-start-->([\s\S]*?)<!--mc-choices-end-->')
+    if choice_block.search(text):
+        for block in re.split(r'(<!--mc-choices-start-->[\s\S]*?<!--mc-choices-end-->)', text):
+            match = choice_block.fullmatch(block)
+            if match:
+                with st.container():
+                    st.markdown('<span class="mc-choice-grid-anchor"></span>', unsafe_allow_html=True)
+                    for option in match.group(1).split('<!--mc-choice-item-->'):
+                        if option.strip():
+                            with st.container():
+                                _render_preview_with_inline_assets(option)
+            elif block.strip():
+                _render_preview_with_inline_assets(block)
+        return
     if not _INLINE_PREVIEW_HTML_PATTERN.search(text):
         st.markdown(text, unsafe_allow_html=True)
         return
@@ -226,7 +485,69 @@ def _render_preview_asset_fragment(fragment: str) -> None:
             except (ValueError, base64.binascii.Error):
                 image_bytes = b""
             if image_bytes:
-                st.image(image_bytes, caption=caption or None, use_column_width=True)
+                # Use a parent-document lightbox rather than a plain anchor.
+                # Streamlit's HTML sanitizer/iframe boundary can swallow the
+                # old target=_blank click, while this handler gives reviewers
+                # a reliable full-page enlargement in the review tool.
+                safe_source = html.escape(image_source, quote=True)
+                safe_caption = html.escape(caption or "查看大图", quote=True)
+                image_id = f"mc-review-image-{uuid.uuid4().hex}"
+                components.html(
+                    f"""
+                    <style>
+                      html,body {{ margin:0; padding:0; background:transparent; overflow:hidden; }}
+                      .mc-review-image-thumb {{ width:100%; display:flex; align-items:center; justify-content:center; }}
+                      .mc-review-image-thumb img {{ display:block; max-width:100%; max-height:340px; width:auto; height:auto; cursor:zoom-in; border-radius:6px; background:#fff; }}
+                      .mc-review-image-caption {{ margin-top:5px; color:#64748b; font:12px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; text-align:center; }}
+                    </style>
+                    <div class="mc-review-image-frame">
+                      <div class="mc-review-image-thumb" id="{image_id}"><img src="{safe_source}" alt="{safe_caption}" title="点击查看大图"></div>
+                      <div class="mc-review-image-caption">{safe_caption}</div>
+                    </div>
+                    <script>
+                    (() => {{
+                      const thumb = document.getElementById({json.dumps(image_id)});
+                      if (!thumb || thumb.dataset.bound === '1') return;
+                      thumb.dataset.bound = '1';
+                      const frame=window.frameElement;
+                      const resize=()=>{{
+                        const h=Math.ceil(document.querySelector('.mc-review-image-frame').getBoundingClientRect().height)+2;
+                        window.parent.postMessage({{isStreamlitMessage:true,type:'streamlit:setFrameHeight',height:h}},'*');
+                        if(frame) frame.style.height=h+'px';
+                      }};
+                      new ResizeObserver(resize).observe(document.querySelector('.mc-review-image-frame'));
+                      thumb.querySelector('img').addEventListener('load',resize);
+                      resize();
+                      thumb.addEventListener('click', () => {{
+                        const doc = window.parent.document;
+                        const overlayId = {json.dumps(image_id + '-lightbox')};
+                        let overlay = doc.getElementById(overlayId);
+                        if (!overlay) {{
+                          overlay = doc.createElement('div');
+                          overlay.id = overlayId;
+                          overlay.setAttribute('role', 'dialog');
+                          overlay.setAttribute('aria-label', '图片大图');
+                          Object.assign(overlay.style, {{
+                            position:'fixed', inset:'0', zIndex:'2147483647', display:'flex',
+                            alignItems:'center', justifyContent:'center', padding:'3vh 3vw',
+                            background:'rgba(15,23,42,.88)', cursor:'zoom-out'
+                          }});
+                          const full = doc.createElement('img');
+                          full.src = {json.dumps(image_source)};
+                          full.alt = {json.dumps(caption or '图片大图', ensure_ascii=False)};
+                          Object.assign(full.style, {{maxWidth:'94vw', maxHeight:'92vh', width:'auto', height:'auto', objectFit:'contain', borderRadius:'8px', boxShadow:'0 16px 48px rgba(0,0,0,.35)', cursor:'zoom-out'}});
+                          overlay.appendChild(full);
+                          overlay.addEventListener('click', () => overlay.remove());
+                          doc.body.appendChild(overlay);
+                        }}
+                        overlay.style.display = 'flex';
+                      }});
+                    }})();
+                    </script>
+                    """,
+                    height=180,
+                    scrolling=False,
+                )
                 return
 
     visible_text = re.sub(r"<[^>]+>", "", fragment)
@@ -282,10 +603,21 @@ def _cached_question_meta(content: str):
 
 # 注入自定义 CSS
 def inject_custom_css():
+    from utils.exam_basket_layout import BASKET_LAUNCHER_CSS
+    st.markdown(BASKET_LAUNCHER_CSS, unsafe_allow_html=True)
+    # Install the shared observer once per page, rather than mounting a hidden
+    # iframe (and its size polling) for every choice question in the results.
+    from utils.preview_layout import CHOICE_LAYOUT
+    components.html(CHOICE_LAYOUT, height=0)
     st.markdown("""
         <style>
         html {
             scrollbar-gutter: auto;
+        }
+        /* Selectboxes use a search input internally; keep keyboard search
+           and focus feedback without an editing caret beside the selection. */
+        [data-testid="stSelectbox"] input {
+            caret-color: transparent !important;
         }
         body {
             overflow: hidden;
@@ -904,7 +1236,12 @@ def inject_sidebar_layout_switch(layout: str):
             applySidebarState(sidebarCollapsed);
             syncControls();
 
-            const observer = new parentWindow.MutationObserver(syncControls);
+            let pendingSync = false;
+            const observer = new parentWindow.MutationObserver(() => {{
+                if (pendingSync) return;
+                pendingSync = true;
+                parentWindow.requestAnimationFrame(() => {{ pendingSync = false; syncControls(); }});
+            }});
             observer.observe(doc.body, {{ childList: true, subtree: true }});
             parentWindow[observerKey] = observer;
         }})();
@@ -1602,7 +1939,37 @@ def inject_unified_visual_system_css():
             backdrop-filter: none !important;
             -webkit-backdrop-filter: none !important;
         }
-        [data-testid="stSidebarUserContent"] { padding: 0.6rem 0 1.2rem !important; }
+        /* Keep Streamlit's widget wrappers on the same sidebar centre line. */
+        [data-testid="stSidebarContent"] { padding-left: 0 !important; padding-right: 0 !important; }
+        [data-testid="stSidebarUserContent"] {
+            padding: 0.6rem 0 1.2rem !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            align-items: stretch !important;
+        }
+        [data-testid="stSidebarUserContent"] > div,
+        [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"],
+        [data-testid="stSidebarUserContent"] [data-testid="stElementContainer"] {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            box-sizing: border-box !important;
+        }
+        [data-testid="stSidebar"] .st-key-main_sidebar_radio [data-testid="stRadio"] {
+            width: 100% !important;
+            padding: 0 8px !important;
+            box-sizing: border-box !important;
+        }
+        [data-testid="stSidebar"] .st-key-main_sidebar_radio div[role="radiogroup"] > label {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+        }
         [data-testid="stSidebar"] div[role="radiogroup"] { gap: 8px !important; }
         [data-testid="stSidebar"] div[role="radiogroup"] > label {
             max-width: 96px !important;
@@ -3697,7 +4064,7 @@ def render_ai_solution_image_ocr_section(fpath: str, key_prefix: str, max_images
         cols = [st.container() for _ in imgs] if compact else st.columns(min(max_images, len(imgs)))
         for i, img in enumerate(list(imgs)):
             with cols[i % len(cols)]:
-                st.image(img, use_column_width=True)
+                st.image(img, width=700)
                 if st.button("🗑️ 删除", key=f"ai_sol_img_del_{fhash}_{i}", use_container_width=True):
                     try:
                         st.session_state[queue_key].pop(i)
@@ -6011,6 +6378,7 @@ def _render_sqlite_entry_ai_recognition_panel(entry_mode: str):
                 with st.spinner("正在解析全部页面、题号和图片区域..."):
                     job_result = create_pdf_import_job(
                         temporary_path,
+                        db_path=DEFAULT_DATABASE_PATH,
                         jobs_root=DEFAULT_JOBS_ROOT,
                         source_type=source_type,
                         source_metadata=metadata,
@@ -6239,7 +6607,8 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
             key="sqlite_pdf_import_dpi",
             format_func=lambda value: f"{value} DPI",
         )
-        parser_choices = ["auto", "cloud", "local"]
+        st.session_state.setdefault("sqlite_pdf_import_parser_mode", "local")
+        parser_choices = ["local", "auto", "cloud"]
         parser_labels = {
             "auto": "自动：云端 MinerU → PyMuPDF",
             "cloud": "仅 MinerU 云端",
@@ -6250,7 +6619,7 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
             parser_choices,
             key="sqlite_pdf_import_parser_mode",
             format_func=lambda value: parser_labels[value],
-            help="自动模式优先使用云端 MinerU，云端不可用或失败时回退到本地 PyMuPDF。",
+            help="默认使用本地 PyMuPDF；页面题目识别使用 .env 中的 AI_API_KEY、AI_BASE_URL、AI_MODEL_NAME。",
         )
         capability_report = runtime_capabilities()
         if parser_mode in {"auto", "cloud"} and not capability_report.get("cloud_configured"):
@@ -6280,6 +6649,7 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
                 with st.spinner("正在渲染页面并生成题目候选..."):
                     result = create_pdf_import_job(
                         temporary_path,
+                        db_path=DEFAULT_DATABASE_PATH,
                         source_type=source_type,
                         source_metadata=metadata,
                         render_dpi=render_dpi,
@@ -6534,7 +6904,7 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
             page = pages_by_number[shown_page_number]
             image_path = loaded["job_dir"] / str(page.get("image_path") or "")
             if image_path.is_file():
-                st.image(str(image_path), caption=f"第 {shown_page_number} 页", use_column_width=True)
+                        st.image(str(image_path), caption=f"第 {shown_page_number} 页", width=700)
             else:
                 st.warning(f"页面图片缺失：{image_path.name}")
             with st.expander("查看该页提取文本", expanded=False):
@@ -6645,7 +7015,7 @@ def _render_sqlite_pdf_import_workspace(left_col, page_col, editor_col, type_opt
                 merge_options.append(label)
                 asset_path = loaded["job_dir"] / str(asset.get("source_path") or "")
                 if asset_path.is_file():
-                    st.image(str(asset_path), caption=f"裁剪预览 · {asset.get('alias') or asset_index + 1}", use_column_width=True)
+                            st.image(str(asset_path), caption=f"裁剪预览 · {asset.get('alias') or asset_index + 1}", width=700)
                 if len(bbox) >= 4:
                     page_number_value = int(asset.get("page_number") or 1)
                     source_page = next(
@@ -7266,6 +7636,12 @@ def _install_duplicate_preview_client_script() -> None:
             };
             const openPanel = (panel) => {
                 if (!panel) return;
+                doc.querySelectorAll('.mc-duplicate-preview-panel.mc-duplicate-preview-open').forEach((open) => {
+                    if (open !== panel) {
+                        open.classList.remove('mc-duplicate-preview-open');
+                        open.removeAttribute('data-duplicate-preview-open');
+                    }
+                });
                 panel.classList.add('mc-duplicate-preview-open');
                 panel.setAttribute('data-duplicate-preview-open', '1');
             };
@@ -7462,11 +7838,11 @@ def render_sqlite_manual_draft_entry():
             align-items: flex-end;
             justify-content: space-between;
             gap: 1rem;
-            margin: 0 0 0.8rem;
-            padding: 0.72rem 0.82rem;
-            border-radius: 16px;
-            background: linear-gradient(135deg, #f5f3ff 0%, #eef6ff 100%);
-            border: 1px solid rgba(109, 40, 217, 0.14);
+            margin: 0 0 0.65rem;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            border: 0;
         }
         .mc-sqlite-entry-hero h1 {
             margin: 0;
@@ -7671,6 +8047,8 @@ def render_sqlite_manual_draft_entry():
         """,
         unsafe_allow_html=True,
     )
+    render_surface_quick_actions("sqlite-entry", search_mode="entry")
+    render_advanced_search_floating_panel()
 
     try:
         options = list_question_filter_options(db_path)
@@ -8170,7 +8548,8 @@ def render_sqlite_manual_draft_entry():
                 selected_action = (
                     "all" if import_all_pending else
                     "non_duplicate" if import_non_duplicate else
-                    "non_exact" if import_non_exact else ""
+                    "non_exact" if import_non_exact else
+                    st.session_state.pop("sqlite_batch_import_action", "")
                 )
                 if selected_action:
                     from services.import_service import find_question_content_matches
@@ -9461,6 +9840,8 @@ def render_sqlite_draft_review_workspace(db_path: str):
 def page_entry(force_single_mode: bool = False, cloze_mode: bool = False):
     st.markdown('<span id="mc-entry-page-anchor"></span>', unsafe_allow_html=True)
     st.header("🧩 挖空题生成" if cloze_mode else "📝 录入新题")
+    render_surface_quick_actions("entry", search_mode="entry")
+    render_advanced_search_floating_panel()
     
     # 初始化 Session State
     if "entry_year" not in st.session_state: st.session_state["entry_year"] = "2024"
@@ -11152,7 +11533,7 @@ def _topic_collection_three_level_dialog(topic_id: str, target_group: str, targe
     with preview_col:
         st.markdown("<div class='mc-topic-dialog-preview-title'>题目预览</div>", unsafe_allow_html=True)
         try:
-            db_mtime = os.path.getmtime(db_path)
+            db_mtime = database_change_token(db_path)
             payload = _db_preview_question_payload(db_path, str(selected_question_id), db_mtime)
             with st.expander("TeX 源码", expanded=False):
                 st.code(payload.get("legacy_tex") or "", language="latex")
@@ -11826,7 +12207,7 @@ def page_topic_collection():
     if preview_question_id:
         with st.expander(f"题目预览 · {preview_question_id}", expanded=True):
             try:
-                db_mtime = os.path.getmtime(db_path)
+                db_mtime = database_change_token(db_path)
                 payload = _db_preview_question_payload(db_path, preview_question_id, db_mtime)
                 st.code(payload.get("legacy_tex") or "", language="latex")
                 render_question_preview(payload.get("legacy_tex") or "", show_title=False, prepared_markdown=payload.get("preview_markdown"))
@@ -11857,7 +12238,7 @@ def _add_exam_selection_paths(paths):
     selected_paths = list(st.session_state.setdefault("exam_selected_qs", []))
     added_paths = []
     for fpath in paths or []:
-        if fpath and os.path.exists(fpath) and fpath not in selected_paths:
+        if fpath and (ref_question_id(fpath) or os.path.exists(fpath)) and fpath not in selected_paths:
             selected_paths.append(fpath)
             added_paths.append(fpath)
 
@@ -12092,11 +12473,12 @@ def sync_exam_blocks_to_selected_order(selected_paths):
     blocks = list(st.session_state.get("exam_blocks", []))
     existing_questions = {}
     for block in blocks:
-        if block.get("type") == "question" and block.get("path") in selected_paths and block.get("path") not in existing_questions:
-            existing_questions[block["path"]] = block
+        ref = block.get("selection_ref") or block.get("path")
+        if block.get("type") == "question" and ref in selected_paths and ref not in existing_questions:
+            existing_questions[ref] = block
 
     ordered_questions = [
-        existing_questions.get(path) or {"id": str(uuid.uuid4()), "type": "question", "path": path}
+        existing_questions.get(path) or {"id": str(uuid.uuid4()), "type": "question", "path": path, "selection_ref": path}
         for path in selected_paths
     ]
     ordered_iter = iter(ordered_questions)
@@ -12114,351 +12496,98 @@ def sync_exam_blocks_to_selected_order(selected_paths):
 
 @st.fragment
 def render_exam_floating_basket():
-    selected_paths = st.session_state.setdefault("exam_selected_qs", [])
+    """Keep basket-only interactions independent of the scrolled results page."""
+    from utils.exam_basket_layout import BASKET_WINDOW_CSS, BASKET_WINDOW_SCRIPT
+    from services.exam_basket_service import reference_label
+    from services.database_service import DEFAULT_DATABASE_PATH
+
+    selected_paths = list(st.session_state.setdefault("exam_selected_qs", []))
     selected_count = len(selected_paths)
-    if "exam_basket_open" not in st.session_state:
-        st.session_state["exam_basket_open"] = True
-    if "exam_expanded_q" not in st.session_state:
-        st.session_state["exam_expanded_q"] = selected_paths[0] if selected_paths else None
+    if st.session_state.get("exam_basket_layout_version") != "floating-v2":
+        st.session_state["exam_basket_open"] = False
+        st.session_state["exam_basket_layout_version"] = "floating-v2"
+    st.session_state.setdefault("exam_basket_open", False)
     if st.session_state.get("exam_expanded_q") not in selected_paths:
         st.session_state["exam_expanded_q"] = selected_paths[0] if selected_paths else None
+
     st.markdown(
         """
         <style>
-        body:has(#mc-exam-page-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-floating-basket-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-floating-basket-anchor)),
-        .mc-exam-floating-basket-panel {
-            position: fixed !important;
-            right: 16px !important;
-            left: auto !important;
-            top: 104px !important;
-            width: 560px !important;
-            height: 150px !important;
-            max-height: none !important;
-            min-height: 150px !important;
-            z-index: 1001 !important;
-            overflow: auto !important;
-            padding: 0.95rem !important;
-            border: 1px solid rgba(119, 102, 142, 0.28) !important;
-            border-radius: 12px !important;
-            background: #faf8ff !important;
-            background-color: #faf8ff !important;
-            background-clip: padding-box !important;
-            isolation: isolate !important;
-            opacity: 1 !important;
-            box-shadow: 0 18px 42px rgba(36, 28, 52, 0.20) !important;
+        .mc-exam-basket-shell {
+            max-width: 900px;
+            margin: .35rem 0 .9rem auto;
         }
-        body:has(#mc-exam-page-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-floating-basket-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-floating-basket-anchor))::before,
-        .mc-exam-floating-basket-panel::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            border-radius: 12px;
-            background: #faf8ff;
-            pointer-events: none;
-        }
-        body:has(#mc-exam-page-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-floating-basket-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-floating-basket-anchor)) > *,
-        .mc-exam-floating-basket-panel > * {
-            position: relative;
-            z-index: 1;
-        }
-        .mc-exam-floating-basket-panel > div,
-        .mc-exam-floating-basket-panel > div[data-testid="stVerticalBlock"],
-        .mc-exam-floating-basket-panel div[data-testid="stVerticalBlock"],
-        .mc-exam-floating-basket-panel div[data-testid="stHorizontalBlock"],
-        .mc-exam-floating-basket-panel div[data-testid="column"],
-        .mc-exam-floating-basket-panel div[data-testid="element-container"] {
-            background: transparent !important;
-            background-color: transparent !important;
-            opacity: 1 !important;
-        }
-        .mc-exam-floating-basket-panel::after {
-            content: "";
-            position: absolute;
-            right: 3px;
-            bottom: 3px;
-            width: 18px;
-            height: 18px;
-            background:
-                linear-gradient(to right, transparent calc(100% - 2px), rgba(109, 40, 217, 0.50) calc(100% - 2px)),
-                linear-gradient(to bottom, transparent calc(100% - 2px), rgba(109, 40, 217, 0.50) calc(100% - 2px));
-            border-radius: 0 0 8px 0;
-            cursor: nwse-resize;
-            z-index: 3;
-        }
-        .mc-exam-floating-basket-collapsed-panel {
-            position: fixed !important;
-            right: 18px !important;
-            top: 50vh !important;
-            transform: translateY(-50%) !important;
-            width: 58px !important;
-            min-width: 58px !important;
-            max-width: 58px !important;
-            height: 58px !important;
-            min-height: 58px !important;
-            max-height: 58px !important;
-            z-index: 1001 !important;
-            padding: 0 !important;
-            border: 0 !important;
-            background: transparent !important;
-            box-shadow: none !important;
-        }
-        .mc-exam-floating-basket-panel h4 {
+        .mc-exam-basket-shell h4 {
             margin: 0 !important;
-            cursor: move !important;
-            user-select: none !important;
+            color: #312e81;
         }
-        .mc-exam-floating-basket-panel div[data-testid="stHorizontalBlock"]:has(.mc-exam-basket-list-anchor) {
-            gap: 1rem !important;
-            align-items: start !important;
+        .mc-exam-basket-shell .mc-exam-basket-meta {
+            color: #64748b;
+            font-size: .82rem;
+            margin: .12rem 0 .55rem;
         }
-        .mc-exam-floating-basket-panel div[data-testid="column"]:has(.mc-exam-basket-preview-anchor) {
-            border-right: 1px solid rgba(119, 102, 142, 0.26) !important;
-            padding-right: 1rem !important;
-            max-height: calc(100vh - 270px) !important;
-            overflow: auto !important;
-        }
-        .mc-exam-floating-basket-panel div[data-testid="column"]:has(.mc-exam-basket-list-anchor) {
-            padding-left: 0.05rem !important;
-        }
-        .mc-exam-floating-basket-panel div[data-testid="stButton"] > button,
-        .mc-exam-floating-basket-collapsed-panel div[data-testid="stButton"] > button {
-            width: 100% !important;
-            min-height: 2.35rem !important;
+        .mc-exam-basket-shell div[data-testid="stButton"] > button {
+            min-height: 2.3rem !important;
             border-radius: 9px !important;
             white-space: normal !important;
         }
-        .mc-exam-floating-basket-collapsed-panel div[data-testid="stButton"] > button {
-            border: 1px solid rgba(109, 40, 217, 0.30) !important;
-            background: rgba(237, 229, 252, 0.98) !important;
-            color: #4c1d95 !important;
-            box-shadow: 0 12px 30px rgba(80, 60, 110, 0.18) !important;
-            font-weight: 750 !important;
-            width: 58px !important;
-            min-width: 58px !important;
-            max-width: 58px !important;
-            height: 58px !important;
-            min-height: 58px !important;
-            max-height: 58px !important;
-            padding: 0 !important;
-            white-space: pre-line !important;
-            overflow: hidden !important;
-            box-sizing: border-box !important;
+        .mc-exam-basket-shell div[data-testid="column"]:has(.mc-exam-basket-preview-anchor) {
+            border-right: 1px solid rgba(119, 102, 142, .22);
+            padding-right: .9rem;
+            min-height: 10rem;
         }
-        @media (max-width: 980px) {
-            .mc-exam-floating-basket-panel {
-                left: 72px !important;
-                right: 12px !important;
-                width: auto !important;
+        .mc-exam-basket-shell div[data-testid="column"]:has(.mc-exam-basket-list-anchor) {
+            padding-left: .15rem;
+        }
+        @media (max-width: 860px) {
+            .mc-exam-basket-shell { max-width: 100%; }
+            .mc-exam-basket-shell div[data-testid="column"]:has(.mc-exam-basket-preview-anchor) {
+                border-right: 0;
+                border-bottom: 1px solid rgba(119, 102, 142, .22);
+                padding: 0 0 .7rem;
+                margin-bottom: .7rem;
             }
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    components.html(
-        """
-        <script>
-        (() => {
-            const doc = window.parent.document;
-            const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-            function findPanel() {
-                const marker = doc.querySelector('.mc-exam-floating-basket-anchor');
-                return marker ? marker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
-            }
+    st.markdown(BASKET_WINDOW_CSS, unsafe_allow_html=True)
 
-            function markPanels() {
-                doc.querySelectorAll('.mc-exam-floating-basket-panel').forEach((node) => {
-                    if (!node.querySelector('.mc-exam-floating-basket-anchor')) {
-                        node.classList.remove('mc-exam-floating-basket-panel');
-                    }
-                });
-                doc.querySelectorAll('.mc-exam-floating-basket-collapsed-panel').forEach((node) => {
-                    if (!node.querySelector('.mc-exam-floating-basket-collapsed-anchor')) {
-                        node.classList.remove('mc-exam-floating-basket-collapsed-panel');
-                    }
-                });
-                const panel = findPanel();
-                if (panel) {
-                    panel.classList.add('mc-exam-floating-basket-panel');
-                    panel.classList.remove('mc-exam-floating-basket-collapsed-panel');
-                    ['width', 'min-width', 'max-width', 'height', 'min-height', 'max-height', 'left', 'right', 'top', 'transform', 'overflow', 'margin', 'padding', 'box-sizing'].forEach((property) => panel.style.removeProperty(property));
-                }
-                const collapsedMarker = doc.querySelector('.mc-exam-floating-basket-collapsed-anchor');
-                const collapsedPanel = collapsedMarker ? collapsedMarker.closest('div[data-testid="stVerticalBlockBorderWrapper"]') : null;
-                if (collapsedPanel) {
-                    collapsedPanel.classList.add('mc-exam-floating-basket-collapsed-panel');
-                    const collapsedStyles = {
-                        width: '58px', minWidth: '58px', maxWidth: '58px',
-                        height: '58px', minHeight: '58px', maxHeight: '58px',
-                        left: 'auto', right: '18px', top: '50vh',
-                        transform: 'translateY(-50%)', overflow: 'visible',
-                        margin: '0', padding: '0', boxSizing: 'border-box'
-                    };
-                    Object.entries(collapsedStyles).forEach(([key, value]) => {
-                        const cssKey = key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
-                        collapsedPanel.style.setProperty(cssKey, value, 'important');
-                    });
-                }
-                return panel;
-            }
-
-            function applyWidth(panel) {
-                const sizeVersion = 'compact-v1';
-                if (window.parent.localStorage.getItem('mcExamBasketSizeVersion') !== sizeVersion) {
-                    window.parent.localStorage.removeItem('mcExamBasketWidth');
-                    window.parent.localStorage.removeItem('mcExamBasketHeight');
-                    window.parent.localStorage.setItem('mcExamBasketSizeVersion', sizeVersion);
-                }
-                const saved = Number(window.parent.localStorage.getItem('mcExamBasketWidth') || 0);
-                if (saved > 0) {
-                    panel.style.setProperty('width', `${clamp(saved, 560, Math.max(620, window.parent.innerWidth - 104))}px`, 'important');
-                } else {
-                    panel.style.setProperty('width', '560px', 'important');
-                }
-                const savedHeight = Number(window.parent.localStorage.getItem('mcExamBasketHeight') || 0);
-                if (savedHeight > 0) {
-                    panel.style.setProperty('height', `${clamp(savedHeight, 150, Math.max(180, window.parent.innerHeight - 116))}px`, 'important');
-                    panel.style.setProperty('max-height', 'none', 'important');
-                } else {
-                    panel.style.setProperty('height', '150px', 'important');
-                    panel.style.setProperty('max-height', 'none', 'important');
-                }
-            }
-
-            function applyPosition(panel) {
-                const positionVersion = 'right-center-v2';
-                if (window.parent.localStorage.getItem('mcExamBasketPositionVersion') !== positionVersion) {
-                    window.parent.localStorage.removeItem('mcExamBasketX');
-                    window.parent.localStorage.removeItem('mcExamBasketY');
-                    window.parent.localStorage.removeItem('mcExamBasketPositionReady');
-                    window.parent.localStorage.setItem('mcExamBasketPositionVersion', positionVersion);
-                }
-                const savedX = Number(window.parent.localStorage.getItem('mcExamBasketX'));
-                const savedY = Number(window.parent.localStorage.getItem('mcExamBasketY'));
-                const hasSavedPosition = window.parent.localStorage.getItem('mcExamBasketPositionReady') === '1';
-                if (hasSavedPosition && Number.isFinite(savedX) && Number.isFinite(savedY) && savedX >= 0 && savedY >= 0) {
-                    const rect = panel.getBoundingClientRect();
-                    const maxX = Math.max(72, window.parent.innerWidth - rect.width - 12);
-                    const maxY = Math.max(12, window.parent.innerHeight - 90);
-                    panel.style.setProperty('left', `${clamp(savedX, 72, maxX)}px`, 'important');
-                    panel.style.setProperty('top', `${clamp(savedY, 12, maxY)}px`, 'important');
-                    panel.style.setProperty('right', 'auto', 'important');
-                    panel.style.setProperty('transform', 'none', 'important');
-                } else {
-                    panel.style.setProperty('left', 'auto', 'important');
-                    panel.style.setProperty('right', '22px', 'important');
-                    panel.style.setProperty('top', '50vh', 'important');
-                    panel.style.setProperty('transform', 'translateY(-50%)', 'important');
-                }
-            }
-
-            function bind() {
-                const panel = markPanels();
-                if (!panel || panel.dataset.mcResizeBound === '1') {
-                    if (panel) {
-                        applyWidth(panel);
-                        applyPosition(panel);
-                    }
-                    return;
-                }
-                panel.dataset.mcResizeBound = '1';
-                panel.style.setProperty('resize', 'none', 'important');
-                panel.style.setProperty('min-width', '560px', 'important');
-                panel.style.setProperty('max-width', 'calc(100vw - 104px)', 'important');
-                panel.style.setProperty('min-height', '150px', 'important');
-                applyWidth(panel);
-                applyPosition(panel);
-
-                let cornerResizing = false;
-                let moving = false;
-                let moveOffsetX = 0;
-                let moveOffsetY = 0;
-                let resizeStartX = 0;
-                let resizeStartY = 0;
-                let resizeStartWidth = 0;
-                let resizeStartHeight = 0;
-                panel.addEventListener('pointerdown', (event) => {
-                    const rect = panel.getBoundingClientRect();
-                    if (rect.right - event.clientX <= 22 && rect.bottom - event.clientY <= 22) {
-                        cornerResizing = true;
-                        resizeStartX = event.clientX;
-                        resizeStartY = event.clientY;
-                        resizeStartWidth = rect.width;
-                        resizeStartHeight = rect.height;
-                        panel.setPointerCapture(event.pointerId);
-                        event.preventDefault();
-                        return;
-                    }
-                    const heading = event.target.closest('h4');
-                    if (!heading) return;
-                    moving = true;
-                    moveOffsetX = event.clientX - rect.left;
-                    moveOffsetY = event.clientY - rect.top;
-                    panel.setPointerCapture(event.pointerId);
-                    event.preventDefault();
-                });
-                panel.addEventListener('pointermove', (event) => {
-                    if (cornerResizing) {
-                        const nextWidth = clamp(resizeStartWidth + event.clientX - resizeStartX, 560, Math.max(620, window.parent.innerWidth - panel.getBoundingClientRect().left - 12));
-                        const nextHeight = clamp(resizeStartHeight + event.clientY - resizeStartY, 150, Math.max(180, window.parent.innerHeight - panel.getBoundingClientRect().top - 12));
-                        panel.style.setProperty('width', `${nextWidth}px`, 'important');
-                        panel.style.setProperty('height', `${nextHeight}px`, 'important');
-                        panel.style.setProperty('max-height', 'none', 'important');
-                        window.parent.localStorage.setItem('mcExamBasketWidth', String(nextWidth));
-                        window.parent.localStorage.setItem('mcExamBasketHeight', String(nextHeight));
-                        return;
-                    }
-                    if (!moving) return;
-                    const rect = panel.getBoundingClientRect();
-                    const nextX = clamp(event.clientX - moveOffsetX, 72, Math.max(72, window.parent.innerWidth - rect.width - 12));
-                    const nextY = clamp(event.clientY - moveOffsetY, 12, Math.max(12, window.parent.innerHeight - 90));
-                    panel.style.setProperty('left', `${nextX}px`, 'important');
-                    panel.style.setProperty('top', `${nextY}px`, 'important');
-                    panel.style.setProperty('right', 'auto', 'important');
-                    window.parent.localStorage.setItem('mcExamBasketX', String(nextX));
-                    window.parent.localStorage.setItem('mcExamBasketY', String(nextY));
-                    window.parent.localStorage.setItem('mcExamBasketPositionReady', '1');
-                });
-                panel.addEventListener('pointerup', () => { cornerResizing = false; moving = false; });
-                panel.addEventListener('pointercancel', () => { cornerResizing = false; moving = false; });
-            }
-
-            bind();
-            window.parent.setTimeout(bind, 80);
-            window.parent.setTimeout(bind, 300);
-            if (window.parent.__mcExamBasketObserver) {
-                window.parent.__mcExamBasketObserver.disconnect();
-            }
-            window.parent.__mcExamBasketObserver = new window.parent.MutationObserver(bind);
-            window.parent.__mcExamBasketObserver.observe(doc.body, {childList: true, subtree: true});
-        })();
-        </script>
-        """,
-        height=0,
-    )
-
-    if not st.session_state["exam_basket_open"]:
-        with st.container(border=True):
-            st.markdown('<span class="mc-exam-floating-basket-collapsed-anchor"></span>', unsafe_allow_html=True)
-            if st.button(f"🧺\n{selected_count}", key="mc_exam_basket_open", use_container_width=True, help=f"展开试题篮（{selected_count} 题）"):
-                st.session_state["exam_basket_open"] = True
-                st.rerun(scope="fragment")
+    if not st.session_state.get("exam_basket_open", False):
+        st.markdown('<span class="mc-exam-basket-collapsed-anchor"></span>', unsafe_allow_html=True)
+        if st.button(
+            f"🧺 {selected_count}",
+            key="mc_exam_basket_open_small",
+            help=f"打开试题篮（{selected_count} 题）",
+        ):
+            st.session_state["exam_basket_open"] = True
+            st.rerun(scope="fragment")
         return
 
+    # Place a state marker immediately before the bordered basket.  The
+    # adjacent-wrapper CSS can then fix the panel on its first paint, even
+    # before the inner anchor and empty-state content are mounted.
+    st.markdown('<span class="mc-exam-basket-open-state"></span>', unsafe_allow_html=True)
     with st.container(border=True):
-        st.markdown('<span class="mc-exam-floating-basket-anchor"></span>', unsafe_allow_html=True)
-        h1, h2 = st.columns([5, 1], vertical_alignment="center")
-        with h1:
-            st.markdown(f"#### 🧺 试题篮 ({selected_count}/{st.session_state.get('exam_q_count_input', 10)})")
-        with h2:
-            if st.button("收起", key="mc_exam_basket_close", use_container_width=True):
+        st.markdown('<div class="mc-exam-basket-shell"><span class="mc-exam-basket-anchor"></span></div>', unsafe_allow_html=True)
+        title_col, action_col = st.columns([5.5, 1.2], vertical_alignment="center")
+        with title_col:
+            st.markdown(f"#### 🧺 试题篮 · {selected_count} 题")
+            st.markdown("<div class='mc-exam-basket-meta'>已选题目可预览、移除或拖拽排序，完成后进入排版工作台。</div>", unsafe_allow_html=True)
+        with action_col:
+            st.markdown('<span class="mc-exam-basket-close-anchor"></span>', unsafe_allow_html=True)
+            if st.button("关闭试题篮", key="mc_exam_basket_toggle", help="关闭试题篮", use_container_width=False):
                 st.session_state["exam_basket_open"] = False
                 st.rerun(scope="fragment")
 
+        if not st.session_state.get("exam_basket_open", True):
+            st.caption(f"试题篮已收起 · {selected_count} 题")
+            return
         if selected_count <= 0:
-            st.caption("暂未选择任何题目")
+            st.info("暂未选择题目。请在下方题目列表中点击“加入试题篮”。")
+            components.html(BASKET_WINDOW_SCRIPT, height=0)
             return
 
         if st.button("✨ 选题完成，进入排版工作台", type="primary", key="mc_exam_basket_done", use_container_width=True):
@@ -12466,52 +12595,73 @@ def render_exam_floating_basket():
             st.session_state["exam_mode_stage"] = "typesetting"
             st.rerun()
 
-        c_preview, c_list = st.columns([1.15, 1], gap="large")
-        with c_preview:
+        c_list, c_detail = st.columns([0.9, 1.35], gap="large")
+        with c_list:
+            st.markdown('<span class="mc-exam-basket-list-anchor"></span>', unsafe_allow_html=True)
+            st.caption("已收录题目 · 拖拽题号调整顺序")
+            items = [
+                {"id": path, "label": f"{index + 1}. {reference_label(DEFAULT_DATABASE_PATH, path)}"}
+                for index, path in enumerate(selected_paths)
+            ]
+            from utils.sortable_list import st_sortable_list
+
+            result = st_sortable_list(items, key="exam_basket_sortable")
+            if isinstance(result, dict):
+                selected = result.get("selected")
+                removed = result.get("removed")
+                order = result.get("order") or []
+                if selected in selected_paths:
+                    st.session_state["exam_expanded_q"] = selected
+                if removed in selected_paths:
+                    next_paths = [path for path in selected_paths if path != removed]
+                    st.session_state["exam_selected_qs"] = next_paths
+                    sync_exam_blocks_to_selected_order(next_paths)
+                    st.session_state["exam_expanded_q"] = next_paths[0] if next_paths else None
+                    st.session_state["ai_exam_modified"] = True
+                    st.rerun()
+                if order:
+                    next_paths = [path for path in order if path in selected_paths]
+                    next_paths += [path for path in selected_paths if path not in next_paths]
+                    if next_paths != selected_paths:
+                        st.session_state["exam_selected_qs"] = next_paths
+                        sync_exam_blocks_to_selected_order(next_paths)
+                        st.session_state["ai_exam_modified"] = True
+                        st.rerun()
+
+        with c_detail:
             st.markdown('<span class="mc-exam-basket-preview-anchor"></span>', unsafe_allow_html=True)
             expanded_q = st.session_state.get("exam_expanded_q")
-            if expanded_q and os.path.exists(expanded_q):
-                st.caption("👁 已选问题预览")
+            if expanded_q and ref_question_id(expanded_q):
+                qid = ref_question_id(expanded_q)
+                try:
+                    payload = _db_preview_question_payload(DEFAULT_DATABASE_PATH, qid, database_change_token(DEFAULT_DATABASE_PATH))
+                    st.caption("当前题目 · 渲染预览")
+                    st.write(_db_preview_label(payload.get("question") or {}))
+                    render_question_preview(payload.get("legacy_tex") or "", show_title=False,
+                                            prepared_markdown=payload.get("preview_markdown"))
+                except Exception as exc:
+                    st.error(f"题目读取失败：{exc}")
+            elif expanded_q and os.path.exists(expanded_q):
+                st.caption("当前题目 · 渲染预览")
                 try:
                     with open(expanded_q, "r", encoding="utf-8") as f:
                         expanded_content = f.read()
+                    meta = _cached_question_meta(expanded_content)
+                    question_id = str(meta.get("ID") or os.path.basename(expanded_q).replace(".tex", ""))
+                    difficulty = str(meta.get("难度星级") or "未设置")
+                    chapter = str(meta.get("知识板块") or meta.get("板块") or "未设置")
+                    tags = str(meta.get("标签") or "无标签")
+                    st.markdown(
+                        f"**ID：** `{html.escape(question_id)}`　**板块：** {html.escape(chapter)}　**难度：** {html.escape(difficulty)}　**标签：** {html.escape(tags)}",
+                        unsafe_allow_html=True,
+                    )
                     _render_preview_with_inline_assets(latex_to_markdown(expanded_content))
-                except Exception as e:
-                    st.error(f"无法读取文件: {e}")
+                except Exception as exc:
+                    st.error(f"无法读取文件：{exc}")
             else:
-                st.caption("选择右侧题目查看预览")
+                st.caption("从左侧列表选择题目查看详情")
 
-        with c_list:
-            st.markdown('<span class="mc-exam-basket-list-anchor"></span>', unsafe_allow_html=True)
-            items = [
-                {"id": p, "label": f"{i + 1}. {os.path.basename(p).replace('.tex', '')}"}
-                for i, p in enumerate(selected_paths)
-            ]
-            result = st_sortable_list(items, key="exam_basket_sortable")
-            if isinstance(result, dict):
-                removed = result.get("removed")
-                order = result.get("order") or []
-                selected = result.get("selected")
-                if removed and removed in selected_paths:
-                    st.session_state["exam_selected_qs"] = [p for p in selected_paths if p != removed]
-                    sync_exam_blocks_to_selected_order(st.session_state["exam_selected_qs"])
-                    if st.session_state.get("exam_expanded_q") == removed:
-                        remaining = st.session_state["exam_selected_qs"]
-                        st.session_state["exam_expanded_q"] = remaining[0] if remaining else None
-                    if st.session_state.get("ai_exam_active"):
-                        st.session_state["ai_exam_modified"] = True
-                    st.rerun(scope="fragment")
-                if order and order != selected_paths:
-                    valid = [p for p in order if p in selected_paths]
-                    missing = [p for p in selected_paths if p not in valid]
-                    st.session_state["exam_selected_qs"] = valid + missing
-                    sync_exam_blocks_to_selected_order(st.session_state["exam_selected_qs"])
-                    if st.session_state.get("ai_exam_active"):
-                        st.session_state["ai_exam_modified"] = True
-                    st.rerun(scope="fragment")
-                if selected and selected in selected_paths and selected != st.session_state.get("exam_expanded_q"):
-                    st.session_state["exam_expanded_q"] = selected
-                    st.rerun(scope="fragment")
+    components.html(BASKET_WINDOW_SCRIPT, height=0)
 
 
 def _db_preview_json_list(value):
@@ -13290,27 +13440,17 @@ def _render_structured_choice_editor(
             )
         return
     if not use_grid_layout:
-        st.markdown(
-            """
-            <div class="mc-sqlite-entry-option-head">
-                <strong>选项</strong>
-                <span>填写内部 TeX；保存和导出时自动生成 <code>\\choice{{...}}</code>，并插入题干之后。</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        # Native text elements reserve their full wrapped height in Streamlit.
+        # Keep the count label with its widget rather than in a parallel column.
+        st.markdown("**选项**")
+        st.caption("填写内部 TeX；保存和导出时自动生成 `\\choice{...}`，并插入题干之后。")
+        st.number_input(
+            "选项数量",
+            min_value=0,
+            max_value=8,
+            step=1,
+            key=count_key,
         )
-        count_label_col, count_input_col = st.columns([0.42, 0.58], gap="small")
-        with count_label_col:
-            st.markdown("<div class='mc-sqlite-entry-option-count-label'>选项数量</div>", unsafe_allow_html=True)
-        with count_input_col:
-            st.number_input(
-                "选项数量",
-                min_value=0,
-                max_value=8,
-                step=1,
-                key=count_key,
-                label_visibility="collapsed",
-            )
         try:
             choice_count = int(st.session_state.get(count_key, 0) or 0)
         except (TypeError, ValueError):
@@ -14589,13 +14729,8 @@ def _db_preview_render_question_edit_workspace(db_path: str, question_id: str, q
     left_col, middle_col, preview_col = st.columns([1.02, 0.96, 1.12], gap="large")
     save_submitted = False
     with left_col:
-        st.markdown(
-            """
-            <div class="mc-db-edit-toolbar-title">TeX 编辑区</div>
-            <div class="mc-db-edit-toolbar-caption">题干、选项和基础信息放在这里。</div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("**TeX 编辑区**")
+        st.caption("题干、选项和基础信息放在这里。")
         if st.button(
             "退出修改",
             key=f"db_browse_exit_edit_{_db_preview_edit_hash(question_id)}",
@@ -14628,13 +14763,8 @@ def _db_preview_render_question_edit_workspace(db_path: str, question_id: str, q
 
     with middle_col:
         st.markdown('<span class="mc-db-edit-save-panel-anchor"></span>', unsafe_allow_html=True)
-        st.markdown(
-            """
-            <div class="mc-db-edit-toolbar-title">答案与保存</div>
-            <div class="mc-db-edit-toolbar-caption">答案、解析、标签、备注和保存操作。</div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("**答案与保存**")
+        st.caption("答案、解析、标签、备注和保存操作。")
         st.text_area("题干 TeX", key=_db_preview_edit_field_key(question_id, "stem_tex"), height=160)
         st.text_area("答案 TeX", key=_db_preview_edit_field_key(question_id, "answer_tex"), height=92)
         st.text_area("解析 TeX", key=_db_preview_edit_field_key(question_id, "solution_tex"), height=210)
@@ -14653,11 +14783,8 @@ def _db_preview_render_question_edit_workspace(db_path: str, question_id: str, q
 
     with preview_col:
         st.markdown('<span class="mc-db-edit-workspace-preview-anchor"></span>', unsafe_allow_html=True)
-        st.markdown('<div class="mc-db-edit-toolbar-title">编辑草稿预览</div>', unsafe_allow_html=True)
-        st.markdown(
-            "<div class='mc-db-edit-preview-caption'>预览基于当前表单缓存；保存后会重新读取数据库并刷新。</div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown("**编辑草稿预览**")
+        st.caption("预览基于当前表单缓存；保存后会重新读取数据库并刷新。")
         try:
             from services.asset_service import list_assets
 
@@ -14739,7 +14866,8 @@ def _db_preview_question_payload(db_path: str, question_id: str, db_mtime: float
     from services.question_db_service import get_question_bundle
 
     bundle = get_question_bundle(db_path, question_id)
-    question = bundle.get("question") or {}
+    question = dict(bundle.get("question") or {})
+    question['note'] = question_display_note(question.get('note'))
     legacy_tex = question_to_legacy_tex(question)
     preview_markdown = _cached_latex_to_markdown(legacy_tex, show_title=False)
     preview_markdown = _db_preview_apply_includegraphics_previews(preview_markdown, question)
@@ -14793,7 +14921,7 @@ def _db_preview_inline_asset_html(asset: dict, alias: str) -> str:
             return textwrap.dedent(f"""
             <figure class="mc-db-inline-asset">
                 <img src="{data_uri}" alt="{html.escape(caption)}" loading="lazy" />
-                <figcaption>{html.escape(caption)} · {html.escape(alias)}</figcaption>
+                <figcaption>{html.escape(caption)}</figcaption>
             </figure>
             """).strip()
     if exists:
@@ -14822,7 +14950,7 @@ def _db_preview_inline_file_html(abs_path: str, ref: str) -> str:
             return textwrap.dedent(f"""
             <figure class="mc-db-inline-asset">
                 <img src="{data_uri}" alt="{html.escape(file_name)}" loading="lazy" />
-                <figcaption>{html.escape(file_name)} · {html.escape(ref)}</figcaption>
+                <figcaption>{html.escape(file_name)}</figcaption>
             </figure>
             """).strip()
     return textwrap.dedent(f"""
@@ -15042,6 +15170,9 @@ def render_sqlite_readonly_browse_preview(
     show_export_panel: bool = True,
     right_heading: str | None = None,
     right_caption: str | None = None,
+    show_quick_actions: bool = True,
+    preview_only: bool = False,
+    question_columns: int = 1,
 ):
     from services.database_service import DEFAULT_DATABASE_PATH
     from services.question_db_service import (
@@ -15058,28 +15189,40 @@ def render_sqlite_readonly_browse_preview(
     st.markdown('<span class="mc-db-browse-anchor"></span>', unsafe_allow_html=True)
     st.markdown("""
     <style>
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) {
+    body:has(.mc-db-browse-anchor) .block-container {
+        width: calc(100% - 1.5rem) !important;
+        max-width: 1860px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        box-sizing: border-box !important;
+    }
+    body:has(.mc-db-browse-anchor) :is(section.main, [data-testid="stAppViewContainer"]) {
+        scroll-behavior: auto !important;
+        overflow-anchor: none;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) {
         display: grid !important;
-        grid-template-columns: clamp(18rem, 22vw, 21rem) minmax(0, 1fr) !important;
-        column-gap: 0 !important;
+        grid-template-columns: calc(clamp(18rem, 22vw, 21rem) + 1.25rem) minmax(0, 1fr) !important;
+        column-gap: 1.4rem !important;
         align-items: start !important;
     }
 
 
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) > div {
+    div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > div {
         min-width: 0 !important;
         box-sizing: border-box !important;
         width: auto !important;
         max-width: none !important;
         flex: none !important;
+        justify-self: stretch !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) > div:first-child {
+    div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > div:first-child {
         min-width: 0 !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) > div:last-child {
+    div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > div:last-child {
         min-width: 0 !important;
     }
-    div[data-testid="column"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) {
+    div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child {
         position: sticky !important;
         top: 0.75rem !important;
         align-self: flex-start !important;
@@ -15088,9 +15231,9 @@ def render_sqlite_readonly_browse_preview(
         max-height: calc(100vh - 1.5rem) !important;
         overflow: visible !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) {
         gap: 0.42rem !important;
-        padding: 0 !important;
+        padding: 0 0.75rem 0.5rem 0 !important;
         border: 0 !important;
         border-radius: 0 !important;
         background: transparent !important;
@@ -15102,8 +15245,30 @@ def render_sqlite_readonly_browse_preview(
         overflow-x: hidden !important;
         overflow-y: auto !important;
         scrollbar-gutter: stable !important;
+        scrollbar-width: thin;
+        scrollbar-color: #b8a9ca transparent;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]),
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+    /* Streamlit assigns pixel widths to widgets before the scroll gutter is
+       measured. Constrain those inner widgets as well as their wrappers. */
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) :is(
+        div[data-testid="stSelectbox"], div[data-testid="stTextInput"],
+        div[data-testid="stButton"], div[data-testid="stDownloadButton"],
+        div[data-testid="stExpander"], div[data-testid="stAlert"],
+        div[data-testid="stHorizontalBlock"], div[data-testid="stVerticalBlockBorderWrapper"]
+    ) {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-card-anchor) {
         border: 1px solid rgba(148, 163, 184, 0.22) !important;
         border-radius: 16px !important;
         background: #ffffff !important;
@@ -15111,7 +15276,7 @@ def render_sqlite_readonly_browse_preview(
         background-clip: padding-box !important;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035) !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) > div[data-testid="stVerticalBlock"] {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-card-anchor) > div[data-testid="stVerticalBlock"] {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
@@ -15120,18 +15285,18 @@ def render_sqlite_readonly_browse_preview(
         background-color: #ffffff !important;
         padding: 0.86rem 0.92rem 0.72rem !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) div[data-testid="stElementContainer"],
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) div[data-testid="stMarkdownContainer"] {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-card-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]),
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-card-anchor) div[data-testid="stMarkdownContainer"] {
         background: transparent !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] .mc-db-browse-card-anchor) div[data-testid="stHorizontalBlock"] > div {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(> div[data-testid="stVerticalBlock"] > :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-card-anchor) div[data-testid="stHorizontalBlock"] > div {
         min-width: 0 !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) {
+    body:has(.mc-db-browse-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-meta-action-anchor) {
         display: none !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"],
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] div[data-testid="stButton"] {
+    body:has(.mc-db-browse-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-meta-action-anchor) + :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]),
+    body:has(.mc-db-browse-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-meta-action-anchor) + :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) div[data-testid="stButton"] {
         width: max-content !important;
         max-width: max-content !important;
         min-width: 0 !important;
@@ -15139,7 +15304,7 @@ def render_sqlite_readonly_browse_preview(
         padding: 0 !important;
         background: transparent !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button {
+    body:has(.mc-db-browse-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-meta-action-anchor) + :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) button {
         width: 82px !important;
         max-width: 82px !important;
         min-width: 0 !important;
@@ -15159,17 +15324,16 @@ def render_sqlite_readonly_browse_preview(
         overflow: hidden !important;
         text-overflow: ellipsis !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button p {
+    body:has(.mc-db-browse-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-meta-action-anchor) + :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) button p {
         font-size: 0.68rem !important;
         line-height: 1.1 !important;
         white-space: nowrap !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stElementContainer"]:has(.mc-db-meta-action-anchor) + div[data-testid="stElementContainer"] button:hover {
+    body:has(.mc-db-browse-anchor) :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-meta-action-anchor) + :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) button:hover {
         background: #ede9fe !important;
         color: #5b21b6 !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) pre,
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) code {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-db-browse-card-anchor):not(:has(div[data-testid="stVerticalBlockBorderWrapper"] .mc-db-browse-card-anchor)) pre {
         max-width: 100% !important;
         overflow-x: auto !important;
     }
@@ -15611,18 +15775,18 @@ def render_sqlite_readonly_browse_preview(
         align-items: flex-start !important;
         gap: 1.2rem !important;
     }
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-panel-anchor),
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-save-panel-anchor),
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-workspace-preview-anchor) {
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-panel-anchor),
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-save-panel-anchor),
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-workspace-preview-anchor) {
         min-width: 0 !important;
     }
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-panel-anchor) textarea,
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-save-panel-anchor) textarea,
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-panel-anchor) input,
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-save-panel-anchor) input {
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-panel-anchor) textarea,
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-save-panel-anchor) textarea,
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-panel-anchor) input,
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-save-panel-anchor) input {
         background: #ffffff !important;
     }
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-workspace-preview-anchor) > div[data-testid="stVerticalBlock"] {
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-workspace-preview-anchor) > div[data-testid="stVerticalBlock"] {
         position: sticky !important;
         top: 0.75rem !important;
         padding: 0.92rem 1rem !important;
@@ -15634,7 +15798,7 @@ def render_sqlite_readonly_browse_preview(
         overflow-y: auto !important;
         overflow-x: hidden !important;
     }
-    body:has(.mc-db-edit-workspace-anchor) div[data-testid="column"]:has(.mc-db-edit-workspace-preview-anchor) .katex-display {
+    body:has(.mc-db-edit-workspace-anchor) :is(div[data-testid="column"], div[data-testid="stColumn"]):has(.mc-db-edit-workspace-preview-anchor) .katex-display {
         overflow-x: auto !important;
         overflow-y: hidden !important;
     }
@@ -15658,12 +15822,12 @@ def render_sqlite_readonly_browse_preview(
     .mc-db-edit-actions {
         margin-top: 0.55rem;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-edit-panel-anchor) {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-edit-panel-anchor) {
         padding: 0.2rem 0 0 !important;
         gap: 0.45rem !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-edit-panel-anchor) textarea,
-    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-edit-panel-anchor) input {
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-edit-panel-anchor) textarea,
+    body:has(.mc-db-browse-anchor) div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-edit-panel-anchor) input {
         background: #ffffff !important;
     }
     .mc-db-edit-preview-caption {
@@ -15837,17 +16001,17 @@ def render_sqlite_readonly_browse_preview(
         font-weight: 800;
     }
     /* Keep the browse filters breathable; the paper number grid remains compact. */
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) {
         gap: 0.86rem !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) .mc-db-sidebar-section-label {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) .mc-db-sidebar-section-label {
         margin-top: 1.86rem !important;
         margin-bottom: 0.76rem !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) .mc-db-sidebar-caption {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) .mc-db-sidebar-caption {
         margin-bottom: 1.06rem !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) .mc-db-sidebar-section-label:first-of-type {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) .mc-db-sidebar-section-label:first-of-type {
         margin-top: 0.45rem !important;
     }
     div[data-testid="stVerticalBlock"]:has(.mc-db-paper-nav-anchor) div[data-testid="stHorizontalBlock"] {
@@ -15871,25 +16035,83 @@ def render_sqlite_readonly_browse_preview(
         background: #f5f3ff !important;
         color: #5b21b6 !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor) {
+    /* Only the row owning the source marker is a source/preview split.
+       A broad :has() also matches the outer filter/results row. */
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) {
         display: grid !important;
-        grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.32fr) !important;
-        column-gap: 0 !important;
+        grid-template-columns: minmax(18rem, 0.94fr) minmax(0, 1.32fr) !important;
+        column-gap: 1rem !important;
         align-items: start !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
     }
-    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor) > div[data-testid="column"] {
+    :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]):has(.mc-db-code-preview-anchor) {
+        display: none !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]) {
         width: auto !important;
         max-width: none !important;
         min-width: 0 !important;
         flex: none !important;
+        justify-self: stretch !important;
+        box-sizing: border-box !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child,
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child > div[data-testid="stVerticalBlock"],
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child div[data-testid="stCode"],
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        white-space: pre !important;
+        scroll-behavior: auto !important;
+        scrollbar-width: auto;
+        scrollbar-color: #a998bd #f3f0f7;
+    }
+    /* Keep a single native scroll owner. The highlighted code must retain its
+       intrinsic width instead of becoming a second, nested scroll container. */
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre code {
+        display: block !important;
+        width: max-content !important;
+        min-width: 100% !important;
+        max-width: none !important;
+        overflow: visible !important;
+        white-space: pre !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre::-webkit-scrollbar {
+        height: 14px;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre::-webkit-scrollbar-track {
+        background: #f3f0f7;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre::-webkit-scrollbar-thumb {
+        background: #a998bd;
+        border: 2px solid #f3f0f7;
+        border-radius: 8px;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child pre::-webkit-scrollbar-thumb:hover {
+        background: #8c77a4;
+    }
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):last-child,
+    div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > :is(div[data-testid="column"], div[data-testid="stColumn"]):last-child > div[data-testid="stVerticalBlock"] {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
     }
     body:has(.mc-db-browse-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-db-browse-left-anchor) > div:last-child {
-        margin-left: 1.4rem !important;
-        width: calc(100% - 1.4rem) !important;
+        margin-left: 0 !important;
+        width: auto !important;
     }
-    body:has(.mc-db-browse-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor) > div:last-child {
-        margin-left: 1.4rem !important;
-        width: calc(100% - 1.4rem) !important;
+    body:has(.mc-db-browse-anchor) div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) > div:last-child {
+        margin-left: 0 !important;
+        width: auto !important;
     }
     .mc-db-question-list-title {
         margin: 1rem 0 0.42rem;
@@ -15908,6 +16130,17 @@ def render_sqlite_readonly_browse_preview(
         font-weight: 860;
         letter-spacing: -0.025em;
     }
+    @media (max-width: 900px) {
+        div[data-testid="stHorizontalBlock"]:has(.mc-db-code-preview-anchor):not(:has(div[data-testid="stHorizontalBlock"] .mc-db-code-preview-anchor)) {
+            grid-template-columns: minmax(0, 1fr) !important;
+            row-gap: 0.9rem !important;
+        }
+    }
+    @media (min-width: 901px) and (max-width: 1500px) {
+        body:has(.mc-db-browse-anchor) .block-container {
+            padding-right: 7rem !important;
+        }
+    }
     .mc-db-single-edit-heading::before {
         content: "";
         width: 0.52rem;
@@ -15916,13 +16149,13 @@ def render_sqlite_readonly_browse_preview(
         background: linear-gradient(180deg, #7c3aed, #a78bfa);
         box-shadow: 0 8px 18px rgba(124, 58, 237, 0.18);
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) hr {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) hr {
         margin: 0.78rem 0 !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) label {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) label {
         margin-bottom: 0.12rem !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) div[data-testid="stButton"] > button {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) div[data-testid="stButton"] > button {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
@@ -15935,7 +16168,7 @@ def render_sqlite_readonly_browse_preview(
         padding-left: 0.42rem !important;
         padding-right: 0.42rem !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) div[data-testid="stDownloadButton"] > button {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) div[data-testid="stDownloadButton"] > button {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
@@ -15943,29 +16176,49 @@ def render_sqlite_readonly_browse_preview(
         padding-left: 0.42rem !important;
         padding-right: 0.42rem !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) div[data-testid="stButton"] > button[kind="primary"] {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) div[data-testid="stButton"] > button[kind="primary"] {
         background: #d8c3fb !important;
         border-color: #b794f4 !important;
         color: #241238 !important;
         box-shadow: none !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) div[data-testid="stButton"] > button:hover {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) div[data-testid="stButton"] > button:hover {
         border-color: #8b5cf6 !important;
         background: #f5f3ff !important;
         color: #4c1d95 !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .mc-db-browse-left-anchor) [data-baseweb="select"] {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) [data-baseweb="select"] {
         min-width: 0 !important;
         width: 100% !important;
     }
     @media (max-width: 1180px) {
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"] .mc-db-browse-left-anchor) > div:first-child {
-            flex-basis: 19.25rem !important;
-            max-width: 19.25rem !important;
+        div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > div:first-child {
+            flex-basis: 20.5rem !important;
+            max-width: 20.5rem !important;
+        }
+    }
+    @media (max-width: 900px) {
+        div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) {
+            grid-template-columns: minmax(0, 1fr) !important;
+            row-gap: 0.9rem !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > div:first-child {
+            max-width: none !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(> :is(div[data-testid="column"], div[data-testid="stColumn"]) .mc-db-browse-left-anchor) > :is(div[data-testid="column"], div[data-testid="stColumn"]):first-child {
+            position: static !important;
+            max-height: none !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .mc-db-browse-left-anchor) {
+            max-height: none !important;
+            overflow: visible !important;
         }
     }
     </style>
     """, unsafe_allow_html=True)
+
+    from utils.browse_card_layout import BROWSE_CARD_HEADER_CSS
+    st.markdown(BROWSE_CARD_HEADER_CSS, unsafe_allow_html=True)
 
     db_path = DEFAULT_DATABASE_PATH
     if not os.path.exists(db_path):
@@ -15973,7 +16226,7 @@ def render_sqlite_readonly_browse_preview(
         st.caption("请先运行数据库重建与提升流程，再使用 SQLite 只读预览。")
         return
 
-    db_mtime = os.path.getmtime(db_path)
+    db_mtime = database_change_token(db_path)
 
     for state_key, fallback in [
         ("db_browse_editing_question_id", ""),
@@ -15993,7 +16246,7 @@ def render_sqlite_readonly_browse_preview(
         st.markdown('<div class="mc-db-single-edit-heading">单题 TeX 编辑</div>', unsafe_allow_html=True)
         st.caption("只显示当前题目；保存或退出后会返回原来的列表位置。")
         try:
-            db_mtime = os.path.getmtime(db_path)
+            db_mtime = database_change_token(db_path)
             payload = _db_preview_question_payload(db_path, editing_question_id, db_mtime)
             question = payload.get("question") or {}
         except Exception as exc:
@@ -16140,7 +16393,7 @@ def render_sqlite_readonly_browse_preview(
         if allow_edit:
             st.caption("默认只读；保存只写入 SQLite，不修改旧题目文件。")
         else:
-            st.caption("组卷试用模式；SQLite 只负责筛选预览，试题篮复用旧 .tex 路径。")
+            st.caption("按正式题目ID选题；进入排版时生成兼容TeX。")
         if allow_exam_basket:
             st.caption(f"当前试题篮：{len(st.session_state.get('exam_selected_qs', []))} 题")
 
@@ -16211,7 +16464,6 @@ def render_sqlite_readonly_browse_preview(
 
         st.markdown('<div class="mc-db-sidebar-section-break" aria-hidden="true"></div>', unsafe_allow_html=True)
         st.markdown('<div class="mc-db-sidebar-section-label">更多筛选</div>', unsafe_allow_html=True)
-        st.markdown('<div class="mc-db-sidebar-caption">试卷来源、题型和难度会按当前知识板块与年份自动收窄。</div>', unsafe_allow_html=True)
         selected_source = st.selectbox("试卷来源", source_options, key="db_browse_source", on_change=_db_preview_reset_page)
         selected_type = st.selectbox(
             "题型",
@@ -16282,7 +16534,7 @@ def render_sqlite_readonly_browse_preview(
     page_exam_paths = []
     if allow_exam_basket and page_items:
         for item in page_items:
-            exam_path = resolve_legacy_card_file_path({"path": item.get("legacy_file_path") or ""}, APP_ROOT)
+            exam_path = question_ref(item["question_id"])
             if exam_path and exam_path not in page_exam_paths:
                 page_exam_paths.append(exam_path)
 
@@ -16300,10 +16552,6 @@ def render_sqlite_readonly_browse_preview(
                 <span>找到 {int(page['total'] or 0)} 题</span>
             </div>
             """,
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"<div class='mc-db-result-caption'>每页 {page['limit']} 道 · 当前第 {current_page if page_count else 0} / {page_count} 页</div>",
             unsafe_allow_html=True,
         )
         if source_navigation_items or source_navigation_hint:
@@ -16422,10 +16670,17 @@ def render_sqlite_readonly_browse_preview(
                             limit=min(500, max(60, remaining_count * 8)),
                             offset=0,
                         )
-                        candidate_paths = list_resolved_legacy_card_paths(db_path, candidate_filters, project_root=APP_ROOT)
-                        candidate_paths = [path for path in candidate_paths if path not in selected_path_set]
-                        random.shuffle(candidate_paths)
-                        chosen_paths = candidate_paths[:remaining_count]
+                        from services.smart_exam_service import build_candidate_pool, CandidateOptions, load_exam_rows, plan_selection
+                        if any(not ref_question_id(ref) for ref in selected_path_set):
+                            raise ValueError("请先核对试题篮中无法关联正式题ID的旧文件题。")
+                        pool = build_candidate_pool(db_path, filters=candidate_filters, limit=0,
+                            options=CandidateOptions(seed=random.randrange(1000000)))
+                        pinned = load_exam_rows(db_path, question_ids=[ref_question_id(ref) for ref in selected_path_set])
+                        plan = plan_selection(pool, target_count=target_count, pinned_rows=pinned, unknown_limit=target_count)
+                        if not plan["ready"]:
+                            raise ValueError("当前范围无法补足题量，请扩大范围或调整试题篮。")
+                        chosen_paths = [question_ref(row["question_id"]) for row in plan["rows"]
+                                        if question_ref(row["question_id"]) not in selected_path_set]
                         if chosen_paths:
                             _add_exam_selection_paths(chosen_paths)
                             st.toast(f"已补入 {len(chosen_paths)} 题", icon="✅")
@@ -16444,6 +16699,10 @@ def render_sqlite_readonly_browse_preview(
     else:
         display_items = page_items
 
+    if show_quick_actions:
+        render_surface_quick_actions("sqlite-browse", scroll_target=".mc-db-browse-left-anchor")
+        render_advanced_search_floating_panel()
+
     with right_col:
         st.markdown(right_heading or ("### 检索结果预览" if keyword else "### SQLite 数据库题目预览"))
         if right_caption is not None:
@@ -16451,13 +16710,17 @@ def render_sqlite_readonly_browse_preview(
         elif allow_edit:
             st.caption("当前入口默认只读；单题点击开始修改后才保存到 SQLite，旧文件编辑、AI 解答暂不接入这里。")
         else:
-            st.caption("当前为 SQLite 试用选题；筛选不写库，最终生成仍沿用旧组卷引用次数逻辑。")
+            st.caption("筛选和试题篮操作不改题目正文；可继续手选或使用智能组卷。")
 
         if not display_items:
             st.markdown('<div class="mc-db-browse-empty">没有匹配题目。请调整左侧筛选条件。</div>', unsafe_allow_html=True)
             return
 
-        for item in display_items:
+        card_columns = None
+        for item_index, item in enumerate(display_items):
+            if question_columns == 2 and item_index % 2 == 0:
+                card_columns = st.columns(2, gap="large")
+            card_parent = card_columns[item_index % 2] if card_columns else st
             question_id = item.get("question_id", "")
             try:
                 payload = _db_preview_question_payload(db_path, question_id, db_mtime)
@@ -16479,13 +16742,13 @@ def render_sqlite_readonly_browse_preview(
             ]
             source_text = " / ".join(paper_bits) or "未识别来源"
             tag_html = "".join(f"<span class='mc-db-browse-pill blue'>🏷️ {html.escape(tag)}</span>" for tag in tags) or "<span class='mc-db-browse-pill'>无标签</span>"
-            note_text = question.get("note") or "无备注"
+            note_text = question_display_note(question.get("note")) or "无备注"
 
             is_editing = allow_edit and st.session_state.get("db_browse_editing_question_id") == question_id
 
-            with st.container(border=True):
+            with card_parent.container(border=True):
                 st.markdown(
-                    f'<span id="{_db_preview_question_anchor_id(question_id)}" class="mc-db-browse-card-anchor"></span>',
+                    f'<span id="{_db_preview_question_anchor_id(question_id)}" class="mc-db-browse-card-anchor{"" if preview_only else " mc-db-full-preview-anchor"}"></span>',
                     unsafe_allow_html=True,
                 )
                 st.markdown(
@@ -16493,22 +16756,23 @@ def render_sqlite_readonly_browse_preview(
                     unsafe_allow_html=True,
                 )
                 st.markdown(f"<div class='mc-db-browse-title'>{html.escape(title)}</div>", unsafe_allow_html=True)
-                meta_col, meta_action_col, _ = st.columns([1.72, 0.42, 1.88], gap="small", vertical_alignment="center")
-                with meta_col:
+                with st.container():
                     st.markdown(
                         f"""
-                        <div class="mc-db-browse-meta">
+                        <div class="mc-db-browse-meta mc-db-inline-meta-anchor">
                             <span class="mc-db-browse-pill purple">ID：{html.escape(question_id)}</span>
                             <span class="mc-db-browse-pill">难度：{html.escape(str(diff)) if diff is not None else "未设置"}</span>
                             {tag_html}
-                            <span class="mc-db-browse-pill">备注：{html.escape(note_text)}</span>
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
-                with meta_action_col:
                     if allow_edit:
                         _db_preview_render_metadata_popover(db_path, question_id, question)
+                st.markdown(
+                    f"<div class='mc-db-browse-note'><strong>备注：</strong>{html.escape(note_text)}</div>",
+                    unsafe_allow_html=True,
+                )
                 st.markdown(
                     f"<div class='mc-db-browse-source'>来源：{html.escape(source_text)} · 文件：{html.escape(question.get('legacy_file_path') or '')}</div>",
                     unsafe_allow_html=True,
@@ -16519,10 +16783,14 @@ def render_sqlite_readonly_browse_preview(
                 else:
                     st.markdown(_db_preview_material_drawer_html(bundle), unsafe_allow_html=True)
                     if not allow_edit and allow_exam_basket:
-                        legacy_card = sqlite_bundle_to_legacy_card(bundle)
-                        exam_path = resolve_legacy_card_file_path(legacy_card, APP_ROOT)
+                        exam_path = question_ref(question_id)
                         is_in_basket = bool(exam_path and exam_path in st.session_state.get("exam_selected_qs", []))
-                        basket_action_col, download_action_col, _ = st.columns([0.82, 0.72, 2.28], gap="small")
+                        if preview_only:
+                            # Result cards already occupy the second column
+                            # level supported by the pinned Streamlit version.
+                            basket_action_col, download_action_col = st.container(), st.container()
+                        else:
+                            basket_action_col, download_action_col, _ = st.columns([0.82, 0.72, 2.28], gap="small")
                         with basket_action_col:
                             basket_label = "移出试题篮" if is_in_basket else "加入试题篮"
                             st.button(
@@ -16533,7 +16801,7 @@ def render_sqlite_readonly_browse_preview(
                                 disabled=not exam_path,
                                 on_click=_toggle_exam_selection_path,
                                 args=(exam_path,),
-                                help=None if exam_path else "该 SQLite 题目缺少可复用的旧 .tex 文件路径，暂不能进入旧组卷流程。",
+                                help="按正式题目ID加入试题篮，进入排版时生成兼容TeX。",
                             )
                         with download_action_col:
                             st.download_button(
@@ -16544,6 +16812,13 @@ def render_sqlite_readonly_browse_preview(
                                 key=f"db_browse_download_{_db_preview_edit_hash(question_id)}",
                                 use_container_width=True,
                             )
+
+                    if preview_only:
+                        try:
+                            render_question_preview(legacy_tex, show_title=False, prepared_markdown=preview_markdown)
+                        except Exception as exc:
+                            st.warning(f"渲染失败：{exc}")
+                        continue
 
                     code_col, preview_col = st.columns([0.94, 1.32], gap="large")
                     with code_col:
@@ -16575,9 +16850,32 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
     is_cloze_library = paper_type_scope == "WK"
     page_title = page_title or ("🧩 挖空题库" if is_cloze_library else "🔍 全局浏览与编辑")
     st.markdown('<span class="mc-browse-page-anchor"></span>', unsafe_allow_html=True)
+    render_surface_quick_actions(
+        "exam-browse" if is_exam_mode else "browse",
+        scroll_target=".mc-browse-page-anchor",
+    )
     if is_exam_mode:
         st.markdown("""
         <style>
+        /* Legacy TeX selection uses the same two-card reading layout without
+           adding another native column level inside the browse workspace. */
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-card-anchor) {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-card-anchor) > * {
+            grid-column: 1 / -1;
+            min-width: 0;
+        }
+        div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-card-anchor) > div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-card-anchor) {
+            grid-column: auto;
+        }
+        @media (max-width: 900px) {
+            div[data-testid="stVerticalBlock"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] .mc-exam-card-anchor) {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
         [data-testid="stVerticalBlockBorderWrapper"]:has(.mc-exam-card-anchor) {
             border-color: rgba(0, 0, 0, 0.10) !important;
             border-radius: 10px !important;
@@ -17431,161 +17729,23 @@ def page_browse(is_exam_mode=False, is_delete_mode=False, paper_type_scope=None,
 
 
 def _render_sqlite_ai_exam_panel(theme: str, target_count: int):
+    from components.smart_exam import render
     from services.database_service import DEFAULT_DATABASE_PATH
-    from services.exam_selection_service import legacy_rows_to_existing_paths, select_exam_rows
-    from services.question_db_service import QuestionListFilters
-    from services.sqlite_legacy_adapter import list_sqlite_legacy_rows
 
-    db_path = DEFAULT_DATABASE_PATH
-    is_paper = "试卷" in str(theme or "")
-    effective_target = 19 if is_paper else max(1, int(target_count or 10))
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stVerticalBlock"]:has(.mc-sqlite-ai-exam-anchor) {
-            gap: 0.56rem !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.mc-sqlite-ai-exam-anchor) div[data-testid="stButton"] > button {
-            min-height: 2.45rem !important;
-            white-space: normal !important;
-        }
-        .mc-sqlite-ai-exam-title {
-            margin: 0;
-            color: #4c1d95;
-            font-size: 1.05rem;
-            line-height: 1.35;
-            font-weight: 820;
-        }
-        .mc-sqlite-ai-exam-caption {
-            margin: -0.1rem 0 0.2rem;
-            color: #5f6368;
-            font-size: 0.84rem;
-            line-height: 1.5;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    def preview(question_id):
+        payload = _db_preview_question_payload(DEFAULT_DATABASE_PATH, question_id, database_change_token(DEFAULT_DATABASE_PATH))
+        render_question_preview(payload.get("legacy_tex") or "", show_title=False,
+                                prepared_markdown=payload.get("preview_markdown"))
 
-    with st.container(border=True):
-        st.markdown('<span class="mc-sqlite-ai-exam-anchor"></span>', unsafe_allow_html=True)
-        st.markdown('<div class="mc-sqlite-ai-exam-title">🤖 SQLite 智能预组卷</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="mc-sqlite-ai-exam-caption">只读取 SQLite 摘要字段生成候选池；抽中题目仍以旧 .tex 路径进入试题篮。本次目标 {effective_target} 题。</div>',
-            unsafe_allow_html=True,
-        )
-        if not os.path.exists(db_path):
-            st.warning(f"未找到正式数据库：{db_path}")
-            return
-
-        c_subject, c_diff, c_limit = st.columns([1.45, 0.9, 0.7], gap="small")
-        with c_subject:
-            extended_subjects = ["高考范围"] + SUBJECTS
-            selected_subjects = st.multiselect(
-                "知识板块",
-                options=extended_subjects,
-                default=["高考范围"],
-                key="sqlite_ai_exam_subjects",
-            )
-        with c_diff:
-            st.markdown("<div style='font-size: 14px; color: #31333F; margin-bottom: 5px;'><b>目标平均难度星级</b></div>", unsafe_allow_html=True)
-            from utils.star_rating import st_star_rating
-
-            ai_difficulty = st_star_rating(
-                label="",
-                value=st.session_state.get("sqlite_ai_exam_diff_val", 3.0),
-                max_stars=6,
-                key="star_sqlite_ai_exam_diff",
-            )
-            if ai_difficulty is not None and ai_difficulty != st.session_state.get("sqlite_ai_exam_diff_val", 3.0):
-                st.session_state["sqlite_ai_exam_diff_val"] = ai_difficulty
-        with c_limit:
-            candidate_limit = st.selectbox(
-                "候选上限",
-                [500, 1000, "全部"],
-                index=1,
-                key="sqlite_ai_exam_candidate_limit",
-            )
-
-        c_intent, c_polish = st.columns([4, 1], gap="small", vertical_alignment="bottom")
-        with c_intent:
-            st.text_area(
-                "组卷意图与附加要求",
-                key="sqlite_ai_exam_intent",
-                height=86,
-                placeholder="例如：侧重函数与导数，最后一道导数压轴，不要太偏。",
-            )
-        with c_polish:
-            if st.button("✨ AI 润色想法", key="sqlite_ai_exam_polish", use_container_width=True):
-                txt = st.session_state.get("sqlite_ai_exam_intent", "").strip()
-                if not txt:
-                    st.toast("请先填写初步想法", icon="⚠️")
-                else:
-                    res = call_ai_for_polish(txt)
-                    if res.startswith("❌"):
-                        st.toast(res, icon="❌")
-                    else:
-                        st.session_state["sqlite_ai_exam_intent"] = res
-                        st.toast("润色成功", icon="✨")
-                        st.rerun()
-
-        if is_paper:
-            st.info("当前为试卷类模板，SQLite 智能抽题会按新高考结构尽量抽取 19 题。")
-        else:
-            st.caption(f"当前为非试卷类模板，将按上方组卷数量抽取 {effective_target} 题。")
-
-        if st.button("🚀 开始 SQLite 智能抽题", key="sqlite_ai_exam_run", type="primary", use_container_width=True):
-            if not selected_subjects:
-                st.warning("请至少选择一个知识板块。")
-                return
-            max_rows = 0 if candidate_limit == "全部" else int(candidate_limit)
-            with st.spinner("正在从 SQLite 摘要字段构建候选池..."):
-                try:
-                    rows = list_sqlite_legacy_rows(db_path, QuestionListFilters(limit=100, offset=0), max_rows=max_rows)
-                    result = select_exam_rows(
-                        rows,
-                        selected_subjects,
-                        all_subjects=SUBJECTS,
-                        target_count=effective_target,
-                        is_paper_template=is_paper,
-                        target_difficulty=float(st.session_state.get("sqlite_ai_exam_diff_val", 3.0) or 3.0),
-                        intent_text=st.session_state.get("sqlite_ai_exam_intent", ""),
-                    )
-                    final_paths = legacy_rows_to_existing_paths(
-                        result["selected_rows"],
-                        project_root=BASE_DIR,
-                        chapters_dir=CHAPTERS_DIR,
-                    )
-                except Exception as exc:
-                    st.error(f"SQLite 智能抽题失败：{exc}")
-                    return
-
-            if not final_paths:
-                st.warning("当前条件下没有抽到可进入旧组卷流程的题目。")
-                return
-
-            st.session_state["exam_selected_qs"] = final_paths
-            st.session_state["exam_q_count_input"] = len(final_paths)
-            st.session_state["_count_widget"] = len(final_paths)
-            st.session_state["exam_basket_open"] = True
-            st.session_state["exam_expanded_q"] = final_paths[0]
-            sync_exam_blocks_to_selected_order(final_paths)
-            st.session_state["ai_exam_modified"] = False
-
-            if len(final_paths) < effective_target:
-                st.warning(f"候选池满足条件的题目不足，仅抽取到 {len(final_paths)} 题。")
-            else:
-                st.success(f"SQLite 智能抽题完成：已抽取 {len(final_paths)} 题。")
-            intent_profile = result.get("intent_profile") or {}
-            if intent_profile.get("active"):
-                matched_subjects = "、".join(intent_profile.get("subjects") or []) or "无明确板块"
-                st.caption(f"已使用意图参与筛选：匹配板块 {matched_subjects}，关键词 {len(intent_profile.get('tokens') or [])} 个。")
-            st.rerun()
+    render(theme, target_count, preview_question=preview,
+           sync_blocks=sync_exam_blocks_to_selected_order, polish_intent=call_ai_for_polish)
 
 
 def page_exam_paper_generation():
     st.markdown('<span id="mc-exam-page-anchor"></span>', unsafe_allow_html=True)
     st.header("🖨️ 组卷服务")
+    render_surface_quick_actions("exam", scroll_target="#mc-exam-page-anchor")
+    render_advanced_search_floating_panel()
     
     # 注入全局按钮样式 CSS Hook
     st.markdown("""
@@ -17894,14 +18054,12 @@ def page_exam_paper_generation():
             st.session_state["_count_widget"] = st.session_state["exam_q_count_input"]
 
     selected_count = len(st.session_state.get("exam_selected_qs", []))
-    if selected_count > st.session_state.get("exam_q_count_input", 10):
+    smart_sqlite_active = st.session_state.get("ai_exam_active", False) and st.session_state.get("exam_selection_source") == "SQLite 试用题库"
+    if selected_count > st.session_state.get("exam_q_count_input", 10) and not smart_sqlite_active:
         st.session_state["exam_q_count_input"] = selected_count
         st.session_state["_count_widget"] = selected_count
+        st.session_state["smart_exam_target_count"] = selected_count
         st.toast("当前新增问题数已超过预设定数，已为您新增题数上限", icon="⚠️")
-    render_exam_floating_basket()
-    # Keep the familiar non-blocking search and page-top controls available
-    # while choosing questions in the exam service as well.
-    render_advanced_search_floating_panel()
     from services.database_service import DEFAULT_DATABASE_PATH
     from services.local_preferences_service import QUESTION_SOURCE_LEGACY, QUESTION_SOURCE_SQLITE, get_browse_default_source, source_label
     from services.question_db_service import get_question_bank_availability
@@ -17912,8 +18070,23 @@ def page_exam_paper_generation():
         preferred_exam_source = QUESTION_SOURCE_LEGACY
     selection_source = source_label(preferred_exam_source, surface="exam")
     st.session_state["exam_selection_source"] = selection_source
+    if preferred_exam_source == QUESTION_SOURCE_SQLITE:
+        from services.exam_basket_service import upgrade_basket_refs
+        upgraded, ref_mapping = upgrade_basket_refs(DEFAULT_DATABASE_PATH, st.session_state.get("exam_selected_qs", []), BASE_DIR, return_mapping=True)
+        st.session_state["exam_selected_qs"] = upgraded
+        for block in st.session_state.get("exam_blocks", []):
+            old_ref = block.get("selection_ref") or block.get("path")
+            if block.get("type") == "question" and old_ref in ref_mapping:
+                block["selection_ref"] = ref_mapping[old_ref]
+        if st.session_state.get("exam_expanded_q") not in upgraded:
+            st.session_state["exam_expanded_q"] = upgraded[0] if upgraded else None
 
     # Sync state before widget to preserve value
+    pending_count = st.session_state.pop("exam_pending_count", None)
+    if pending_count is not None:
+        st.session_state["_count_widget"] = int(pending_count)
+        st.session_state["smart_exam_target_count"] = int(pending_count)
+        st.session_state["exam_q_count_input"] = int(pending_count)
     current_count = st.session_state.get("exam_q_count_input", 10)
     if "_count_widget" not in st.session_state:
         st.session_state["_count_widget"] = current_count
@@ -17924,6 +18097,7 @@ def page_exam_paper_generation():
     with c_num:
         def _update_count():
             st.session_state["exam_q_count_input"] = st.session_state["_count_widget"]
+            st.session_state["smart_exam_target_count"] = st.session_state["_count_widget"]
         st.number_input("本次组卷数量", min_value=1, key="_count_widget", on_change=_update_count, label_visibility="collapsed")
     with c_ai:
         if selection_source == "旧 TeX 题库":
@@ -17935,7 +18109,7 @@ def page_exam_paper_generation():
                 st.rerun()
         else:
             ai_btn_type = "primary" if st.session_state["ai_exam_active"] else "secondary"
-            if st.button("🤖 启用SQLite智能预组卷", use_container_width=True, type=ai_btn_type):
+            if st.button("智能组卷", use_container_width=True, type=ai_btn_type):
                 st.session_state["ai_exam_active"] = True
                 st.session_state["ai_exam_modified"] = False
                 st.rerun()
@@ -17946,13 +18120,16 @@ def page_exam_paper_generation():
         if not sqlite_availability.get("has_schema"):
             st.error("SQLite 正式库不可读取或尚未初始化，请先到“工具箱 → 本地维护与升级”检查本地数据库。")
             return
-        st.caption("SQLite 试用源会复用上方试题篮与后续排版工作台；SQLite 本身只读，最终生成沿用旧组卷引用次数逻辑。")
         if st.session_state.get("ai_exam_active", False):
             _render_sqlite_ai_exam_panel(theme, st.session_state.get("exam_q_count_input", 10))
+        render_exam_floating_basket()
         render_sqlite_readonly_browse_preview(
             allow_edit=False,
             allow_exam_basket=True,
             show_export_panel=False,
+            show_quick_actions=False,
+            preview_only=True,
+            question_columns=2,
             right_heading="### SQLite 试用选题预览",
             right_caption="用左侧筛选定位题目，点击“加入试题篮”后可直接进入现有排版工作台。",
         )
@@ -18074,7 +18251,7 @@ def page_exam_paper_generation():
     css_injection += "</style>"
     st.markdown(css_injection, unsafe_allow_html=True)
         
-    st.caption("已选题目会进入右侧悬浮试题篮，可在篮内预览、移除并拖拽排序。")
+    render_exam_floating_basket()
     st.divider()
     
     # 3. 复用浏览界面进行选题
@@ -18160,8 +18337,8 @@ def _question_paths_from_exam_blocks(blocks) -> list:
     for blk in blocks or []:
         if blk.get("type") != "question":
             continue
-        path = blk.get("path")
-        if path and path not in seen and os.path.exists(path):
+        path = blk.get("selection_ref") or blk.get("path")
+        if path and path not in seen and (ref_question_id(path) or os.path.exists(path)):
             paths.append(path)
             seen.add(path)
     return paths
@@ -18170,8 +18347,18 @@ def _increment_exam_usage_counts(question_paths) -> dict:
     updated = 0
     skipped = []
     chapters_root = os.path.abspath(CHAPTERS_DIR)
+    sqlite_ids = [ref_question_id(ref) for ref in question_paths if ref_question_id(ref)]
+    if sqlite_ids:
+        from services.exam_basket_service import increment_sqlite_exam_usage
+        from services.database_service import DEFAULT_DATABASE_PATH
+        try:
+            updated += increment_sqlite_exam_usage(DEFAULT_DATABASE_PATH, sqlite_ids)
+        except Exception:
+            skipped.extend(sqlite_ids)
 
     for fpath in question_paths:
+        if ref_question_id(fpath):
+            continue
         try:
             abs_path = os.path.abspath(fpath)
             try:
@@ -18250,6 +18437,10 @@ def _replace_choices_with_items(text: str) -> str:
     return text
 
 def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
+    from services.exam_basket_service import materialize_exam_blocks
+    from services.database_service import DEFAULT_DATABASE_PATH
+    final_dir = Path(export_dir) / export_filename
+    blocks = materialize_exam_blocks(DEFAULT_DATABASE_PATH, blocks, BASE_DIR, final_dir / "questions")
     # 确保导出目录存在
     ensure_dir(export_dir)
     
@@ -18263,6 +18454,7 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
         
     # 生成要插入的 content
     body_lines = []
+    sqlite_line_types = {}
     for blk in blocks:
         if blk["type"] == "chapter":
             body_lines.append(f"\\chapter{{{blk['title']}}}")
@@ -18281,6 +18473,9 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
             if os.path.exists(q_path):
                 with open(q_path, "r", encoding="utf-8") as qf:
                     q_content = qf.read()
+                    if ref_question_id(blk.get("selection_ref") or ""):
+                        q_content = q_content.replace("{" + final_dir.resolve().as_posix() + "/", "{")
+                        sqlite_line_types[len(body_lines)] = blk.get("question_type_code")
                     if theme_name == "讲义类模板":
                         body_lines.append("\\begin{lanbox}\n" + q_content + "\n\\end{lanbox}")
                     else:
@@ -18289,10 +18484,12 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
     # 如果是试卷类模板，需要对题目格式和分数进行二次加工
     if theme_name == "试卷类模板":
         import re
+        sqlite_standard_order = [b.get("question_type_code") for b in blocks if b.get("type") == "question"] == (
+            ["single_choice"] * 8 + ["multiple_choice"] * 3 + ["fill_blank"] * 3 + ["solution"] * 5)
         q_index = 0
         current_section = 0
         new_body_lines = []
-        for line in body_lines:
+        for line_index, line in enumerate(body_lines):
             if line.startswith(r"\section{"):
                 current_section += 1
                 new_body_lines.append(line)
@@ -18302,11 +18499,15 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
                 # 第一步：增加题目序号注释 %*
                 line = f"% {q_index}.\n" + line
                 
-                if current_section == 4:
+                sqlite_type = sqlite_line_types.get(line_index)
+                is_solution = sqlite_type in {"solution", "other"} if sqlite_type else current_section == 4
+                if is_solution:
                     # 对于第四个 section (解答题) 后的题目
                     # 1. 替换为 \begin{problem} 并带上对应分数
                     # 2. 删除后面紧跟的5个参数括号 {...}
-                    if q_index == 15:
+                    if sqlite_type and not sqlite_standard_order:
+                        points = 12
+                    elif q_index == 15:
                         points = 13
                     elif q_index in (16, 17):
                         points = 15
@@ -18392,6 +18593,17 @@ def generate_exam_paper(export_filename, export_dir, blocks, theme_name):
     return None
 
 def render_typesetting_workspace():
+    from services.exam_basket_service import materialize_exam_blocks
+    from services.database_service import DEFAULT_DATABASE_PATH
+    try:
+        st.session_state["exam_blocks"] = materialize_exam_blocks(
+            DEFAULT_DATABASE_PATH, st.session_state.get("exam_blocks", []), BASE_DIR)
+    except (ValueError, OSError) as exc:
+        st.error(f"排版准备失败：{exc}")
+        if st.button("返回检查试题篮", key="exam_materialize_back"):
+            st.session_state["exam_mode_stage"] = "selection"
+            st.rerun()
+        return
     st.subheader("🖨️ 试卷排版工作台")
     
     # 动态生成默认的输出文件名
@@ -18699,8 +18911,9 @@ def render_typesetting_workspace():
             with c_del:
                 if st.button("❌", key=f"blk_del_{blk['id']}", help="移除", use_container_width=True):
                     removed = blocks.pop(i)
-                    if removed["type"] == "question" and removed["path"] in st.session_state["exam_selected_qs"]:
-                        st.session_state["exam_selected_qs"].remove(removed["path"])
+                    removed_ref = removed.get("selection_ref") or removed.get("path")
+                    if removed["type"] == "question" and removed_ref in st.session_state["exam_selected_qs"]:
+                        st.session_state["exam_selected_qs"].remove(removed_ref)
                     st.rerun()
                     
         with c_right:
@@ -19869,10 +20082,11 @@ def render_similar_questions_page():
     from services.export_service import format_choice_item
     from services.question_db_service import QuestionListFilters, get_question_bundle, list_question_filter_options
     from services.sqlite_legacy_adapter import list_sqlite_legacy_rows, sqlite_bundle_to_legacy_card
+    from services.semantic_search_service import SIMILARITY_MODES
 
     db_path = DEFAULT_DATABASE_PATH
     st.markdown("### 🧠 相似题查找")
-    st.caption("先选择一条基准题，再按相似度从高到低查找当前 SQLite 题库中的相关题目。结果不会修改题库。")
+    st.caption("选择基准题后，可核对同题与变式，也可查找相关练习。所有结果均需人工判断。")
     st.markdown("""
     <style>
     .similarity-result-meta { color: #6b7280; font-size: .84rem; line-height: 1.5; margin-bottom: .35rem; }
@@ -19932,7 +20146,7 @@ def render_similar_questions_page():
                 st.caption("语义推荐：仅供人工参考，不直接登记同题/相似题关系。")
             st.markdown(
                 "<div class='similarity-result-header'>"
-                f"<span class='similarity-score'>{score:.1f}% 综合相关</span>"
+                f"<span class='similarity-score'>{score:.1f}% {'核对相关度' if match.get('mode') == 'verification' else '推荐相关度'}</span>"
                 f"<span class='similarity-result-id'>{html.escape(question_id)}</span>"
                 f"<span class='similarity-result-source'>{html.escape(source or '来源未登记')}</span>"
                 f"<span class='similarity-result-taxonomy'>{html.escape(taxonomy or '分类未登记')}</span>"
@@ -19946,6 +20160,31 @@ def render_similar_questions_page():
                 f"</div>",
                 unsafe_allow_html=True,
             )
+            comparison = match.get("comparison") or {}
+            differences = comparison.get("differences") or []
+            if differences:
+                st.markdown("**需要核对**")
+                for difference in differences:
+                    st.text("• " + difference)
+            if comparison.get("unavailable"):
+                st.caption("；".join(comparison["unavailable"]))
+            with st.expander("查看比较依据"):
+                st.caption("已参与：" + "、".join(comparison.get("checked") or ["本地特征"]))
+                component_labels = {"gaokao_text": "文本结构", "semantic": "语义向量",
+                                    "formula": "公式特征", "lexical": "文字片段",
+                                    "knowledge": "知识板块", "question_type": "题型"}
+                for component, label in component_labels.items():
+                    value = (match.get("components") or {}).get(component)
+                    weight = (match.get("effective_weights") or {}).get(component)
+                    st.caption(f"{label}：未参与" if value is None else
+                               f"{label}：{value:.0%} · 本次权重 {weight or 0:.0%}")
+                formula = comparison.get("formula") or {}
+                if formula.get("complete"):
+                    st.caption(f"公式具体表达式接近程度：{formula['literal_score']:.0%}；归一化结构接近程度：{formula['structure_score']:.0%}。")
+                    st.caption("结构比较保留括号、分母、指数和变量重复使用模式，不进行代数等价证明。")
+                elif formula.get("left_count") or formula.get("right_count"):
+                    st.caption("公式结构解析不完整，本项采用基础符号特征；请人工核对复杂公式。")
+                st.caption("相关度用于排序，不代表数学等价的概率；未检出差异也不代表已核对完全一致。")
             problem_tex, detail_row, preview_error = _load_problem_preview(question_id, row)
             _render_preview_with_inline_assets(_cached_latex_to_markdown(problem_tex))
             with st.expander("展开答案与解析"):
@@ -19960,6 +20199,13 @@ def render_similar_questions_page():
 
     left_col, right_col = st.columns([0.82, 1.75], gap="large")
     with left_col:
+        selected_mode = st.radio(
+            "查找目的", ["recommendation", "verification"],
+            format_func=lambda value: SIMILARITY_MODES[value],
+            key="similarity_search_mode",
+        )
+        st.caption("核对模式优先展示同题和高度相似候选，再按文本结构排序。" if selected_mode == "verification"
+                   else "推荐模式综合语义、文本、公式和考点查找相关练习。")
         st.markdown("#### 选择基准题")
         reference_keyword = st.text_input(
             "按 ID、来源或题干搜索",
@@ -19969,6 +20215,7 @@ def render_similar_questions_page():
         reference_candidates = list_sqlite_legacy_rows(
             db_path,
             QuestionListFilters(keyword=reference_keyword.strip(), limit=20, offset=0),
+            include_similarity_metadata=True,
         )
         reference_options = ["__none__"] + [
             row.get("SQLite题目ID") or row.get("题目ID") for row in reference_candidates
@@ -20008,6 +20255,8 @@ def render_similar_questions_page():
         )
         selected_difficulty = st.selectbox("难度", ["全部难度"] + options["difficulties"], key="similarity_difficulty")
         selected_chapter = st.selectbox("知识板块", ["全部板块"] + options["chapters"], key="similarity_chapter")
+        search_context = (selected_reference_id, selected_mode, selected_year, selected_source,
+                          selected_type, selected_difficulty, selected_chapter)
         page_size = 20
         st.caption("结果区每页显示 20 道，双列排列，每列 10 道。")
 
@@ -20023,11 +20272,15 @@ def render_similar_questions_page():
             )
             with st.spinner("正在计算相似度…"):
                 try:
-                    candidates = list_sqlite_legacy_rows(db_path, filters, max_rows=0)
+                    candidates = list_sqlite_legacy_rows(db_path, filters, max_rows=0, include_similarity_metadata=True)
                     config = _semantic_api_config()
-                    matches = semantic_search_similar_row(reference_row, candidates, config["model_name"], top_k=200)
+                    matches = semantic_search_similar_row(reference_row, candidates, config["model_name"], top_k=200, mode=selected_mode)
+                    for selection_key in list(st.session_state):
+                        if selection_key.startswith(f"similarity_relation_select_{selected_reference_id}_"):
+                            del st.session_state[selection_key]
                     st.session_state["similarity_results"] = matches
                     st.session_state["similarity_results_reference"] = selected_reference_id
+                    st.session_state["similarity_results_context"] = search_context
                     st.session_state["similarity_page"] = 1
                 except SemanticSearchError as exc:
                     st.error(str(exc))
@@ -20067,7 +20320,7 @@ def render_similar_questions_page():
         st.divider()
 
         matches = st.session_state.get("similarity_results") or []
-        if st.session_state.get("similarity_results_reference") != selected_reference_id:
+        if st.session_state.get("similarity_results_context") != search_context:
             matches = []
         if not matches:
             st.info("选择基准题后点击“查找相似题”，结果会显示在这里。")
@@ -20086,7 +20339,8 @@ def render_similar_questions_page():
                 st.session_state["similarity_page"] = int(selected_page)
                 st.rerun()
         with summary_col:
-            st.caption(f"共 {page_count} 页 · 双列横向递减 · 按综合相关度降序")
+            st.caption(f"共 {page_count} 页 · 双列排列 · " +
+                       ("同题候选优先，其次按文本结构排序" if selected_mode == "verification" else "按推荐相关度降序"))
 
         start = (current_page - 1) * int(page_size)
         page_matches = matches[start:start + int(page_size)]
@@ -20099,7 +20353,7 @@ def render_similar_questions_page():
         selected_matches = [
             match
             for match in matches
-            if st.session_state.get(
+            if match.get("relationship_eligible") and st.session_state.get(
                 f"similarity_relation_select_{selected_reference_id}_"
                 f"{match.get('row', {}).get('SQLite题目ID') or match.get('row', {}).get('题目ID') or '未知 ID'}",
                 False,
@@ -20338,20 +20592,30 @@ def render_asset_audit_tool():
         else:
             st.success("本次检查范围内没有发现题目质量问题。")
 def render_semantic_index_maintenance_tool():
+    from services.database_service import database_change_token
+    from services.semantic_search_service import coverage_status, load_sqlite_index_rows
+
+    @st.cache_data(show_spinner=False, max_entries=2)
+    def _current_semantic_rows(change_token):
+        return load_sqlite_index_rows()
+
     st.markdown("### 🧠 语义搜索索引")
-    st.caption("维护题干 embedding 索引，供混合搜索和语义搜索使用；索引属于可重建的派生数据，不会修改题目内容。")
+    st.caption("从 SQLite 正式题库更新题干和选项的语义向量；新增或内容变化的题目会自动识别为待更新，不包含待审核草稿。")
 
     try:
+        rows = _current_semantic_rows(database_change_token())
+        config = _semantic_api_config()
+        coverage = coverage_status(rows, config["model_name"], sync_pending=True)
         semantic_status = semantic_index_status()
         semantic_status_error = ""
     except SemanticSearchError as exc:
         semantic_status = {"count": 0, "model_name": ""}
         semantic_status_error = str(exc)
 
-    status_text = f"{semantic_status['count']} 道题" if semantic_status.get("count") else "未建立"
-    model_text = semantic_status.get("model_name") or "未配置"
-    status_tone = "ready" if semantic_status.get("count") else "pending"
-    model_tone = "ready" if semantic_status.get("model_name") else "pending"
+    status_text = f"{coverage['covered']} / {coverage['total']} 道题" if not semantic_status_error else "读取失败"
+    model_text = config["model_name"] if not semantic_status_error and config["model_name"] else "未配置"
+    status_tone = "ready" if not semantic_status_error and coverage["covered"] else "pending"
+    model_tone = "ready" if model_text != "未配置" else "pending"
     st.markdown("""
     <style>
     .semantic-status-grid {
@@ -20420,7 +20684,7 @@ def render_semantic_index_maintenance_tool():
         <div class="semantic-status-card {status_tone}">
             <div class="semantic-status-label"><span class="semantic-status-dot"></span>当前索引规模</div>
             <div class="semantic-status-value">{html.escape(status_text)}</div>
-            <div class="semantic-status-hint">用于相似题查找与语义搜索</div>
+            <div class="semantic-status-hint">当前题库中已覆盖 / 可建立索引的题目</div>
         </div>
         <div class="semantic-status-card model {model_tone}">
             <div class="semantic-status-label"><span class="semantic-status-dot"></span>Embedding 模型</div>
@@ -20431,6 +20695,15 @@ def render_semantic_index_maintenance_tool():
     """, unsafe_allow_html=True)
     if semantic_status_error:
         st.warning(f"索引状态读取失败：{semantic_status_error}")
+        return
+
+    last_update = st.session_state.pop("semantic_index_last_update", None)
+    if last_update:
+        st.success(f"语义索引已更新：处理 {last_update['updated']} 道，当前共 {last_update['total']} 道。")
+    if semantic_status.get("model_name") and semantic_status["model_name"] != config["model_name"]:
+        st.warning("当前配置模型与旧索引模型不同；更新时将为当前模型生成向量。")
+    st.caption(f"待更新 {coverage['pending']} 道 · 缺少可索引内容 {coverage['unindexable']} 道。新增或修改题目后重新进入此页，即会检查最新状态。")
+    st.caption("更新会调用 API 设置中的向量服务并消耗其用量；每批保存进度，中断后普通更新会跳过已完成内容。")
 
     st.info("普通更新只处理新增或发生变化的题目；仅在更换模型、索引异常或需要完整校验时启用强制重建。")
     force_rebuild = st.checkbox("强制重新生成已有向量", key="semantic_force_rebuild")
@@ -20443,7 +20716,6 @@ def render_semantic_index_maintenance_tool():
             progress_bar.progress(1.0 if total <= 0 else min(1.0, done / total))
 
         try:
-            rows = _csv_index_cached(_csv_index_cache_token())
             with st.spinner("正在生成题目 embedding，请稍候..."):
                 result = build_semantic_index(
                     rows,
@@ -20455,7 +20727,8 @@ def render_semantic_index_maintenance_tool():
                 )
             progress_bar.empty()
             _clear_advanced_search_result_cache()
-            st.success(f"语义索引已更新：处理 {result['updated']} 道，当前共 {result['total']} 道。")
+            st.session_state["semantic_index_last_update"] = result
+            st.rerun()
         except SemanticSearchError as exc:
             progress_bar.empty()
             st.error(str(exc))
@@ -20605,9 +20878,10 @@ def render_ai_data_factory_tool():
             source_name = st.text_input("来源名称", key="factory_source_name", placeholder="例如：2025 全国 I 卷")
             source_year = st.text_input("年份 / 册次", key="factory_source_year", placeholder="可选")
         with right_col:
+            st.session_state.setdefault("factory_parser_mode", "local")
             parser_mode = st.selectbox(
                 "版面解析器",
-                ["auto", "cloud", "local"],
+                ["local", "auto", "cloud"],
                 format_func=lambda value: {
                     "auto": "自动接力：云端 MinerU → PyMuPDF",
                     "cloud": "优先 MinerU 云端",
@@ -20668,6 +20942,7 @@ def render_ai_data_factory_tool():
                 with st.spinner("正在创建 Asset、解析页面并生成题目草稿…"):
                     result = create_pdf_import_job(
                         source_pdf_path,
+                        db_path=DEFAULT_DATABASE_PATH,
                         jobs_root=DEFAULT_JOBS_ROOT,
                         source_type=source_type,
                         source_metadata=metadata,
@@ -20884,7 +21159,27 @@ def render_runtime_capability_tool():
 
 
 
+def render_ingestion_task_review_tool(db_path: str):
+    from components.ingestion_review import render
+    from services.import_service import draft_to_preview_question
+    from services.export_service import question_to_legacy_tex
+
+    def preview(draft):
+        question = draft_to_preview_question(draft)
+        from services.question_text_format_service import question_display_note
+        question['note'] = question_display_note(question.get('note'))
+        tex = question_to_legacy_tex(question)
+        _render_preview_with_inline_assets(
+            _sqlite_draft_preview_with_assets(tex, draft.get("assets") or [])
+        )
+
+    _install_duplicate_preview_client_script()
+    render(db_path, preview, lambda qid: render_duplicate_question_preview_panel(qid, db_path=db_path))
+
+
 def page_tools():
+    from services.database_service import DEFAULT_DATABASE_PATH
+
     st.header("🛠️ 工具箱")
 
     if st.session_state.get("tools_subpage") == "delete_questions":
@@ -20952,6 +21247,12 @@ def page_tools():
             st.session_state["tools_subpage"] = None
             st.rerun()
         render_sqlite_batch_maintenance_tool()
+        return
+    if st.session_state.get("tools_subpage") == "ingestion_task_review":
+        if st.button("⬅️ 返回工具箱", type="secondary"):
+            st.session_state["tools_subpage"] = None
+            st.rerun()
+        render_ingestion_task_review_tool(DEFAULT_DATABASE_PATH)
         return
     if st.session_state.get("tools_subpage") == "asset_audit":
         if st.button("⬅️ 返回工具箱", type="secondary"):
@@ -21163,6 +21464,17 @@ def page_tools():
 
     # 第三行：四列，与前两行网格对齐
     r3_c1, r3_c2, r3_c3, r3_c4 = st.columns([1, 1, 1, 1])
+    with r3_c1:
+        st.markdown("""
+        <div class="tool-card tool-card-four">
+            <div class="tool-title">🧭 9. 录题任务审核</div>
+            <div class="tool-desc">按一次 Codex 任务查看年份、试卷和二级子集，并快速进入对应草稿审核。</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<style>div:has(> button[key='btn_tools_ingestion_task_review']) { margin-top: -65px; padding: 0 18px; position: relative; z-index: 10; }</style>", unsafe_allow_html=True)
+        if st.button("进入录题任务审核", key="btn_tools_ingestion_task_review", use_container_width=True):
+            st.session_state["tools_subpage"] = "ingestion_task_review"
+            st.rerun()
     with r3_c2:
         st.markdown(
             """
@@ -22003,7 +22315,10 @@ def get_statistics():
     return get_statistics_sqlite_first()
 
 def render_statistics_dashboard():
-    from utils.charts import generate_activity_curve_html, generate_echarts_donut_html, generate_heatmap_html
+    from utils.charts import (
+        generate_activity_curve_html,
+        generate_heatmap_html,
+    )
     stats = get_statistics()
 
     st.markdown("### 📊 数据统计")
@@ -22120,15 +22435,10 @@ def render_statistics_dashboard():
     .stats-breakdown-row span:first-child { overflow-wrap: anywhere; }
     .stats-breakdown-row span:nth-child(2),
     .stats-breakdown-row span:nth-child(3) { text-align: right; white-space: nowrap; }
-    div[data-testid="stVerticalBlock"]:has(.stats-chart-title) iframe {
+    div[data-testid="stVerticalBlock"]:has(> :is(div[data-testid="element-container"], div[data-testid="stElementContainer"]) .stats-chart-title) iframe {
         border-radius: 12px !important;
         box-shadow: 0 10px 30px rgba(31, 35, 48, 0.065) !important;
         transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
-    }
-    div[data-testid="stVerticalBlock"]:has(.stats-chart-title) iframe:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 16px 40px rgba(31, 35, 48, 0.10) !important;
-        filter: saturate(1.03);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -22176,62 +22486,16 @@ def render_statistics_dashboard():
     activity_columns = st.columns(2, gap="medium")
     with activity_columns[0]:
         st.markdown('<div class="stats-chart-title">📅 活跃题目热力图</div>', unsafe_allow_html=True)
-        st.markdown(generate_heatmap_html(stats.get("daily_activity", {})), unsafe_allow_html=True)
+        components.html(generate_heatmap_html(stats.get("daily_activity", {})), height=300)
     with activity_columns[1]:
         st.markdown('<div class="stats-chart-title">⏱️ 活跃时段曲线</div>', unsafe_allow_html=True)
         components.html(generate_activity_curve_html(stats.get("hourly_activity_by_day", {})), height=300)
 
     st.write("")
 
-    def render_stats_breakdown(data, label_map=None):
-        label_map = label_map or {}
-        normalized = [(label_map.get(str(key), str(key)), int(value or 0)) for key, value in (data or {}).items()]
-        normalized = [(label, value) for label, value in normalized if value > 0]
-        normalized.sort(key=lambda item: (-item[1], item[0]))
-        total = sum(value for _, value in normalized)
-        colors = ["#2563eb", "#16a34a", "#ea580c", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#64748b"]
-        rows = "".join(
-            f"<div class='stats-breakdown-row'><span class='stats-breakdown-name'><i class='stats-breakdown-swatch' style='background:{colors[index % len(colors)]}'></i>{html.escape(label)}</span><span>{value:,}</span><span>{(value / total * 100):.1f}%</span></div>"
-            for index, (label, value) in enumerate(normalized)
-        )
-        st.markdown(
-            f"""
-            <style>
-                .stats-breakdown-name {{ display: inline-flex; align-items: center; min-width: 0; }}
-                .stats-breakdown-swatch {{ width: 9px; height: 9px; flex: 0 0 9px; margin-right: 8px; border-radius: 50%; }}
-            </style>
-            <div class='stats-breakdown'><div class='stats-breakdown-row'><span>项目</span><span>数量</span><span>占比</span></div>{rows}</div>
-            """,
-            unsafe_allow_html=True,
-        )
+    from utils.statistics_distribution import generate_distribution_overview_html
 
-    # 三个主要分布图横向排列，每个图表下方保留可核对的明细。
-    chart_columns = st.columns(3, gap="medium")
-    with chart_columns[0]:
-        st.markdown('<div class="stats-chart-title">📚 知识板块分布</div>', unsafe_allow_html=True)
-        components.html(
-            generate_echarts_donut_html(stats.get("subject_counts", {}), "知识板块分布"),
-            height=370,
-        )
-        render_stats_breakdown(stats.get("subject_counts", {}))
-    with chart_columns[1]:
-        st.markdown('<div class="stats-chart-title">📝 题型分布</div>', unsafe_allow_html=True)
-        components.html(
-            generate_echarts_donut_html(stats.get("type_counts", {}), "题型分布"),
-            height=370,
-        )
-        render_stats_breakdown(stats.get("type_counts", {}))
-    with chart_columns[2]:
-        st.markdown('<div class="stats-chart-title">🗂️ 试卷类型分布</div>', unsafe_allow_html=True)
-        paper_type_counts = {}
-        for key, value in (stats.get("source_series_counts", {}) or {}).items():
-            label = PAPER_TYPES.get(str(key), str(key))
-            paper_type_counts[label] = paper_type_counts.get(label, 0) + int(value or 0)
-        components.html(
-            generate_echarts_donut_html(paper_type_counts, "试卷类型分布"),
-            height=370,
-        )
-        render_stats_breakdown(paper_type_counts)
+    components.html(generate_distribution_overview_html(stats), height=900, scrolling=False)
 
 # ================= 页面：规范说明 =================
 def page_manual():
@@ -22312,11 +22576,11 @@ def page_system_intro():
     st.markdown("""
 ### 🎯 这套系统解决什么问题？
 
-这是一套面向高中数学的题库项目管理系统：以 `.tex` 为数据单元，把“题目内容、标签元数据、索引检索、批量维护、组卷导出”统一在一个可视化工作流里，做到：
+这是一套面向高中数学的本地题库管理系统。新版以 SQLite 保存正式题目、题目版本、图片登记与来源关系，使用 TeX 表达数学内容；旧 `.tex` 文件与 CSV 索引保留为迁移来源和兼容工作流。系统把“录入审核、找题改题、来源追溯、专题收录、组卷导出”连接在一起：
 
 - 🧱 题目文件结构规范、可长期维护
 - 🔎 检索与定位迅速（多维筛选/全文查找/三级查找）
-- 🏷️ 标签与元数据可视化修改（并自动同步文件名/索引）
+- 🏷️ 标签与元数据可视化修改；SQLite 编辑与旧文件维护分别保存到各自的数据源
 - 🖨️ 支持按模板组卷导出
 - 🧠 可选的 AI 辅助：图片转写、标签提取、解答生成
 
@@ -22338,19 +22602,22 @@ def page_system_intro():
         st.image(user_group_img_path, caption="用户群", width=260)
 
     st.markdown("""
-### 🗂️ 1) 数据与目录结构（“文件即数据库”）
+### 🗂️ 1) 数据与目录结构（SQLite 正式库与 TeX 兼容层）
 
-**核心原则：`.tex` 文件是单一事实来源（Source of Truth）。**
+**新版正式题目以 SQLite 为主。编辑前先确认当前入口使用的数据源，避免把旧文件的修改误认为已经同步到正式库。**
 
-- 每道题对应一个 `.tex` 文件
-- 物理归档采用 “知识板块/年份/文件.tex” 的层级组织
-- 题内的标签与元数据会被写入专用的 Label Data 注释块，确保题目“自描述”
+- `data/mathcyclus.sqlite3`：正式题目、答案、解析、元数据、修订及来源关系。
+- `assets/questions/`：正式题目图片；备份时需要与数据库一起保留。
+- `chapters/`：旧版题库，按“知识板块/年份/文件.tex”归档，用于迁移与兼容流程。
+- `utils/题库索引表.csv`：旧版文件索引，重建它不能代替 SQLite 数据修复。
+- `exports/`、`reports/`：导出结果和处理报告；不是正式题目的主存储。
+- SQLite 单题保存会记录 revision，不会自动改写旧 `.tex`；旧文件操作也不能默认视为正式库更新。
 
 ---
 
-### 🧾 2) 文件命名规则（五段式，强约束）
+### 🧾 2) 旧 TeX 文件命名规则（迁移与兼容导出）
 
-文件名必须严格使用：
+旧版归档文件使用下列五段式。SQLite 中的题目编号独立于文件名；来源、题号与知识板块通过结构化字段和关系保存。
 
 `年份-试卷类别-试卷名称-题号-知识板块.tex`
 
@@ -22366,7 +22633,7 @@ def page_system_intro():
 
 ### ✍️ 3) LaTeX 内容结构（题干、答案、解析）
 
-每个文件内部必须且仅包含一个 `problem` 环境，且 5 个参数与文件名五段信息一致：
+旧文件归档与兼容导出中，每个文件包含一个 `problem` 环境，5 个参数与文件名五段信息一致。新版编辑页将题干、选项、答案和解析拆成独立输入框，不需要在每个输入框里重复整个文件结构。
 
 ```latex
 \\begin{problem}{年份}{试卷类别}{试卷名称}{题号}{知识板块}
@@ -22410,12 +22677,12 @@ def page_system_intro():
 为了让题目文件可长期维护与可追溯，系统把元数据写在题目文件内部的注释块中：
 
 - 🆔 ID：每题唯一标识（用于跨文件移动/重命名时保持引用稳定）
-- ⭐ 难度星级：0–6（支持 0.5 步长）
+- ⭐ 难度星级：新版单题编辑为未设置或 1–5 星；旧 TeX 界面可能保留原有评级方式
 - 🏷️ 标签：自定义标签（与知识板块不同，偏“属性标签”）
 - 📝 备注：人工补充说明
 - 📌 组卷引用次数：用于统计与推荐
 
-这些字段存储在题目文件里的 `% === Begin Label Data === ... % === End Label Data ===` 区块中。
+新版在 SQLite 中保存这些字段。旧文件兼容流程使用 `% === Begin Label Data === ... % === End Label Data ===` 注释区块；两种保存方式需要区分。
 
 ---
 
@@ -22462,7 +22729,7 @@ def page_system_intro():
 - CSV 写入前会检查关键字段与重复 ID，发现异常时阻止写入
 - 搜索缓存会跟随 CSV 文件变化自动失效，减少“刚保存但搜索不到”的情况
 
-如果出现搜索结果异常、统计不准确、题目移动后找不到，优先执行“工具箱”中的一键重建/同步题库索引。
+出现查询异常时，先确认页面的数据源与筛选条件。只有旧 TeX/CSV 工作流的索引问题才适合重建文件索引；SQLite 的来源关系、图片缺失或导入问题应使用对应的检查与审核工具处理。
 
 ---
 
@@ -22478,7 +22745,7 @@ def page_system_intro():
 
 - 面向“找题 + 改题”的主工作台
 - 支持预览、源码编辑保存、AI 生成解答、加入/移除组卷
-- 在标签修改面板中可改年份/试卷类别/试卷名/题号/知识板块，并自动同步文件名与索引
+- 新版单题编辑保存到 SQLite 并记录修订；旧 TeX 维护入口的改名、归档与索引同步属于兼容工作流
 
 **🔎 三级查找**
 
@@ -22510,14 +22777,44 @@ def page_system_intro():
 
 ---
 
-### 🔭 11) 适合二次开发的方向
+### 🧭 11) 新版各入口怎样配合使用
+
+| 入口 | 主要用途 | 使用时需要确认 |
+| --- | --- | --- |
+| 数据统计 | 查看题库规模、分类分布和活动情况 | 留意数据源提示；统计结果可能有短时间缓存 |
+| 录入新题 | 手动录题、图片/PDF 识别、批量录入与草稿审核 | 识别结果先核对，再执行提交；AI 配置按所用识别方式设置 |
+| 全局浏览与编辑 | 筛选正式题目、阅读源码与预览、修改单题 | 浏览默认只读；进入单题编辑后才显示保存操作 |
+| 组卷服务 | 选题、整理试题篮、使用模板导出 | 核对题目顺序、答案与图片；PDF 编译依赖本机 LaTeX 环境 |
+| 专题收录 | 维护大专题、小专题与题目分组 | 收录是建立关系，同一题可被多个专题引用 |
+| 工具箱 | 迁移、审核、查重、数据检查、备份与维护 | 先看目标范围和预览报告，再执行正式写入 |
+| 规范说明 | 查询 TeX、图片引用、迁移与维护约定 | 处理格式或导出问题时先对照规范 |
+
+**录入与审核。** 图片和 PDF 的识别结果需要检查题号、公式、选项、答案、解析和配图。草稿审核与正式提交是不同阶段；未提交的草稿不能当作正式题目使用。批量任务还应检查来源和重复题，避免因重试重复入库。
+
+**单题修改。** 在“全局浏览与编辑”筛选题目，点击“开始修改本题信息”后进入当前题目的编辑页。左栏维护题型、难度、选项和图片，中栏编辑题干、答案、解析、标签、备注并保存，右栏对照预览。预览不等于保存；点击“保存修改”才写入 SQLite 并记录修订，“退出修改”放弃本次未保存内容并返回原列表位置。
+
+**选项与公式。** 选项输入框只填写各选项内部的 TeX；系统在保存和导出时组织选择题结构。切换题型后仍应检查选项数量，非选择题通常不需要选项。网页预览用于检查内容，最终排版还需要核对导出的 TeX/PDF。
+
+**图片资源。** 通过“添加/管理图片”登记附件，再在题干、答案或解析中插入 `\\questionasset{引用名}`。只上传文件不会自动决定图片在题目中的位置；引用名、登记记录与实际文件必须对应。备份数据库时同时备份题目图片，避免恢复后只有文字和公式。
+
+**来源追溯。** 题目内容与试卷、教材、专题之间的关系分别维护。相同题目可以关联多个来源；修改题目本体与调整某个来源中的题号、分组、顺序属于不同操作。浏览页的来源和关系区域用于核对这些关联。
+
+**专题与组卷。** 专题适合长期整理教研材料，试题篮适合一次组卷选题。专题分组和排序只影响该专题，不能代替修改题目本体。导出后检查选项排列、图片路径、答案顺序与分页；网页预览正常也不代表本机一定具备 PDF 编译环境。
+
+**备份与换电脑。** 优先使用工具箱的数据迁移包流程，将 SQLite 与图片一起备份。恢复时先运行 dry-run，核对报告后按界面要求确认正式恢复。旧 TeX、导出文件和报告是否打包应按需要选择；复制程序代码或重建 CSV 都不能代替正式库备份。
+
+**切换页面与性能。** 切换入口会重新执行当前页面流程。首次打开复杂页面可能加载筛选数据、预览资源或表格组件，通常比再次打开耗时更多。录入或修改时先完成保存再离开，不把页面切换当成保存操作。
+
+---
+
+### 🔭 12) 适合二次开发的方向
 
 这个项目的后续扩展可以围绕“题库质量”和“教研效率”展开：
 
 - 更细的标签体系：考点、方法、易错点、能力层级
 - 更稳定的批量导入校验：录入前预检文件名、题号、ID、题型
 - 更智能的组卷策略：按难度、知识点覆盖率、近年频次进行约束
-- 更清晰的题目版本记录：记录每道题的修改历史与来源变化
+- 更清晰的版本对比与回溯：在现有修订记录基础上增强差异展示和来源变更追踪
 - 更完整的本地部署方案：后续可再考虑封装为桌面应用或 exe
 
 """, unsafe_allow_html=False)
@@ -23168,19 +23465,20 @@ def page_advanced_search():
         render_advanced_search_results()
 
 
-def render_duplicate_question_preview_panel(question_id: str) -> None:
+def render_duplicate_question_preview_panel(question_id: str, *, db_path: str | None = None) -> None:
     """Pre-render a hidden preview so duplicate links open without a rerun."""
     from services.database_service import DEFAULT_DATABASE_PATH
 
+    preview_db_path = db_path or DEFAULT_DATABASE_PATH
     question_id = str(question_id or "").strip()
     if not question_id:
         return
     panel_token = _question_key("duplicate-inline-preview", question_id)
     try:
         payload = _db_preview_question_payload(
-            DEFAULT_DATABASE_PATH,
+            preview_db_path,
             question_id,
-            os.path.getmtime(DEFAULT_DATABASE_PATH),
+            os.path.getmtime(preview_db_path),
         )
         question = payload.get("question") or {}
         preview_markdown = payload.get("preview_markdown") or ""
@@ -23209,8 +23507,11 @@ def render_duplicate_question_preview_panel(question_id: str) -> None:
             padding: 1rem !important;
             border: 1px solid rgba(119, 102, 142, 0.30) !important;
             border-radius: 12px !important;
-            background: #faf8ff !important;
-            box-shadow: 0 18px 42px rgba(36, 28, 52, 0.22) !important;
+            background: rgba(255,255,255,.86) !important;
+            backdrop-filter: blur(16px) saturate(125%) !important;
+            -webkit-backdrop-filter: blur(16px) saturate(125%) !important;
+            border-color: rgba(148,163,184,.28) !important;
+            box-shadow: 0 18px 48px rgba(36,28,52,.18) !important;
         }
         .mc-duplicate-preview-panel .mc-duplicate-preview-header {
             display: flex; align-items: center; justify-content: space-between;
@@ -23249,7 +23550,16 @@ def render_duplicate_question_preview_panel(question_id: str) -> None:
                             const wrapper = panel.closest('div[data-testid="stVerticalBlockBorderWrapper"]')
                                 || panel.closest('div[data-testid="stVerticalBlock"]')
                                 || panel.parentElement;
-                            if (wrapper) wrapper.classList.add('mc-duplicate-preview-open');
+                            if (wrapper) {
+                                doc.querySelectorAll('.mc-duplicate-preview-panel.mc-duplicate-preview-open').forEach((open) => {
+                                    if (open !== wrapper) {
+                                        open.classList.remove('mc-duplicate-preview-open');
+                                        open.removeAttribute('data-duplicate-preview-open');
+                                    }
+                                });
+                                wrapper.classList.add('mc-duplicate-preview-open');
+                                wrapper.setAttribute('data-duplicate-preview-open', '1');
+                            }
                         }
                     });
                 });
@@ -23451,7 +23761,7 @@ def _render_exact_search_floating_contents() -> None:
     for item in page.get("items") or []:
         question_id = str(item.get("question_id") or "")
         try:
-            payload = _db_preview_question_payload(db_path, question_id, os.path.getmtime(db_path))
+            payload = _db_preview_question_payload(db_path, question_id, database_change_token(db_path))
             question = payload.get("question") or {}
             title = _db_preview_label(question)
             st.markdown(f"#### {html.escape(title)}")
@@ -23470,6 +23780,8 @@ def render_advanced_search_floating_panel():
     panel_open = bool(st.session_state.get("advanced_search_panel_open")) and not bool(
         st.session_state.get("advanced_search_panel_collapsed")
     )
+    if not panel_open:
+        return
 
     st.markdown(
         """
@@ -23491,6 +23803,15 @@ def render_advanced_search_floating_panel():
             border-radius: 12px !important;
             background: #faf8ff !important;
             box-shadow: 0 18px 42px rgba(36, 28, 52, 0.22) !important;
+        }
+        body:has(.mc-advanced-floating-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-advanced-floating-anchor) {
+            position: fixed !important; right: 18px !important; left: auto !important; top: 50vh !important;
+            transform: translateY(-50%) !important; width: 720px !important; height: 680px !important;
+            max-width: calc(100vw - 96px) !important; max-height: calc(100vh - 112px) !important;
+            min-width: 520px !important; min-height: 360px !important; z-index: 1005 !important;
+            overflow: auto !important; box-sizing: border-box !important; padding: .9rem !important;
+            border: 1px solid rgba(119,102,142,.30) !important; border-radius: 12px !important;
+            background: #faf8ff !important; box-shadow: 0 18px 42px rgba(36,28,52,.22) !important;
         }
         .mc-advanced-floating-panel > * {
             position: relative;
@@ -23542,6 +23863,12 @@ def render_advanced_search_floating_panel():
             box-shadow: none !important;
             overflow: visible !important;
             box-sizing: border-box !important;
+        }
+        body:has(.mc-advanced-floating-collapsed-anchor) div[data-testid="stVerticalBlockBorderWrapper"]:has(.mc-advanced-floating-collapsed-anchor) {
+            position: fixed !important; right: 18px !important; left: auto !important; top: 50vh !important;
+            transform: translateY(-50%) !important; width: 58px !important; height: 122px !important;
+            min-width: 58px !important; max-width: 58px !important; z-index: 1005 !important;
+            padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important;
         }
         .mc-advanced-floating-collapsed > div,
         .mc-advanced-floating-collapsed div[data-testid="stVerticalBlock"],
@@ -23776,20 +24103,20 @@ def _render_sqlite_migration_onboarding_notice(surface: str = ""):
     if not surface or preferences.get("sqlite_migration_onboarding_version") == current_version:
         return
 
+    try:
+        sqlite_ready = bool(get_question_bank_availability(DEFAULT_DATABASE_PATH).get("ready_for_browse"))
+    except Exception:
+        sqlite_ready = False
+    if sqlite_ready:
+        save_local_preferences({"sqlite_migration_onboarding_version": current_version})
+        return
+
     chapters_exists = os.path.isdir(CHAPTERS_DIR) and any(
         name.lower().endswith(".tex")
         for root, _, files in os.walk(CHAPTERS_DIR)
         for name in files
     )
     if not chapters_exists:
-        save_local_preferences({"sqlite_migration_onboarding_version": current_version})
-        return
-
-    try:
-        sqlite_ready = bool(get_question_bank_availability(DEFAULT_DATABASE_PATH).get("ready_for_browse"))
-    except Exception:
-        sqlite_ready = False
-    if sqlite_ready:
         save_local_preferences({"sqlite_migration_onboarding_version": current_version})
         return
 
@@ -23885,6 +24212,10 @@ def main():
         saved_value = st.session_state.get(state_key)
         if saved_value in legacy_nav_aliases:
             st.session_state[state_key] = legacy_nav_aliases[saved_value]
+    pending_surface_navigation = st.session_state.pop("pending_main_navigation", None)
+    if pending_surface_navigation in nav_options:
+        st.session_state["main_nav_selection"] = pending_surface_navigation
+        st.session_state["main_sidebar_radio"] = pending_surface_navigation
     if "main_nav_selection" not in st.session_state:
         st.session_state["main_nav_selection"] = default_nav_option
     if "main_sidebar_radio" not in st.session_state:
@@ -24494,8 +24825,7 @@ def main():
         api_settings_dialog()
         st.session_state["api_settings_dialog_requested"] = False
     selected_nav = st.session_state.get("main_nav_selection", default_nav_option)
-    if selected_nav in {entry_nav_option, sqlite_entry_nav_option}:
-        render_advanced_search_floating_panel()
+    # Entry pages keep their search controls inside the entry surface.
 
     # Inject the shared visual system before route content to avoid first-painting legacy styles.
     # Keep the final injection below as a cascade safeguard for page-local styles.
@@ -24527,7 +24857,8 @@ def main():
                 right_heading="### 全局浏览与编辑",
                 right_caption="当前由工具箱偏好切换为 SQLite 预览；单题点击开始修改后保存到 SQLite，不修改旧 `.tex` 文件。",
             )
-            render_advanced_search_floating_panel()
+            # Keep browse content in the document flow; the old floating shell
+            # could capture the entire page when Streamlit changed wrappers.
         else:
             if get_browse_default_source() == QUESTION_SOURCE_SQLITE and not sqlite_availability.get("ready_for_browse"):
                 st.caption("SQLite 正式库暂无可浏览题目，已回退旧 TeX 浏览。")

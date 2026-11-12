@@ -1,0 +1,52 @@
+\section*{函数与不等式 · 学习与训练}
+\begin{MCRecall}
+对 $a>0$，二次函数 $f(x)=ax^2+bx+c$ 的对称轴为
+\[
+  x=-\frac{b}{2a},\qquad
+  f(x)=a\left(x+\frac{b}{2a}\right)^2+\frac{4ac-b^2}{4a}.
+\]
+\end{MCRecall}
+\begin{problem}{2026}{示例}{演示材料}{1}{函数}
+已知 $f(x)=x^2-2x+3$，则 $f(x)$ 的最小值为（\hspace{1cm}）
+\begin{choices}
+\choice{$1$}\choice{$2$}\choice{$3$}\choice{$4$}
+\end{choices}
+\end{problem}
+\begin{answer}$2$。\end{answer}
+\begin{solutions}配方得 $f(x)=(x-1)^2+2$，故 $x=1$ 时取到最小值 $2$。\end{solutions}
+\begin{MCMethod}
+先核对定义域，再判断顶点是否位于允许范围内。比较函数值，关注非负项与取等条件：
+\[
+\begin{aligned}
+f(x)-f(1)
+ &=x^2-2x+3-(1-2+3)\\
+ &=(x-1)^2\geq 0.
+\end{aligned}
+\]
+\end{MCMethod}
+\begin{MCWarning}定义域受限时，不能直接把顶点函数值当作最小值。\end{MCWarning}
+\begin{MCExtension}若 $x\in[2,4]$，最小值会怎样变化？请说明理由。\end{MCExtension}
+\begin{center}
+\setlength{\unitlength}{1mm}
+\begin{picture}(60,25)
+\put(0,3){\vector(1,0){58}}
+\put(25,0){\vector(0,1){24}}
+\put(53,0){$x$}
+\put(27,22){$y$}
+\put(0,8){\line(1,0){50}}
+\put(2,10){示例图片：坐标与水平线}
+\end{picture}
+\end{center}
+\section*{跨页阅读与书写空间}
+\begin{MCMethod}[跨页方法说明]
+\ExplSyntaxOn
+\int_step_inline:nn {36}
+  {第~#1~步：写清研究对象、定义域和等价变形条件。区分结论、依据与取等号条件。
+   公式与解释应紧邻，不把关键限制藏在图像标题中。\par}
+\ExplSyntaxOff
+\end{MCMethod}
+\begin{problem}{2026}{示例}{演示材料}{2}{函数}
+证明：对任意实数 $x$，都有 $x^2+1\geq 2x$。
+\end{problem}
+\begin{answer}\end{answer}
+\begin{solutions}\end{solutions}

@@ -11,10 +11,12 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
 import zipfile
+from pathlib import PurePosixPath, PureWindowsPath
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -28,10 +30,13 @@ DEFAULT_ITEMS = [
     ("formal_database", "data/mathcyclus.sqlite3"),
     ("local_preferences", "data/local_preferences.json"),
     ("question_assets", "assets/questions"),
+    ("draft_assets", "data/draft_assets"),
+    ("source_pdfs", "data/source_pdfs"),
     ("csv_cache", "utils/题库索引表.csv"),
 ]
 
 OPTIONAL_ITEMS = {
+    "ingestion": ("ingestion_tasks", "data/imports"),
     "legacy_tex": ("legacy_tex", "chapters"),
     "reports": ("reports", "reports"),
     "exports": ("exports", "exports"),
@@ -44,6 +49,9 @@ RESTORE_ALLOWED_EXACT = {
 }
 
 RESTORE_ALLOWED_PREFIXES = (
+    "data/imports/",
+    "data/draft_assets/",
+    "data/source_pdfs/",
     "assets/questions/",
     "chapters/",
     "reports/",
@@ -82,8 +90,11 @@ def ensure_inside_project(project_root: Path, path: Path) -> None:
 
 
 def safe_zip_relative_path(path: str) -> str:
-    normalized = str(path or "").replace("\\", "/").strip("/")
-    if not normalized or normalized.startswith("../") or "/../" in normalized or normalized == "..":
+    normalized = str(path or "").replace("\\", "/")
+    if (not normalized or normalized.startswith("/") or "\x00" in normalized
+            or ":" in normalized or ".." in PurePosixPath(normalized).parts
+            or PureWindowsPath(normalized).drive
+            or any(part.rstrip(" .") != part or part in {"", "."} for part in normalized.split("/"))):
         raise ValueError(f"非法压缩包路径：{path}")
     if Path(normalized).is_absolute():
         raise ValueError(f"压缩包路径不能是绝对路径：{path}")
@@ -135,13 +146,23 @@ def supported_schema_version(project_root: Path) -> int:
 
 
 def iter_files(path: Path) -> Iterable[Path]:
+    if path.is_symlink() or path.is_junction():
+        raise ValueError(f"迁移包不支持目录链接：{path}")
     if path.is_file():
         yield path
         return
     if not path.exists():
         return
-    for item in sorted(path.rglob("*")):
-        if item.is_file() and "__pycache__" not in item.parts:
+    for directory, dirs, files in os.walk(path, followlinks=False):
+        dirs[:] = [name for name in dirs if name != "__pycache__"]
+        for name in dirs + files:
+            item = Path(directory) / name
+            if item.is_symlink() or item.is_junction():
+                raise ValueError(f"迁移包不支持文件/目录链接：{item}")
+        for name in sorted(files):
+            item = Path(directory) / name
+            if name.endswith(("-wal", "-shm")):
+                continue
             yield item
 
 
@@ -151,8 +172,11 @@ def collect_items(
     include_legacy_tex: bool = False,
     include_reports: bool = False,
     include_exports: bool = False,
+    include_ingestion: bool = False,
 ) -> tuple[list[BundleItem], list[dict[str, str]]]:
     specs = list(DEFAULT_ITEMS)
+    if include_ingestion:
+        specs.append(OPTIONAL_ITEMS["ingestion"])
     if include_legacy_tex:
         specs.append(OPTIONAL_ITEMS["legacy_tex"])
     if include_reports:
@@ -172,6 +196,10 @@ def collect_items(
         for file_path in iter_files(source):
             ensure_inside_project(project_root, file_path)
             rel = safe_zip_relative_path(relative_to_root(file_path, project_root))
+            if file_path.suffix.lower() in {".sqlite", ".sqlite3", ".db"}:
+                wal = file_path.with_name(file_path.name + "-wal")
+                if wal.exists() and wal.stat().st_size and rel != "data/mathcyclus.sqlite3":
+                    raise ValueError(f"任务数据库含未合并 WAL，需先做一致性快照：{rel}")
             if rel in seen:
                 continue
             seen.add(rel)
@@ -202,6 +230,7 @@ def make_manifest(
     include_exports: bool,
     schema_version: int,
     supported_version: int,
+    include_ingestion: bool = False,
 ) -> dict[str, Any]:
     counts_by_kind: dict[str, int] = {}
     bytes_by_kind: dict[str, int] = {}
@@ -221,6 +250,9 @@ def make_manifest(
         "include_legacy_tex": include_legacy_tex,
         "include_reports": include_reports,
         "include_exports": include_exports,
+        "include_ingestion": include_ingestion,
+        "restore_scope": "local_data_with_ingestion_tasks" if include_ingestion else "local_data",
+        "portability_note": "Absolute paths in task payloads are preserved; relocation to another project root requires a separate path migration.",
         "item_count": len(items),
         "total_bytes": sum(item.size for item in items),
         "counts_by_kind": counts_by_kind,
@@ -245,6 +277,7 @@ def export_bundle(
     include_legacy_tex: bool = False,
     include_reports: bool = False,
     include_exports: bool = False,
+    include_ingestion: bool = False,
     dry_run: bool = False,
     stamp: str | None = None,
 ) -> dict[str, Any]:
@@ -252,12 +285,15 @@ def export_bundle(
     safe_stamp = stamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = resolve_project_path(root, output) if output else default_output_path(root, safe_stamp)
     ensure_inside_project(root, output_path)
+    if output_path.exists() and not dry_run:
+        raise FileExistsError(output_path)
 
     items, skipped = collect_items(
         root,
         include_legacy_tex=include_legacy_tex,
         include_reports=include_reports,
         include_exports=include_exports,
+        include_ingestion=include_ingestion,
     )
     output_relative = relative_to_root(output_path, root)
     items = [item for item in items if item.relative_path != output_relative]
@@ -274,14 +310,50 @@ def export_bundle(
         include_exports=include_exports,
         schema_version=schema_version,
         supported_version=supported_version,
+        include_ingestion=include_ingestion,
     )
 
     if not dry_run:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
-            for item in items:
-                archive.write(item.source_path, item.relative_path)
+        with tempfile.TemporaryDirectory(prefix="bundle_snapshot_") as workspace:
+            staged_items = []
+            for index, item in enumerate(items):
+                if item.relative_path == "data/mathcyclus.sqlite3":
+                    snapshot = Path(workspace) / f"{index}.sqlite3"
+                    source_conn = sqlite3.connect(item.source_path.resolve().as_uri() + "?mode=ro", uri=True)
+                    target_conn = sqlite3.connect(snapshot)
+                    try:
+                        source_conn.backup(target_conn)
+                        if target_conn.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                            raise ValueError("数据库快照校验失败")
+                    finally:
+                        target_conn.close()
+                        source_conn.close()
+                    staged_items.append(BundleItem(item.kind, item.relative_path, snapshot,
+                                                   snapshot.stat().st_size, file_sha256(snapshot)))
+                else:
+                    staged_items.append(item)
+            manifest = make_manifest(root, output_path, staged_items, skipped,
+                include_legacy_tex=include_legacy_tex, include_reports=include_reports,
+                include_exports=include_exports, include_ingestion=include_ingestion,
+                schema_version=schema_version, supported_version=supported_version)
+            temporary = output_path.parent / (output_path.name + "." + os.urandom(8).hex() + ".tmp")
+            try:
+                with zipfile.ZipFile(temporary, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+                    archive.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
+                    for item in staged_items:
+                        with item.source_path.open("rb") as source, archive.open(item.relative_path, "w", force_zip64=True) as target:
+                            digest = hashlib.sha256()
+                            size = 0
+                            while chunk := source.read(1024 * 1024):
+                                target.write(chunk)
+                                digest.update(chunk)
+                                size += len(chunk)
+                        if digest.hexdigest() != item.sha256 or size != item.size:
+                            raise ValueError("打包期间文件内容发生变化：" + item.relative_path)
+                os.link(temporary, output_path)
+            finally:
+                temporary.unlink(missing_ok=True)
         manifest["bundle_sha256"] = file_sha256(output_path)
         manifest["bundle_size"] = output_path.stat().st_size
     else:
@@ -395,6 +467,55 @@ def restore_bundle(
             for item in manifest.get("items", [])
             if item.get("path")
         }
+        listed_items = manifest.get("items", [])
+        if len(manifest_items) != len(listed_items):
+            blocked.append("迁移包清单包含重复或空路径")
+        if len(set(names)) != len(names):
+            blocked.append("迁移包包含重复 ZIP 路径")
+        # Validate everything before any write, even for --overwrite. This also
+        # makes dry-run verify bytes rather than merely list destinations.
+        preflight_conflicts = []
+        for name in names:
+            if name == MANIFEST_NAME or name.endswith("/"):
+                continue
+            try:
+                rel = safe_zip_relative_path(name)
+                if not is_restore_allowed(rel):
+                    continue
+                item = manifest_items.get(rel)
+                if not item:
+                    blocked.append(f"bundle manifest missing file: {rel}")
+                    continue
+                target = root / rel
+                ensure_inside_project(root, target)
+                cursor = target
+                while cursor != root:
+                    if cursor.is_symlink() or cursor.is_junction():
+                        raise ValueError(f"恢复目标包含链接：{rel}")
+                    cursor = cursor.parent
+                if target.exists() and not overwrite:
+                    preflight_conflicts.append(rel)
+                digest = hashlib.sha256()
+                size = 0
+                with archive.open(name) as source:
+                    while chunk := source.read(1024 * 1024):
+                        digest.update(chunk)
+                        size += len(chunk)
+                if size != int(item.get("size", -1)) or digest.hexdigest() != item.get("sha256"):
+                    blocked.append(f"bundle checksum validation failed: {rel}")
+                if rel == "data/mathcyclus.sqlite3":
+                    with tempfile.TemporaryDirectory(prefix="restore_db_preflight_") as directory:
+                        db_copy = Path(directory) / "snapshot.sqlite3"
+                        with archive.open(name) as source, db_copy.open("xb") as output:
+                            shutil.copyfileobj(source, output)
+                        check = sqlite3.connect(db_copy.as_uri() + "?mode=ro&immutable=1", uri=True)
+                        try:
+                            if check.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                                blocked.append("SQLite preflight validation failed")
+                        finally:
+                            check.close()
+            except (ValueError, OSError, sqlite3.Error, zipfile.BadZipFile) as exc:
+                blocked.append(str(exc))
 
         for rel, item in manifest_items.items():
             if not is_restore_allowed(rel):
@@ -403,6 +524,18 @@ def restore_bundle(
                 blocked.append(f"bundle manifest item missing from archive: {rel}")
             if int(item.get("size", -1)) < 0 or not str(item.get("sha256") or ""):
                 blocked.append(f"bundle manifest item missing checksum: {rel}")
+
+        if blocked or preflight_conflicts:
+            return {
+                "status": "blocked", "dry_run": not apply, "bundle": str(bundle_path),
+                "project_root": str(root), "restored_count": 0,
+                "conflict_count": len(preflight_conflicts), "skipped_count": 0,
+                "blocked_count": len(blocked), "restored": [], "conflicts": preflight_conflicts[:80],
+                "skipped": [], "blocked": blocked[:80], "overwrite": overwrite,
+                "database_backup": "", "bundle_schema_version": bundle_schema_version,
+                "target_schema_version": target_schema_version, "supported_schema_version": supported_version,
+                "migration_needed_after_restore": False, "deletes_files": False,
+            }
 
         database_backup = ""
         database_target = (root / "data" / "mathcyclus.sqlite3").resolve()
@@ -438,12 +571,8 @@ def restore_bundle(
                 if not manifest_item:
                     blocked.append(f"bundle manifest missing file: {rel}")
                     continue
-                payload = archive.read(name)
                 expected_size = int(manifest_item.get("size", -1))
                 expected_hash = str(manifest_item.get("sha256") or "")
-                if len(payload) != expected_size or bytes_sha256(payload) != expected_hash:
-                    blocked.append(f"bundle checksum validation failed: {rel}")
-                    continue
 
                 temp_path = None
                 try:
@@ -455,7 +584,11 @@ def restore_bundle(
                         delete=False,
                     ) as temporary:
                         temp_path = Path(temporary.name)
-                        temporary.write(payload)
+                        with archive.open(name) as source:
+                            shutil.copyfileobj(source, temporary)
+                    if temp_path.stat().st_size != expected_size or file_sha256(temp_path) != expected_hash:
+                        blocked.append(f"bundle checksum validation failed: {rel}")
+                        continue
                     if target.name == "mathcyclus.sqlite3":
                         check_conn = sqlite3.connect(temp_path)
                         try:
@@ -540,6 +673,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--include-legacy-tex", action="store_true", help="包含旧 chapters 题源。")
     export_parser.add_argument("--include-reports", action="store_true", help="包含 reports，默认不包含。")
     export_parser.add_argument("--include-exports", action="store_true", help="包含 exports，默认不包含。")
+    export_parser.add_argument("--include-ingestion", action="store_true", help="包含完整 data/imports 任务目录；可能很大，导出时需暂停录题写入。")
     export_parser.add_argument("--dry-run", action="store_true", help="只统计，不写 zip。")
     export_parser.add_argument("--json", action="store_true", help="输出完整 JSON。")
 
@@ -568,6 +702,7 @@ def main() -> int:
             include_legacy_tex=args.include_legacy_tex,
             include_reports=args.include_reports,
             include_exports=args.include_exports,
+            include_ingestion=args.include_ingestion,
             dry_run=args.dry_run,
             stamp=args.stamp or None,
         )

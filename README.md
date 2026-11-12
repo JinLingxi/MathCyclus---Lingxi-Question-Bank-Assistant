@@ -33,7 +33,9 @@
 
 - 支持题型、年份、板块、标签、难度与全文检索。
 - 支持可选的混合搜索与语义搜索；本地 SQLite 向量索引可随时重建。
-- 支持按知识板块、题量与目标难度分布进行抽样。
+- 支持按知识板块、题量和难度条件抽题；SQLite 的目标星级用于排序偏好，旧 TeX 路线保留原有分档抽样。
+- SQLite 智能组卷采用“全库筛选 → 候选池 → 初选方案 → 确认入篮”，支持新增板块、正式题型配额、未知难度上限和保留手选题；不足时提示缺口，不自动放宽条件。
+- SQLite 试题篮按题目 ID 保存，进入排版/导出时生成兼容 TeX 和图片副本。当前能力及边界见 [智能组卷流程](docs/ai/smart-exam-workflow.md)。
 - 支持自然语言组卷需求润色，辅助形成命题意图。
 - 新增 `专题收录` 工作台：可建立大专题/小专题、按编号/三级搜索/试卷/教材收录题目、维护专题引言并导出专题 TeX。
 - 数据统计面板已改为 SQLite-first；CSV 和旧 TeX 扫描只作为旧安装环境的兼容兜底。
@@ -85,7 +87,7 @@
    ```
 
    该脚本只创建本机运行目录和空库，不覆盖已有 `data/mathcyclus.sqlite3`。
-4. 复制 `.env.example` 为 `.env`，并填入 AI 模型配置：
+4. 复制 `env.example` 为 `.env`，并填入 AI 模型配置：
 
    ```env
    AI_API_KEY=your_api_key_here
@@ -147,6 +149,14 @@ python scripts/migrate_schema.py --apply
 - `工具箱 → 旧 TeX 迁移到 SQLite`：为早期 TeX 题库用户生成 SQLite 预览库、提升检查报告，并提供强确认正式提升入口；旧 `.tex` 文件不会被删除。
 - `专题收录`：基于 SQLite 专题表管理专题目录、分组题目、题目顺序和专题 TeX 导出。
 
+## 草稿、录题材料与备份
+
+草稿正文和审核状态保存在本地 `data/mathcyclus.sqlite3`，草稿图片保存在 `data/draft_assets/`，来源 PDF 保存在 `data/source_pdfs/`，任务截图、OCR 和候选材料保存在 `data/imports/`。这些默认位置均被 `.gitignore` 保护，不随源码上传；它们仍是需要备份和保留的重要本地数据。
+
+默认数据包包含主数据库、稳定草稿图片和集中 PDF 来源。完整录题材料需显式使用 `scripts/local_data_bundle.py export --include-ingestion`，导出前暂停相关写入，并先用 `--dry-run` 检查范围。`.ingestion/`、工作区外来源和跨机器绝对路径需另行处理。
+
+各目录的 Git/备份边界、已完成治理与当前未验证事项见 [本地数据边界与状态复核](docs/ai/local-data-boundaries-and-status.md)。历史报告中的题量和验收结果不代表当前持续录题后的状态。
+
 ## 📦 发布与打包边界
 
 源码版或未来安装包的“程序部分”不能直接压缩整个项目目录，必须使用白名单脚本：
@@ -195,7 +205,7 @@ python scripts/audit_tracked_private_files.py --apply --confirm KEEP_LOCAL
 ├── 启动程序.py             # 守护进程与服务启动脚本
 ├── 启动程序.bat            # Windows 一键启动脚本
 ├── requirements.txt       # Python 依赖清单
-└── .env.example           # 环境变量配置模板
+└── env.example            # 环境变量配置模板
 ```
 
 ## 🧹 仓库维护说明

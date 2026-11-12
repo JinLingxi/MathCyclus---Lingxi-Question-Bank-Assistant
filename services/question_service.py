@@ -154,7 +154,7 @@ def _match_payload(row: dict, score: float | None, kind: str, detail: dict | Non
         }
         for key in (
             "channel", "base_score", "ratio", "cover", "numf", "template_score",
-            "bigram_jaccard", "bigram_containment", "choice_mode", "reasons", "warnings",
+            "bigram_jaccard", "bigram_containment", "choice_mode", "reasons", "warnings", "differences",
         ):
             if key in detail:
                 value = detail[key]
@@ -251,7 +251,13 @@ def scan_duplicate_pairs(
 
     for group in exact_groups.values():
         for left, right in itertools.combinations(group, 2):
-            add_pair(left, right, 1.0, "exact", {"channel": "完全相同"})
+            detail = score_question_pair(
+                left["normalized"], right["normalized"],
+                left_choices=left["payload"]["choices"], right_choices=right["payload"]["choices"],
+                left_question_type_id=left["payload"]["question_type_id"],
+                right_question_type_id=right["payload"]["question_type_id"],
+            )
+            add_pair(left, right, 1.0, detail["kind"], detail)
             if len(pairs) >= max_pairs:
                 return pairs
 
@@ -261,7 +267,12 @@ def scan_duplicate_pairs(
         for right in prepared[index + 1:]:
             if left["fingerprint"] == right["fingerprint"]:
                 continue
-            detail = score_question_pair(left["normalized"], right["normalized"])
+            detail = score_question_pair(
+                left["normalized"], right["normalized"],
+                left_choices=left["payload"]["choices"], right_choices=right["payload"]["choices"],
+                left_question_type_id=left["payload"]["question_type_id"],
+                right_question_type_id=right["payload"]["question_type_id"],
+            )
             score = detail.get("score")
             if score is not None and float(score) >= similarity_threshold:
                 add_pair(left, right, score, "similar", detail)

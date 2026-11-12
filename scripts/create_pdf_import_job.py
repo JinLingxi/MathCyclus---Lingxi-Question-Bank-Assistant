@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from services.database_service import DEFAULT_DATABASE_PATH
 from services.pdf_import_service import DEFAULT_JOBS_ROOT, SOURCE_TYPES, create_pdf_import_job
 
 
@@ -50,6 +51,7 @@ def main() -> int:
         source_type=args.source_type,
         source_metadata=args.metadata_json,
         render_dpi=args.render_dpi,
+        db_path=DEFAULT_DATABASE_PATH,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

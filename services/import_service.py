@@ -7,7 +7,7 @@ import json
 import mimetypes
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +16,7 @@ from services.database_service import BASE_DIR, database_connection, existing_da
 from services.equivalence_service import record_equivalence_event_from_conn
 from services.revision_service import insert_question_revision_from_conn
 from services.question_similarity_service import score_question_pair
+from services.question_text_format_service import normalize_choice_blank_stop
 
 
 PROJECT_ROOT = Path(BASE_DIR)
@@ -93,6 +94,7 @@ class DraftAssetInput:
     sort_order: int = 0
     note: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+    file_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -340,6 +342,7 @@ def normalize_draft_question(data: dict[str, Any]) -> DraftQuestionInput:
             sort_order=coerce_int(item.get("sort_order")) or 0,
             note=str(item.get("note") or "").strip(),
             extra=parse_json_object(item.get("extra") or item.get("extra_json")),
+            file_hash=str(item.get("file_hash") or "").strip(),
         )
         for item in data.get("assets", []) or []
         if isinstance(item, dict)
@@ -354,7 +357,7 @@ def normalize_draft_question(data: dict[str, Any]) -> DraftQuestionInput:
         review_reason=str(data.get("review_reason") or "").strip(),
         question_type_id=normalize_question_type_id(data.get("question_type_id"), question_type),
         question_type=question_type,
-        stem_tex=str(data.get("stem_tex") or data.get("stem") or "").strip(),
+        stem_tex=normalize_choice_blank_stop(str(data.get("stem_tex") or data.get("stem") or "").strip()),
         choices=parse_json_list(data.get("choices") or data.get("choices_json")),
         answer_tex=str(data.get("answer_tex") or data.get("answer") or "").strip(),
         solution_tex=str(data.get("solution_tex") or data.get("solution") or "").strip(),
@@ -374,8 +377,10 @@ def normalize_draft_question(data: dict[str, Any]) -> DraftQuestionInput:
 def _draft_reference_issues(draft: DraftQuestionInput) -> dict[str, Any]:
     from services.asset_service import collect_asset_reference_issues
 
+    # Figure options use the same asset aliases as the stem and must be
+    # validated before a choice question can be approved or committed.
     record = {
-        "stem_tex": draft.stem_tex,
+        "stem_tex": "\n".join([draft.stem_tex, *draft.choices]),
         "answer_tex": draft.answer_tex,
         "solution_tex": draft.solution_tex,
         "canonical_tex": draft.normalized_tex,
@@ -415,6 +420,8 @@ def validate_draft_question(draft: DraftQuestionInput) -> dict[str, Any]:
         errors.append("存在未登记 questionasset 图片引用")
     if asset_issues.get("missing_asset_files"):
         errors.append("存在缺失的图片资源文件")
+    if asset_issues.get("integrity_issues"):
+        errors.append("图片内容、可读性或来源复核证据校验失败，请重新核对资源")
     if asset_issues.get("unreferenced_assets"):
         warnings.append("存在已登记但未被引用的图片资源")
 
@@ -451,21 +458,34 @@ def create_import_batch(
     mode: str,
     stamp: str,
     summary: str = "",
+    task_id: str = "",
+    parent_batch_id: str = "",
+    hierarchy_level: int = 0,
+    subset_key: str = "",
+    subset_label: str = "",
 ) -> str:
     batch_id = make_batch_id(import_type, source_path, stamp)
     with database_connection(db_path) as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO import_batch(
-                batch_id, import_type, source_path, mode, started_at, summary
+            INSERT INTO import_batch(
+                batch_id, import_type, source_path, mode, task_id,
+                parent_batch_id, hierarchy_level, subset_key, subset_label,
+                started_at, summary
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(batch_id) DO NOTHING
             """,
             (
                 batch_id,
                 import_type,
                 source_path,
                 mode,
+                str(task_id or batch_id),
+                str(parent_batch_id or "") or None,
+                max(0, int(hierarchy_level or 0)),
+                str(subset_key or ""),
+                str(subset_label or ""),
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 summary,
             ),
@@ -497,8 +517,14 @@ def insert_draft_question(
     draft: DraftQuestionInput,
     index: int,
 ) -> tuple[str, dict[str, Any]]:
-    validation = validate_draft_question(draft)
     draft_id = make_draft_id(batch_id, index, draft)
+    from services.draft_asset_storage_service import stabilize_draft_asset
+
+    draft = replace(draft, assets=[
+        DraftAssetInput(**stabilize_draft_asset(dict(asset.__dict__), db_path))
+        for asset in draft.assets
+    ])
+    validation = validate_draft_question(draft)
     source_label = draft.source_label or draft.source_item_id or f"item-{index}"
 
     with database_connection(db_path) as conn:
@@ -584,7 +610,7 @@ def insert_draft_question(
                     asset.planned_file_path,
                     asset.original_file_name or source.name,
                     mime_type,
-                    "",
+                    asset.file_hash or _draft_asset_file_hash(asset.source_path),
                     asset.caption,
                     asset.sort_order or asset_index,
                     "needs_review",
@@ -798,26 +824,27 @@ def find_question_similarity_candidates(
         return []
     minimum_score = max(0.0, min(1.0, float(minimum_score)))
     max_results = max(1, min(int(max_results), 100))
+    from services.question_match_cache import corpus_snapshot, match_cache_key, load_matches, store_matches
+    rows, corpus_hash = corpus_snapshot(db_path)
+    cache_key = match_cache_key(corpus_hash, stem_tex, choices, question_type_id, minimum_score, max_results)
+    cached = load_matches(db_path, cache_key)
+    if cached is not None:
+        return cached
     matches: list[dict[str, Any]] = []
-    with readonly_database_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT question_id, stem_tex, choices_json, question_type_id "
-            "FROM question WHERE stem_tex != ''"
-        ).fetchall()
-    for row in rows:
+    for question_id, right_stem, right_choices, right_kind in rows:
         detail = score_question_pair(
             stem_tex,
-            str(row["stem_tex"] or ""),
+            str(right_stem or ""),
             left_choices=choices,
-            right_choices=row["choices_json"],
+            right_choices=right_choices,
             left_question_type_id=question_type_id,
-            right_question_type_id=row["question_type_id"],
+            right_question_type_id=right_kind,
             allow_sub=True,
         )
         score = detail.get("score")
         if detail.get("kind") == "exact" or (score is not None and float(score) >= minimum_score):
             matches.append({
-                "question_id": str(row["question_id"]),
+                "question_id": str(question_id),
                 "kind": "exact" if detail.get("kind") == "exact" else "similar",
                 "score": round(float(score), 4) if score is not None else 1.0,
                 "channel": detail.get("channel"),
@@ -829,9 +856,12 @@ def find_question_similarity_candidates(
                 "choice_mode": detail.get("choice_mode"),
                 "reasons": detail.get("reasons", []),
                 "warnings": detail.get("warnings", []),
+                "differences": detail.get("differences", []),
             })
     matches.sort(key=lambda item: (item["kind"] != "exact", -float(item["score"]), item["question_id"]))
-    return matches[:max_results]
+    result = matches[:max_results]
+    store_matches(db_path, cache_key, result)
+    return result
 
 
 def next_question_id(db_path: str | None) -> str:
@@ -1154,17 +1184,22 @@ def create_manual_entry_draft(
     *,
     source_path: str = "streamlit/manual-entry",
     stamp: str = "",
+    batch_id: str = "",
+    task_id: str = "",
+    parent_batch_id: str = "",
+    hierarchy_level: int = 0,
+    subset_key: str = "",
+    subset_label: str = "",
 ) -> dict[str, Any]:
     """Create one manual-entry draft batch without writing formal questions."""
     final_stamp = stamp or datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     source_label = str(data.get("source_label") or data.get("source_item_id") or "手动录入草稿").strip()
-    batch_id = create_import_batch(
-        db_path,
-        import_type="streamlit_manual_entry",
-        source_path=source_path,
-        mode="manual_draft",
-        stamp=final_stamp,
-        summary=source_label,
+    batch_id = batch_id or create_import_batch(
+        db_path, import_type="streamlit_manual_entry", source_path=source_path,
+        mode="manual_draft", stamp=final_stamp, summary=source_label,
+        task_id=task_id, parent_batch_id=parent_batch_id,
+        hierarchy_level=hierarchy_level, subset_key=subset_key,
+        subset_label=subset_label,
     )
     draft_payload = dict(data)
     draft_payload["source_label"] = source_label
@@ -1316,6 +1351,9 @@ def _draft_preview_question(question_id: str, draft: dict[str, Any], base: dict[
             "detected_chapter": extra.get("detected_topic") or default_topic,
         }
     )
+    # Source page captures are evidence for review, not question illustrations.
+    # Keep only explicitly registered question assets in the preview payload.
+    question["assets"] = [asset for asset in (draft.get("assets") or []) if isinstance(asset, dict)]
     from services.export_service import question_to_legacy_tex
 
     question["canonical_tex"] = question_to_legacy_tex(question)
@@ -1359,6 +1397,7 @@ def _draft_row_to_input(draft: dict[str, Any]) -> DraftQuestionInput:
                 sort_order=coerce_int(asset.get("sort_order")) or 0,
                 note=str(asset.get("note") or ""),
                 extra=_safe_json_object(asset.get("extra_json")),
+                file_hash=str(asset.get("file_hash") or ""),
             )
             for asset in draft.get("assets", []) or []
         ],
@@ -1527,7 +1566,11 @@ def _draft_asset_file_hash(path_text: str) -> str:
     return digest.hexdigest()
 
 
-def _normalize_draft_asset_payload(data: dict[str, Any], default_sort_order: int = 1) -> dict[str, Any]:
+def _normalize_draft_asset_payload(data: dict[str, Any], default_sort_order: int = 1,
+                                   db_path: str | None = None) -> dict[str, Any]:
+    from services.draft_asset_storage_service import stabilize_draft_asset
+
+    data = stabilize_draft_asset(data, db_path)
     role = str(data.get("role") or "problem").strip() or "problem"
     if role not in VALID_DRAFT_ASSET_ROLES:
         raise ValueError(f"不支持草稿资源 role：{role}")
@@ -1580,7 +1623,7 @@ def add_draft_asset(
             ).fetchone()[0]
             or 1
         )
-        payload = _normalize_draft_asset_payload(data, default_sort_order=next_sort_order)
+        payload = _normalize_draft_asset_payload(data, default_sort_order=next_sort_order, db_path=db_path)
         asset_input = DraftAssetInput(
             role=payload["role"],
             source_path=payload["source_path"],
@@ -1682,6 +1725,20 @@ def update_draft_asset_fields(
         if not asset:
             raise KeyError(f"草稿资源不存在：{safe_asset_id}")
         _ensure_draft_editable_from_conn(conn, str(asset.get("draft_id") or ""))
+        if "source_path" in normalized_updates or "planned_file_path" in normalized_updates:
+            from services.draft_asset_storage_service import stabilize_draft_asset
+
+            # A mirror of the old source is not an independent destination.
+            # Keep it following the source when the editor replaces an image.
+            planned = str(normalized_updates.get("planned_file_path", asset.get("planned_file_path")) or "")
+            old_source = str(asset.get("source_path") or "")
+            if ("source_path" in normalized_updates and planned and old_source
+                    and _resolve_draft_asset_source(planned).resolve() == _resolve_draft_asset_source(old_source).resolve()):
+                normalized_updates["planned_file_path"] = normalized_updates["source_path"]
+            stable = stabilize_draft_asset({**asset, **normalized_updates}, db_path)
+            for field in ("source_path", "planned_file_path", "file_hash"):
+                if stable.get(field) != asset.get(field):
+                    normalized_updates[field] = stable.get(field, "")
         changed_fields = [field for field, value in normalized_updates.items() if asset.get(field) != value]
         if changed_fields:
             assignments = ", ".join(f"{field} = ?" for field in sorted(normalized_updates))
@@ -1969,7 +2026,7 @@ def _upsert_paper_link_from_draft_conn(conn, question_id: str, draft: dict[str, 
     track = str((standard_paper["track"] if standard_paper else None) or extra.get("track") or "").strip()
     question_number = str(extra.get("detected_question_number") or "").strip()
     sub_number = str(extra.get("sub_number") or "").strip()
-    linked_paper_id = str(standard_paper["paper_id"] if standard_paper else "").strip()
+    linked_paper_id = str((standard_paper["paper_id"] if standard_paper else "") or "").strip()
     if linked_paper_id:
         final_paper_id = linked_paper_id
     else:
@@ -2053,7 +2110,7 @@ def _copy_draft_assets_to_question_conn(
             skipped.append({"source_path": source_text, "reason": "file_missing"})
             continue
         role = str(asset.get("role") or "problem").strip() or "problem"
-        asset_extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else {}
+        asset_extra = asset.get("extra") if isinstance(asset.get("extra"), dict) else _safe_json_object(asset.get("extra_json"))
         target_stem = str(asset.get("alias") or asset_extra.get("alias") or "").strip() or None
         target = copy_asset_to_question_dir(question_id, source, role, target_stem=target_stem) if copy_files else source
         if copy_files and target != source and target.exists() and created_paths is not None:
@@ -2119,25 +2176,31 @@ def _upsert_book_link_from_draft_conn(conn, question_id: str, draft: dict[str, A
             """,
             (book_id, title, publisher, edition, grade, volume, curriculum, str(extra.get("book_description") or "")),
         )
-    section_title = str(extra.get("book_column_name") or extra.get("book_section_title") or "").strip()
+    section_title = str(extra.get("book_section_title") or "").strip()
     section_id = ""
-    if section_title:
+    section_path = extra.get("book_section_path") or ([section_title] if section_title else [])
+    for level, part in enumerate(section_path, 1):
+        section_title = str(part.get("title") if isinstance(part, dict) else part).strip()
+        if not section_title:
+            continue
+        parent_id = section_id or None
         section = conn.execute(
-            "SELECT section_id FROM book_section WHERE book_id = ? AND title = ? AND parent_section_id IS NULL",
-            (book_id, section_title),
+            "SELECT section_id FROM book_section WHERE book_id = ? AND title = ? AND parent_section_id IS ?",
+            (book_id, section_title, parent_id),
         ).fetchone()
         if section:
             section_id = str(section["section_id"])
         else:
-            section_id = stable_id("BS", book_id, "", section_title)
+            section_id = stable_id("BS", book_id, parent_id or "", section_title)
             conn.execute(
-                "INSERT INTO book_section(section_id, book_id, title, section_level, sort_order) VALUES (?, ?, ?, 1, 0)",
-                (section_id, book_id, section_title),
+                "INSERT INTO book_section(section_id, book_id, parent_section_id, title, section_level, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+                (section_id, book_id, parent_id, section_title, level,
+                 int(part.get("sort_order") or 0) if isinstance(part, dict) else 0),
             )
     page_number = coerce_int(extra.get("book_page_number"))
     exercise_number = str(extra.get("book_exercise_number") or extra.get("detected_question_number") or "").strip()
     sub_number = str(extra.get("sub_number") or "").strip()
-    column_name = section_title
+    column_name = str(extra.get("book_column_name") or "").strip()
     existing = conn.execute(
         """
         SELECT book_exercise_question_id FROM book_exercise_question
@@ -2150,6 +2213,12 @@ def _upsert_book_link_from_draft_conn(conn, question_id: str, draft: dict[str, A
     link_id = str(existing["book_exercise_question_id"]) if existing else stable_id(
         "BEQ", book_id, section_id, question_id, page_number or "", column_name, exercise_number, sub_number
     )
+    source_note = extra.get("book_source_note") or ""
+    if isinstance(source_note, dict):
+        source_note = dict(source_note)
+        if extra.get("detected_question_number"):
+            source_note["position_label"] = str(extra["detected_question_number"])
+        source_note = json.dumps(source_note, ensure_ascii=False)
     conn.execute(
         """
         INSERT INTO book_exercise_question(
@@ -2163,7 +2232,7 @@ def _upsert_book_link_from_draft_conn(conn, question_id: str, draft: dict[str, A
             source_note = excluded.source_note, updated_at = CURRENT_TIMESTAMP
         """,
         (link_id, book_id, section_id or None, question_id, page_number, column_name, exercise_number, sub_number,
-         _display_order_from_number(exercise_number), str(extra.get("book_source_note") or "")),
+         int(extra.get("book_display_order") or _display_order_from_number(exercise_number)), str(source_note)),
     )
     return link_id
 

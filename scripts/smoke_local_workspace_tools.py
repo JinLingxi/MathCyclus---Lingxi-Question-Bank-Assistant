@@ -47,6 +47,12 @@ def main() -> int:
         asset_dir = source_root / "assets" / "questions" / "Q000001"
         asset_dir.mkdir(parents=True, exist_ok=True)
         (asset_dir / "problem_01.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        draft_asset = source_root / "data" / "draft_assets" / "ab" / "abcdef" / "figure_01.png"
+        draft_asset.parent.mkdir(parents=True)
+        draft_asset.write_bytes(b"draft-image-bytes")
+        source_pdf = source_root / "data" / "source_pdfs" / "ab" / ("c" * 64 + ".pdf")
+        source_pdf.parent.mkdir(parents=True)
+        source_pdf.write_bytes(b"immutable-pdf-source")
         (source_root / "data" / "local_preferences.json").write_text(
             '{"browse_default_source":"legacy","exam_default_source":"sqlite"}\n',
             encoding="utf-8",
@@ -61,6 +67,8 @@ def main() -> int:
         assert export_report["contains_personal_data"] is True
         assert export_report["intended_for_git"] is False
         assert export_report["counts_by_kind"].get("local_preferences") == 1, export_report
+        assert export_report["counts_by_kind"].get("draft_assets") == 1, export_report
+        assert export_report["counts_by_kind"].get("source_pdfs") == 1, export_report
         assert int(export_report.get("schema_version") or 0) > 0, export_report
         assert int(export_report.get("supported_schema_version_at_export") or 0) >= int(export_report.get("schema_version") or 0), export_report
 
@@ -81,6 +89,8 @@ def main() -> int:
         assert (target_root / "data" / "local_preferences.json").exists()
         assert (target_root / "assets" / "questions" / "Q000001" / "problem_01.png").exists()
         assert (target_root / "utils" / "题库索引表.csv").exists()
+        assert (target_root / draft_asset.relative_to(source_root)).read_bytes() == b"draft-image-bytes"
+        assert (target_root / source_pdf.relative_to(source_root)).read_bytes() == b"immutable-pdf-source"
 
         restore_conflict = restore_bundle(project_root=target_root, bundle=bundle_path, apply=False)
         assert restore_conflict["status"] == "blocked", restore_conflict

@@ -287,6 +287,11 @@ CREATE TABLE IF NOT EXISTS import_batch (
     import_type TEXT NOT NULL,
     source_path TEXT NOT NULL DEFAULT '',
     mode TEXT NOT NULL DEFAULT 'dry_run',
+    task_id TEXT NOT NULL DEFAULT '',
+    parent_batch_id TEXT REFERENCES import_batch(batch_id) ON DELETE CASCADE,
+    hierarchy_level INTEGER NOT NULL DEFAULT 0,
+    subset_key TEXT NOT NULL DEFAULT '',
+    subset_label TEXT NOT NULL DEFAULT '',
     started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finished_at TEXT,
     summary TEXT NOT NULL DEFAULT ''
@@ -405,6 +410,8 @@ CREATE INDEX IF NOT EXISTS idx_topic_question_question ON topic_question(questio
 CREATE INDEX IF NOT EXISTS idx_question_asset_question ON question_asset(question_id);
 CREATE INDEX IF NOT EXISTS idx_question_revision_question ON question_revision(question_id);
 CREATE INDEX IF NOT EXISTS idx_import_report_batch ON import_report_item(batch_id);
+CREATE INDEX IF NOT EXISTS idx_import_batch_task ON import_batch(task_id, hierarchy_level, started_at);
+CREATE INDEX IF NOT EXISTS idx_import_batch_parent ON import_batch(parent_batch_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_draft_review_event_draft ON draft_review_event(draft_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_draft_review_event_batch ON draft_review_event(batch_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_question_import_draft_batch ON question_import_draft(batch_id);
@@ -423,7 +430,7 @@ INSERT OR IGNORE INTO question_type(question_type_id, code, name, description) V
 
 INSERT OR IGNORE INTO app_meta(key, value) VALUES
     ('app_name', 'MathCyclus'),
-    ('schema_version', '9'),
+    ('schema_version', '11'),
     ('schema_baseline', '20260903');
 
 INSERT OR IGNORE INTO schema_migration(version, name, checksum) VALUES
@@ -435,4 +442,5 @@ INSERT OR IGNORE INTO schema_migration(version, name, checksum) VALUES
     (6, 'question_fts', '8335477992019a5df1f72a164473383d6e84dea7d6de03626457b41ac82d02ed'),
     (7, 'judgement_question_type', '2953b195ca0484c4daaf642959726108ff5ed37220b3971e1ef83b9c51000e77'),
     (8, 'draft_review_gate', '6938dbe0f3acf8de3ac7ab514022e10024cdfb2c6805144eb74492d4eb50e018'),
-    (9, 'equivalence_relation_audit', '2b91ea10a1b41c8c357f439ed58040826a87d8fc7f8e91a1995e093dc4815241');
+    (9, 'equivalence_relation_audit', '2b91ea10a1b41c8c357f439ed58040826a87d8fc7f8e91a1995e093dc4815241'),
+    (11, 'import_batch_hierarchy', '');

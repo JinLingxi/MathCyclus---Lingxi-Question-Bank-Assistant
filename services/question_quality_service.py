@@ -98,6 +98,8 @@ def audit_question_bundle(bundle: dict[str, Any], *, project_root: str = "") -> 
         errors.append(f"未登记 questionasset {len(asset_issues['unresolved_questionasset'])} 个")
     if asset_issues.get("missing_asset_files"):
         errors.append(f"登记资源文件缺失 {len(asset_issues['missing_asset_files'])} 个")
+    if asset_issues.get("integrity_issues"):
+        errors.append(f"资源内容变化或无法读取 {len(asset_issues['integrity_issues'])} 个")
     if asset_issues.get("unreferenced_assets"):
         warnings.append(f"有 {len(asset_issues['unreferenced_assets'])} 个资源未被引用")
     if not (bundle.get("paper_links") or bundle.get("book_links") or bundle.get("topic_links")):

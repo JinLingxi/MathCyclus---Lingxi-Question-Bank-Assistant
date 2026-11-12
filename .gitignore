@@ -68,11 +68,16 @@ data/imports/pdf_jobs/*
 # AI 题目数据工厂的本地上传、分片和解析缓存（运行时生成，不上传）
 data/uploads/
 data/asset_cache/
+data/draft_assets/
+data/source_pdfs/
 *.part
 *.tmp
 *.bak
 *.orig
 *.rej
+*.swp
+*.swo
+*~
 db/seed/*
 !db/seed/.gitkeep
 reports/*
@@ -118,6 +123,7 @@ exports/*
 !exports/.gitkeep
 assets/questions/*
 !assets/questions/.gitkeep
+assets/question_assets/
 
 # 试卷组卷目录：只允许模板进入源码包/版本库，导出成品留在本地
 Test Paper Group/*
@@ -179,3 +185,6 @@ docs/planning/paper_catalog_g_existing_*.csv
 /mathcyclus_ai_exchange_smoke_*/
 /mathcyclus_v11_accept_*/
 /$null
+
+# Exact local ingestion script and delivery-record exclusions are maintained in
+# scripts/.gitignore and docs/ai/.gitignore; keep reusable source/tests visible.

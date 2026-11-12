@@ -5,6 +5,26 @@ from __future__ import annotations
 from services.database_service import readonly_database_connection
 
 
+def list_question_knowledge_areas(db_path: str | None, question_id: str) -> list[dict]:
+    """Return classification evidence independently of textbook appearances.
+
+    is_primary controls the statistics partition, not teaching importance or
+    human confirmation. Existing source/confidence are returned without inference.
+    """
+    with readonly_database_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT ka.knowledge_area_id, ka.name, ka.parent_id,
+                   qka.is_primary, qka.source, qka.confidence, qka.created_at
+            FROM question_knowledge_area qka
+            JOIN knowledge_area ka ON ka.knowledge_area_id = qka.knowledge_area_id
+            WHERE qka.question_id = ?
+            ORDER BY qka.is_primary DESC, ka.sort_order, ka.name
+            """, (question_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def list_knowledge_areas(db_path: str | None = None) -> list[dict]:
     """Return knowledge areas with question counts."""
     sql = """

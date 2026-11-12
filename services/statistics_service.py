@@ -30,6 +30,7 @@ def empty_statistics() -> dict[str, Any]:
         "daily_activity": {},
         "hourly_activity_by_day": {},
         "subject_counts": {},
+        "subject_coverage_counts": {},
         "type_counts": {},
         "difficulty_dist": {},
         "tag_counts": {},
@@ -110,6 +111,44 @@ def _json_list(value: Any) -> list[str]:
     if isinstance(parsed, list):
         return [str(item).strip() for item in parsed if str(item).strip()]
     return [item.strip() for item in re.split(r"[，,;；\n]+", text) if item.strip()]
+
+
+def _subject_labels(value: Any) -> list[str]:
+    labels = [item.strip() for item in re.split(r"[，,]", str(value or "")) if item.strip()]
+    return list(dict.fromkeys(labels)) or ["未分类"]
+
+
+def _sqlite_subject_coverage_counts(
+    conn: sqlite3.Connection,
+    rows: list[dict[str, Any]],
+) -> dict[str, int]:
+    question_ids = {str(row.get("question_id") or "") for row in rows if row.get("question_id")}
+    if not question_ids or not _table_exists(conn, "question_knowledge_area") or not _table_exists(conn, "knowledge_area"):
+        return {}
+
+    placeholders, params = _question_placeholders(question_ids)
+    linked: dict[str, list[str]] = {}
+    for row in conn.execute(
+        f"""
+        SELECT qka.question_id, ka.name
+        FROM question_knowledge_area qka
+        JOIN knowledge_area ka ON ka.knowledge_area_id = qka.knowledge_area_id
+        WHERE qka.question_id IN ({placeholders})
+        ORDER BY qka.question_id, qka.is_primary DESC, qka.created_at, ka.sort_order, ka.name
+        """,
+        params,
+    ):
+        linked.setdefault(str(row["question_id"]), []).append(str(row["name"]))
+
+    counts: dict[str, int] = {}
+    for question in rows:
+        question_id = str(question.get("question_id") or "")
+        labels = list(dict.fromkeys(linked.get(question_id, [])))
+        if not labels:
+            labels = _subject_labels(question.get("subject_name"))
+        for label in labels:
+            counts[label] = counts.get(label, 0) + 1
+    return counts
 
 
 def _numeric_difficulty(value: Any) -> float | None:
@@ -401,9 +440,11 @@ def get_statistics_from_sqlite(db_path: str | os.PathLike[str] | None = None) ->
         question_ids = {str(row.get("question_id") or "") for row in rows if row.get("question_id")}
         revision_rows = _sqlite_revision_rows(conn, question_ids)
         relation_stats = _sqlite_relation_statistics(conn, question_ids)
+        subject_coverage_counts = _sqlite_subject_coverage_counts(conn, rows)
 
     stats["total_questions"] = len(rows)
     stats.update(relation_stats)
+    stats["subject_coverage_counts"] = subject_coverage_counts
     today = _datetime.date.today()
     tikz_question_ids: set[str] = set()
     created_today_tikz: set[str] = set()
@@ -416,7 +457,7 @@ def get_statistics_from_sqlite(db_path: str | os.PathLike[str] | None = None) ->
         if _has_tikz(row):
             tikz_question_ids.add(question_id)
 
-        subject = str(row.get("subject_name") or "未分类").strip() or "未分类"
+        subject = _subject_labels(row.get("subject_name"))[0]
         stats["subject_counts"][subject] = stats["subject_counts"].get(subject, 0) + 1
 
         question_type = str(row.get("question_type_name") or "未知").strip() or "未知"
@@ -506,8 +547,11 @@ def get_statistics_from_csv() -> dict[str, Any]:
         if row.get("包含TikZ绘图") == "是":
             stats["total_tikz"] += 1
 
-        subject = row.get("知识板块", "").split("，")[0] if row.get("知识板块") else "未分类"
+        subjects = _subject_labels(row.get("知识板块"))
+        subject = subjects[0]
         stats["subject_counts"][subject] = stats["subject_counts"].get(subject, 0) + 1
+        for label in subjects:
+            stats["subject_coverage_counts"][label] = stats["subject_coverage_counts"].get(label, 0) + 1
 
         question_type = row.get("题型", "未知") or "未知"
         stats["type_counts"][question_type] = stats["type_counts"].get(question_type, 0) + 1

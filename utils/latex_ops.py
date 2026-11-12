@@ -276,8 +276,44 @@ def _replace_spacing_outside_math(s):
     return "".join(out)
 
 
+def _normalize_preview_spacing(s):
+    segments = list(_iter_latex_preview_segments(s))
+    for index, (kind, segment) in enumerate(segments):
+        if kind == "text":
+            segment = re.sub(r",(?=\S)", ", ", segment)
+        if kind == "math" and not segment.startswith("$$") and not segment.startswith(r"\["):
+            previous = segments[index - 1] if index else None
+            following = segments[index + 1] if index + 1 < len(segments) else None
+            if previous and previous[0] == "text" and previous[1] and not previous[1][-1].isspace():
+                segments[index - 1] = (previous[0], previous[1] + " ")
+            if following and following[0] == "text" and following[1] and not following[1][0].isspace():
+                segments[index + 1] = (following[0], " " + following[1])
+        segments[index] = (kind, segment)
+    return "".join(segment for _, segment in segments)
+
+
 def latex_to_markdown(content, show_title=True):
     """简单的 LaTeX 转 Markdown 用于预览"""
+    # Imported PDF drafts may contain a stray ``$`` around a set/complement
+    # expression.  An unmatched delimiter makes every following choice render
+    # as literal red TeX in Streamlit.  Balance only clearly unmatched inline
+    # delimiters before any environment conversion.
+    def _balance_inline_math(value):
+        parts = re.split(r"(\$\$[\s\S]*?\$\$)", str(value or ""))
+        for i in range(0, len(parts), 2):
+            segment = parts[i]
+            if segment.count("$") % 2:
+                segment = segment.replace("$", "")
+            parts[i] = segment
+        return "".join(parts)
+
+    content = _balance_inline_math(content)
+    content = _normalize_preview_spacing(content)
+    # A malformed inline set/complement can produce ``$\\complement$$U$``.
+    # Treat the doubled boundary as one inline delimiter; otherwise the second
+    # dollar is interpreted as a display-math opener and the following choice
+    # labels become literal source text.
+    content = re.sub(r"(\$\\[A-Za-z]+)\$\$([A-Za-z\\])", r"\1 \2", content)
     content = re.sub(r"(?<!\$)\$([^$\n]*?)\$(?!\$)", lambda m: "$" + m.group(1).strip() + "$", content)
     content = re.sub(r"\$\$\s*([\s\S]*?)\s*\$\$", lambda m: "$$\n" + m.group(1).strip() + "\n$$", content)
     # 处理批量模式下的多题分割线 ---xxx.tex---
@@ -291,7 +327,8 @@ def latex_to_markdown(content, show_title=True):
     for match in reversed(list(re.finditer(problem_header_pat, content))):
         year, ptype, name, num, subj = match.groups()
         if show_title:
-            header = f"**【{year}  {name}，{num}】**\n\n"
+            header = (f"**【{name}·{year}｜{num}】**\n\n" if ptype == 'BK'
+                      else f"**【{year}  {name}，{num}】**\n\n")
             content = content[:match.start()] + header + content[match.end():]
         else:
             # 将原有的 \begin{problem}... 标签直接去掉，不重复添加 Markdown header
@@ -333,6 +370,7 @@ def latex_to_markdown(content, show_title=True):
         parts = re.split(r'\\item', content_inner)
         
         new_inner = parts[0] # 保留第一个 \item 前的内容（通常是空的或换行）
+        new_inner += '\n<!--mc-choices-start-->\n'
         choice_idx = 0
         
         for p in parts[1:]:
@@ -348,9 +386,9 @@ def latex_to_markdown(content, show_title=True):
             elif p.startswith("{") and p.endswith("}"):
                 p = p[1:-1]
             
-            new_inner += f"\n{label} {p}\n"
+            new_inner += f"\n<!--mc-choice-item-->\n{label} {p}\n"
             
-        return new_inner
+        return new_inner + '\n<!--mc-choices-end-->\n'
 
     # 兼容带有参数的 \begin{choices}[2] 等情况
     content = re.sub(r'\\begin\{choices\}(\[.*?\])?(.*?)\\end\{choices\}', replace_choices_env, content, flags=re.DOTALL)
@@ -359,14 +397,31 @@ def latex_to_markdown(content, show_title=True):
     content = content.replace(r'\begin{choices}', '').replace(r'\end{choices}', '')
     
     # 处理填空题下划线 (简单的 HTML 替换)
-    content = re.sub(r'\\underline\{\\hspace\{.*?\}\}', r'<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>', content)
-    content = re.sub(r'\\underline\{(.*?)\}', r'<u>\1</u>', content)
+    # Keep underline TeX inside math; convert it to HTML only in normal text.
+    def _replace_underline_outside_math(value):
+        parts = re.split(r'(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)', value)
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                part = re.sub(r'\\underline\{\\hspace\{.*?\}\}', r'<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>', part)
+                part = re.sub(r'\\underline\{(.*?)\}', r'<u>\1</u>', part)
+            parts[i] = part
+        return ''.join(parts)
+    content = _replace_underline_outside_math(content)
     
     # 处理剩下的 \hspace{...} 为全角空格，但不破坏数学公式内的空白命令
     content = _replace_spacing_outside_math(content)
     
     # 处理 \textbf
     content = re.sub(r'\\textbf\{(.*?)\}', r'**\1**', content, flags=re.DOTALL)
+    # Preserve literal software input (a caret here is an input character).
+    code_parts = re.split(r'(\$\$[\s\S]*?\$\$|\$[^$\n]*?\$)', content)
+    for index in range(0, len(code_parts), 2):
+        code_parts[index] = re.sub(
+            r'\\texttt\{([^{}]*)\}',
+            lambda match: '<code>' + html.escape(re.sub(r'\\textasciicircum\s?', '^', match.group(1))) + '</code>',
+            code_parts[index],
+        )
+    content = ''.join(code_parts)
     
     # 处理 \circled{}：数学公式内转为 KaTeX 可渲染的 \text{①}，公式外使用 HTML 圈号
     content = _replace_circled_for_preview(content)

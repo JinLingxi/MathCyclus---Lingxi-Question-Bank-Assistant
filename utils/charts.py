@@ -78,29 +78,26 @@ def generate_heatmap_html(daily_activity):
         box-sizing: border-box;
         overflow: hidden;
         margin-bottom: 0px;
-        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
-        animation: chartFadeUp 0.4s ease both;
     }}
     @keyframes chartFadeUp {{
         from {{ opacity: 0; transform: translateY(8px); }}
         to {{ opacity: 1; transform: translateY(0); }}
     }}
-    .heatmap-container:hover {{
-        transform: translateY(-2px);
-        border-color: rgba(96, 125, 170, 0.28);
-        box-shadow: 0 18px 44px rgba(31, 35, 48, 0.12);
-    }}
     /* 美化内部滚动条 */
     .heatmap-scroll-area {{
         display: flex;
+        align-items: center;
         flex: 1;
+        min-width: 0;
         overflow-x: auto;
         overflow-y: hidden;
-        padding-top: 35px; /* 为 tooltip 预留顶部空间 */
+        padding-top: 18px;
         padding-bottom: 5px; /* 给滚动条留出空间 */
+        scroll-behavior: auto;
+        overscroll-behavior-x: contain;
     }}
     .heatmap-scroll-area::-webkit-scrollbar {{
-        height: 8px;
+        height: 12px;
     }}
     .heatmap-scroll-area::-webkit-scrollbar-track {{
         background: rgba(148, 163, 184, 0.16);
@@ -113,12 +110,7 @@ def generate_heatmap_html(daily_activity):
     .heatmap-scroll-area::-webkit-scrollbar-thumb:hover {{
         background: rgba(71, 85, 105, 0.62);
     }}
-    .heatmap-title {{
-        font-size: 18px;
-        font-weight: 600;
-        margin-bottom: -10px; /* 减小标题自带的底部边距，依靠 scroll-area 的 padding-top 撑开 */
-        color: #263241;
-    }}
+    .heatmap-content {{ flex: 0 0 auto; width: max-content; }}
     .heatmap-grid {{
         display: flex;
         gap: 4px;
@@ -134,11 +126,10 @@ def generate_heatmap_html(daily_activity):
         border-radius: 3px;
         background-color: rgba(148, 163, 184, 0.32);
         position: relative;
-        transition: transform 0.12s ease, box-shadow 0.12s ease;
     }}
     .heatmap-cell:not(.hidden):hover {{
-        transform: scale(1.18);
-        box-shadow: 0 0 0 2px rgba(255,255,255,0.18);
+        outline: 1px solid #64748b;
+        outline-offset: 1px;
     }}
     .heatmap-cell[data-level="1"] {{ background-color: #86efac; }}
     .heatmap-cell[data-level="2"] {{ background-color: #4ade80; }}
@@ -165,26 +156,9 @@ def generate_heatmap_html(daily_activity):
         height: 14px;
         border-radius: 3px;
     }}
-    .heatmap-cell:hover::after {{
-        content: attr(title);
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background-color: rgba(0, 0, 0, 0.8);
-        color: #fff;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 14px;
-        white-space: nowrap;
-        z-index: 9999; /* 提高层级，防止被月份栏遮挡 */
-        pointer-events: none;
-        margin-bottom: 5px;
-    }}
     </style>
     <div class="heatmap-container">
-        <div class="heatmap-title">🗓️ 活跃指标 (Active Days)</div>
-        <div class="heatmap-scroll-area">
+        <div class="heatmap-scroll-area" tabindex="0" role="region" aria-label="活跃日期，左右滚动查看历史">
             <div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #64748b; margin-right: 8px; margin-top: 20px; position: sticky; left: 0; background-color: transparent; z-index: 2;">
                 <div style="height: 14px;"></div>
                 <div style="height: 14px; line-height: 14px;">M</div>
@@ -194,7 +168,7 @@ def generate_heatmap_html(daily_activity):
                 <div style="height: 14px; line-height: 14px;">F</div>
                 <div style="height: 14px;"></div>
             </div>
-            <div>
+            <div class="heatmap-content">
                 {months_html}
                 {grid_html}
             </div>
@@ -212,7 +186,26 @@ def generate_heatmap_html(daily_activity):
         </div>
     </div>
     """
-    return html
+    # Keep the calendar's scroll/hover painting independent of the main app.
+    # Only initial sizing follows the newest date; user scrolling is never reset.
+    return '''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    <style>html,body{margin:0;padding:0;background:transparent}</style></head><body>''' + html + '''
+    <script>
+    (()=>{
+        const area=document.querySelector('.heatmap-scroll-area');
+        let userMoved=false,pending=false,initialized=false,latestPosition=0;
+        const latest=()=>{pending=false;if(!userMoved){
+            latestPosition=area.scrollWidth-area.clientWidth;area.scrollLeft=latestPosition;initialized=true;
+        }};
+        const schedule=()=>{if(!pending&&!userMoved){pending=true;requestAnimationFrame(latest);}};
+        for(const event of ['pointerdown','wheel','keydown'])area.addEventListener(event,()=>{userMoved=true;},{passive:true});
+        // Native scrollbar drags do not consistently dispatch pointerdown to
+        // the document. Remember manual movement without changing scroll state.
+        area.addEventListener('scroll',()=>{if(initialized&&Math.abs(area.scrollLeft-latestPosition)>1)userMoved=true;},{passive:true});
+        new ResizeObserver(schedule).observe(area);
+        document.fonts?.ready.then(schedule);schedule();
+    })();
+    </script></body></html>'''
 
 def _generate_activity_curve_html_legacy(hourly_activity_by_day):
     today = datetime.date.today()
@@ -658,9 +651,9 @@ def generate_activity_curve_html(hourly_activity_by_day):
         }}
         .day-selector-shell {{
             position: relative;
-            flex: 0 1 560px;
-            min-width: 430px;
-            max-width: 560px;
+            flex: 1 1 auto;
+            min-width: 0;
+            max-width: none;
             overflow: hidden;
             background:
                 linear-gradient(180deg, rgba(255,255,255,0.92), rgba(241,245,249,0.78));
@@ -737,7 +730,6 @@ def generate_activity_curve_html(hourly_activity_by_day):
     </style>
     <div class="activity-card">
         <div class="activity-header">
-            <div class="activity-title">⏱️ 时段活动曲线 ⓘ</div>
             <div class="day-selector-shell" title="点击日期可快速跳转，拖动下方时间滚条可连续查看">
                 <div id="day-selector">
                     <div id="day-selector-indicator" class="day-selector-indicator"></div>
@@ -1314,5 +1306,88 @@ def generate_echarts_donut_html(data_dict, title):
             }}]
         }});
         window.addEventListener('resize', () => donutChart.resize());
+    </script>
+    """
+
+
+def generate_echarts_nested_donut_html(primary_counts, coverage_counts, total_questions, title):
+    """Render mutually-exclusive primary counts and all-topic coverage in two rings."""
+    if not total_questions or not primary_counts and not coverage_counts:
+        return "<div style='color: gray; padding: 24px;'>暂无数据</div>"
+
+    names = sorted(
+        set(primary_counts or {}) | set(coverage_counts or {}),
+        key=lambda name: (-(coverage_counts or {}).get(name, 0), str(name)),
+    )
+    colors = ["#2563eb", "#16a34a", "#ea580c", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#64748b"]
+    primary_items = [
+        {"name": str(name), "value": int((primary_counts or {}).get(name, 0) or 0)}
+        for name in names
+        if int((primary_counts or {}).get(name, 0) or 0) > 0
+    ]
+    coverage_items = [
+        {
+            "name": str(name),
+            "value": int((coverage_counts or {}).get(name, 0) or 0),
+            "coveragePercent": round(int((coverage_counts or {}).get(name, 0) or 0) / total_questions * 100, 1),
+        }
+        for name in names
+        if int((coverage_counts or {}).get(name, 0) or 0) > 0
+    ]
+    return f"""
+    <style>
+        .nested-donut-panel {{
+            width: 100%; height: 350px; padding: 10px 12px 6px;
+            box-sizing: border-box; border-radius: 12px;
+            border: 1px solid rgba(109, 40, 217, 0.10);
+            background: linear-gradient(180deg, rgba(255,255,255,0.90), rgba(255,255,255,0.72));
+            box-shadow: 0 10px 30px rgba(31, 35, 48, 0.06);
+        }}
+        #nested-donut-chart {{ width: 100%; height: 100%; }}
+    </style>
+    <div class="nested-donut-panel"><div id="nested-donut-chart"></div></div>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script>
+        const subjectChart = echarts.init(document.getElementById('nested-donut-chart'));
+        subjectChart.setOption({{
+            animationDuration: 500,
+            color: {json.dumps(colors)},
+            title: {{
+                text: {json.dumps(f"{int(total_questions):,}")},
+                subtext: {json.dumps(title, ensure_ascii=False)},
+                left: 'center', top: '40%',
+                textStyle: {{ color: '#1f2937', fontSize: 25, fontWeight: 700 }},
+                subtextStyle: {{ color: '#64748b', fontSize: 13 }}
+            }},
+            tooltip: {{
+                trigger: 'item',
+                formatter: function(params) {{
+                    if (params.seriesIndex === 0) return params.name + ': ' + params.value + ' 道主板块题目';
+                    return params.name + ': 覆盖 ' + params.value + ' 道（占全部题目 ' + params.data.coveragePercent + '%）';
+                }}
+            }},
+            legend: {{ show: false }},
+            series: [
+                {{
+                    name: '主板块题数', type: 'pie', radius: ['35%', '53%'], center: ['50%', '48%'],
+                    itemStyle: {{ borderColor: '#fff', borderWidth: 2 }},
+                    label: {{ show: true, position: 'inside', formatter: '{{c}}', color: '#fff', fontWeight: 700, fontSize: 11 }},
+                    labelLine: {{ show: false }},
+                    data: {json.dumps(primary_items, ensure_ascii=False)}
+                }},
+                {{
+                    name: '板块覆盖率', type: 'pie', radius: ['62%', '80%'], center: ['50%', '48%'],
+                    itemStyle: {{ borderColor: '#fff', borderWidth: 2 }},
+                    label: {{
+                        show: true, formatter: function(params) {{ return params.name + '\\n' + params.data.coveragePercent + '%'; }},
+                        fontWeight: 600, fontSize: 11, lineHeight: 13, edgeDistance: '4%'
+                    }},
+                    labelLayout: {{ hideOverlap: true, moveOverlap: 'shiftY', bleedMargin: 4 }},
+                    labelLine: {{ show: true, length: 7, length2: 8, smooth: false }},
+                    data: {json.dumps(coverage_items, ensure_ascii=False)}
+                }}
+            ]
+        }});
+        window.addEventListener('resize', () => subjectChart.resize());
     </script>
     """
